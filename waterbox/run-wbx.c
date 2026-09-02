@@ -65,7 +65,7 @@ static uintptr_t proc(mb_host *h, const char *n)
 
 int main(int argc, char **argv)
 {
-	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL, *ramOut = NULL;
+	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL, *ramOut = NULL, *dkey = NULL;
 	long frames = 60, report = 10;
 	int rewind = 0, rerecord = 0;
 	struct { long first, count; int index; } press[32];
@@ -75,6 +75,7 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--report") && i + 1 < argc) report = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--tty-out") && i + 1 < argc) ttyOut = argv[++i];
 		else if (!strcmp(argv[i], "--firmware") && i + 1 < argc) firmware = argv[++i];
+		else if (!strcmp(argv[i], "--dkey") && i + 1 < argc) dkey = argv[++i];
 		else if (!strcmp(argv[i], "--ram-out") && i + 1 < argc) ramOut = argv[++i];
 		else if (!strcmp(argv[i], "--press") && i + 1 < argc && presses < 32) {
 			long a, b; int c;
@@ -116,6 +117,12 @@ int main(int argc, char **argv)
 	memreader nr = { (const uint8_t *)vfsname, strlen(vfsname), 0 };
 	wbx_mount_file(h, "rom.name", mem_reader, (uintptr_t)&nr, false, &r);
 	if (r.error_message[0]) { fprintf(stderr, "mount rom.name: %s\n", r.error_message); return 1; }
+
+	/* the disc key slot, under the frontend's canonical name */
+	if (dkey) {
+		wbx_mount_file_path(h, "dkey", dkey, &r);
+		if (r.error_message[0]) { fprintf(stderr, "mount dkey: %s\n", r.error_message); return 1; }
+	}
 
 	/* the firmware channel: Sony's PUP under its declared id, read lazily */
 	if (firmware) {

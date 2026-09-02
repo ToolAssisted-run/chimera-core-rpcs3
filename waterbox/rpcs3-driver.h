@@ -13,7 +13,8 @@ const char* chimera_rpcs3_error(void);
 // natively, the virtual devices in the box); game_path is what to boot.
 // firmware_path (optional): Sony's PS3UPDAT.PUP, decrypted into the machine
 // before it boots; without it only HLE-only executables run.
-int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* firmware_path);
+// dkey_path: an optional Redump disc key for an encrypted ISO (M4)
+int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* firmware_path, const char* dkey_path);
 // One vblank period of machine time.
 void chimera_rpcs3_frame(void);
 void chimera_rpcs3_shutdown(void);

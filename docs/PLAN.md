@@ -238,6 +238,18 @@ optimisation. No user interface, no networking, no real audio or input devices.
   hunk (apply-patches.sh checks each patch alone); fold it by replaying the
   series in a worktree.
 
+- **M6 DONE on Linux (2026-09-02)**: `rpcs3.chimeraCore` (13 MB, deterministic
+  SHA-1, 20 licences under GPL-2.0-only) loads in Chimera: `tests/run-frontend.sh`
+  runs lv2test 200 frames with main memory identical to the sandbox reference
+  and the package's DualShock 3 bindings adopted. The frontend learned the PS3
+  (VSystemID, SystemNames, mnemonics: L2 '[', R2 ']', PS 'H'); chimera's miniBox
+  submodule moved to spec v2. The memory domain is the main block itself
+  (0x00010000 for 0x0FFF0000, mapped whole at init, never unmapped); axes in
+  waterbox.config are objects (name/min/max/neutral). Windows untested: the
+  Windows host backs the block with a pagefile section of the FULL size, and a
+  20 GiB commit will not fit most machines - SEC_RESERVE with commit-on-allocate
+  is the fix (miniBox pal_win.c). Also open: the disc-key slot (M4).
+
 ## Risks, ranked
 
 1. **vsched completeness**: any wait outside the engine (a `std::mutex` contended

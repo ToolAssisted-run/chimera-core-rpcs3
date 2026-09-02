@@ -496,7 +496,7 @@ const char* chimera_rpcs3_error(void)
   return g_error.c_str();
 }
 
-int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* firmware_path)
+int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* firmware_path, const char* dkey_path)
 {
   g_error.clear();
   // Everything the emulator reads or writes on its own lives in the memory
@@ -527,6 +527,20 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
       return 0;
     }
     game = root + "game/" + base;
+    // a Redump disc key rides next to the ISO as "<stem>.dkey", where rpcs3's
+    // ISO loader looks first (Loader/ISO.cpp: the path minus its extension)
+    if (dkey_path && *dkey_path)
+    {
+      std::string stem = base;
+      const size_t dot = stem.rfind('.');
+      if (dot != std::string::npos)
+        stem.resize(dot);
+      if (!chimera::memfs_graft("game/" + stem + ".dkey", dkey_path))
+      {
+        fail(std::string("cannot open the disc key: ") + dkey_path);
+        return 0;
+      }
+    }
   }
 
   // the emulator logs nowhere without a listener

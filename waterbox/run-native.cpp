@@ -40,6 +40,7 @@ int main(int argc, char** argv)
   long report = 10;
   const char* tty_out = nullptr;
   const char* firmware = nullptr;
+  const char* dkey = nullptr;
   struct { long first, count; int index; } press[32];
   int presses = 0;
   for (int i = 1; i < argc; i++)
@@ -54,6 +55,8 @@ int main(int argc, char** argv)
       tty_out = argv[++i];
     else if (!strcmp(argv[i], "--firmware") && i + 1 < argc)
       firmware = argv[++i];
+    else if (!strcmp(argv[i], "--dkey") && i + 1 < argc)
+      dkey = argv[++i];
     else if (!strcmp(argv[i], "--ports") && i + 1 < argc)
     {
       const char* mask = argv[++i];  // e.g. "1010000": ports 1 and 3
@@ -77,7 +80,7 @@ int main(int argc, char** argv)
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--frames N] [--report N] [--tty-out F] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--frames N] [--report N] [--tty-out F] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -87,7 +90,7 @@ int main(int argc, char** argv)
     signal(SIGALRM, on_alarm);
     alarm(atoi(getenv("CHIMERA_ALARM")));
   }
-  if (!chimera_rpcs3_init(work, game, firmware))
+  if (!chimera_rpcs3_init(work, game, firmware, dkey))
   {
     fprintf(stderr, "init failed: %s\n", chimera_rpcs3_error());
     return 1;

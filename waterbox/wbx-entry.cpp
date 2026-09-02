@@ -66,7 +66,19 @@ ECL_EXPORT int Init(void)
     fclose(fw);
     firmware = "PS3UPDAT.PUP";
   }
-  if (!chimera_rpcs3_init(nullptr, romName, firmware))
+  // the disc key slot ({"dkey":["name"]}), optional
+  char dkeyName[256] = "";
+  const char* dkey = wbx_slot_first("dkey", dkeyName, sizeof dkeyName) ? dkeyName : nullptr;
+  if (!dkey)
+  {
+    FILE* dk = fopen("dkey", "rb");
+    if (dk)
+    {
+      fclose(dk);
+      dkey = "dkey";
+    }
+  }
+  if (!chimera_rpcs3_init(nullptr, romName, firmware, dkey))
   {
     snprintf(g_loadError, sizeof g_loadError, "%s", chimera_rpcs3_error());
     return 0;
