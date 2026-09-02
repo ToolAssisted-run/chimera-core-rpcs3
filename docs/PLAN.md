@@ -176,6 +176,25 @@ optimisation. No user interface, no networking, no real audio or input devices.
 - **M7+**: LLVM recompilers in the box, ffmpeg codecs if M0 stubbed them, PKG
   install, trophies UI-less, RawSPU.
 
+## Status
+
+- **M0 DONE (2026-09-02, same day as the survey)**: `build-native.sh` (rpcs3's
+  CMake, patch 0001 seam) + `native.mk` (driver, vsched, host stubs, the pad
+  thread and PS Move sources upstream keeps in its Qt library) -> `run-native`
+  boots `tests/roms/lv2test.elf` (hand-assembled by `tests/asm/ppc.py`: two PPU
+  threads, lv2 timers, memory, TTY) and `run-gate.sh` passes
+  `native:deterministic` at 600 frames (RAM + TTY digests, both runs). Six
+  patches, ~1300 lines, none a deletion. Findings that shaped it: the PS3
+  function descriptor is two u32 (address, TOC), not two u64; syscall 53 is
+  `sys_ppu_thread_start` (49 is get_stack_information); 64 KiB pages are
+  `SYS_MEMORY_PAGE_SIZE_64K = 0x200`; a bare `std::thread` (the log writer,
+  the RSX audio timer's epoll) calling into vsched corrupts the baton, so every
+  such site became synchronous or virtual (patch 0006) and vsched now asserts
+  baton integrity; the exception-handler installer exists twice (Windows and
+  POSIX lambdas) and both need the seam; a link rule that does not depend on
+  the library ships stale objects. ffmpeg is still upstream's prebuilt for
+  native (fine until the guest build needs source).
+
 ## Risks, ranked
 
 1. **vsched completeness**: any wait outside the engine (a `std::mutex` contended

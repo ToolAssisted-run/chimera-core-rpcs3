@@ -1,0 +1,94 @@
+diff --git a/3rdparty/CMakeLists.txt b/3rdparty/CMakeLists.txt
+index b25afb883..eacfa4037 100644
+--- a/3rdparty/CMakeLists.txt
++++ b/3rdparty/CMakeLists.txt
+@@ -97,7 +97,7 @@ add_subdirectory(yaml-cpp)
+ 
+ # OpenGL
+ 
+-if (NOT ANDROID AND NOT APPLE)
++if (NOT ANDROID AND NOT APPLE AND NOT CHIMERA_HEADLESS)
+ 	find_package(OpenGL REQUIRED OPTIONAL_COMPONENTS EGL)
+ 
+ 	add_library(3rdparty_opengl INTERFACE)
+@@ -232,7 +232,7 @@ if(USE_SDL)
+ endif()
+ 
+ # OpenAL
+-if (NOT ANDROID)
++if (NOT ANDROID AND NOT CHIMERA_HEADLESS)
+ 	add_subdirectory(OpenAL EXCLUDE_FROM_ALL)
+ else()
+ 	add_library(3rdparty_openal INTERFACE)
+@@ -323,7 +323,7 @@ endif()
+ 
+ # GLEW
+ add_library(3rdparty_glew INTERFACE)
+-if(NOT MSVC AND NOT ANDROID AND NOT APPLE)
++if(NOT MSVC AND NOT ANDROID AND NOT APPLE AND NOT CHIMERA_HEADLESS)
+ 	find_package(GLEW REQUIRED)
+ 	target_link_libraries(3rdparty_glew INTERFACE GLEW::GLEW)
+ endif()
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index cbb2f66fc..e11e264a5 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -63,6 +63,7 @@ option(USE_LTO "Use LTO for building" ON)
+ option(BUILD_RPCS3_TESTS "Build RPCS3 unit tests." OFF)
+ option(RUN_RPCS3_TESTS "Run RPCS3 unit tests. Requires BUILD_RPCS3_TESTS" OFF)
+ option(USE_GAMEMODE "Choose whether to enable GameMode features or not." ON)
++option(CHIMERA_HEADLESS "The emulator library alone: no user interface, no GL loader, no OpenAL, no GLEW (Chimera waterbox core)" OFF)
+ 
+ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/buildfiles/cmake")
+ 
+diff --git a/rpcs3/CMakeLists.txt b/rpcs3/CMakeLists.txt
+index 373017197..602aa1016 100644
+--- a/rpcs3/CMakeLists.txt
++++ b/rpcs3/CMakeLists.txt
+@@ -10,7 +10,7 @@ include(CheckFunctionExists)
+ 
+ set(CMAKE_CXX_STANDARD 23)
+ 
+-if(UNIX AND NOT APPLE AND NOT ANDROID)
++if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT CHIMERA_HEADLESS)
+     add_compile_definitions(DATADIR="${CMAKE_INSTALL_FULL_DATADIR}/rpcs3")
+     # Optionally enable X11 for window management
+     find_package(X11)
+@@ -23,7 +23,7 @@ if(UNIX AND NOT APPLE AND NOT ANDROID)
+     endif()
+ endif()
+ 
+-if (NOT ANDROID)
++if (NOT ANDROID AND NOT CHIMERA_HEADLESS)
+     # Qt
+     # finds Qt libraries and setups custom commands for MOC and UIC
+     # Must be done here because generated MOC and UIC targets cant
+@@ -34,13 +34,13 @@ endif()
+ # subdirectories
+ add_subdirectory(Emu)
+ 
+-if (NOT ANDROID)
++if (NOT ANDROID AND NOT CHIMERA_HEADLESS)
+     add_subdirectory(rpcs3qt)
+ endif()
+ 
+ gen_git_version(${CMAKE_CURRENT_SOURCE_DIR})
+ 
+-if (NOT ANDROID)
++if (NOT ANDROID AND NOT CHIMERA_HEADLESS)
+     # Build rpcs3_lib
+     add_library(rpcs3_lib STATIC)
+ 
+diff --git a/rpcs3/Emu/CMakeLists.txt b/rpcs3/Emu/CMakeLists.txt
+index 018cd5bc2..c0a1adf89 100644
+--- a/rpcs3/Emu/CMakeLists.txt
++++ b/rpcs3/Emu/CMakeLists.txt
+@@ -584,7 +584,7 @@ target_sources(rpcs3_emu PRIVATE
+     RSX/rsx_vertex_data.cpp
+ )
+ 
+-if(NOT ANDROID AND NOT APPLE)
++if(NOT ANDROID AND NOT APPLE AND NOT CHIMERA_HEADLESS)
+     target_sources(rpcs3_emu PRIVATE
+         RSX/GL/GLCommonDecompiler.cpp
+         RSX/GL/GLCompute.cpp

@@ -1,0 +1,70 @@
+diff --git a/rpcs3/Emu/Cell/Modules/cellMic.cpp b/rpcs3/Emu/Cell/Modules/cellMic.cpp
+index 0c58d2ec7..ba6819976 100644
+--- a/rpcs3/Emu/Cell/Modules/cellMic.cpp
++++ b/rpcs3/Emu/Cell/Modules/cellMic.cpp
+@@ -74,6 +74,7 @@ void fmt_class_string<CellMicInErrorDsp>::format(std::string& out, u64 arg)
+ 	});
+ }
+ 
++#ifndef WITHOUT_OPENAL
+ namespace fmt
+ {
+ 	struct alc_error
+@@ -89,6 +90,7 @@ void fmt_class_string<fmt::alc_error>::format(std::string& out, u64 arg)
+ 	const fmt::alc_error& obj = get_object(arg);
+ 	fmt::append(out, "0x%x='%s'", obj.error, alcGetString(obj.device, obj.error));
+ }
++#endif
+ 
+ void mic_context::operator()()
+ {
+diff --git a/rpcs3/Emu/Cell/Modules/cellMic.h b/rpcs3/Emu/Cell/Modules/cellMic.h
+index a07cec23a..388b7fb9f 100644
+--- a/rpcs3/Emu/Cell/Modules/cellMic.h
++++ b/rpcs3/Emu/Cell/Modules/cellMic.h
+@@ -3,7 +3,9 @@
+ #include "Utilities/Thread.h"
+ #include "Utilities/mutex.h"
+ 
++#ifndef WITHOUT_OPENAL
+ #include "alc.h"
++#endif
+ 
+ // Error Codes
+ enum CellMicInError : u32
+@@ -347,7 +349,11 @@ private:
+ 	struct mic_device
+ 	{
+ 		std::string name;
++#ifndef WITHOUT_OPENAL
+ 		ALCdevice* device = nullptr;
++#else
++		void* device = nullptr;
++#endif
+ 		std::vector<u8> buf;
+ 	};
+ 
+diff --git a/rpcs3/Emu/title.cpp b/rpcs3/Emu/title.cpp
+index 62306f072..0c18023c1 100644
+--- a/rpcs3/Emu/title.cpp
++++ b/rpcs3/Emu/title.cpp
+@@ -6,8 +6,10 @@
+ #include "Emu/system_config.h"
+ 
+ #if !(defined(__ANDROID__) || defined(__APPLE__))
++#ifndef WITHOUT_OPENGL
+ #include "Emu/RSX/GL/glutils/capabilities.h"
+ #endif
++#endif
+ 
+ namespace rpcs3
+ {
+@@ -84,7 +86,7 @@ namespace rpcs3
+ 						title_string += "null";
+ 						break;
+ 					case video_renderer::opengl:
+-#if !(defined(__ANDROID__) || defined(__APPLE__))
++#if !(defined(__ANDROID__) || defined(__APPLE__) || defined(WITHOUT_OPENGL))
+ 						title_string += gl::get_device_name();
+ #else
+ 						title_string += "OpenGL GPU";

@@ -1,0 +1,378 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+Debugger: 1
+booted; threads 30
+
+Thread 35 "PPU[0x1000000] " received signal SIGSEGV, Segmentation fault.
+[Switching to Thread 0x7fff6aafd6c0 (LWP 1150732)]
+0x0000555555952a6f in ppu_thread::exec_task() ()
+
+Thread 35 (Thread 0x7fff6aafd6c0 (LWP 1150732) "PPU[0x1000000] "):
+#0  0x0000555555952a6f in ppu_thread::exec_task() ()
+#1  0x0000555555957cd5 in ppu_thread::fast_call(unsigned int, unsigned long, bool) ()
+#2  0x0000555555967749 in ppu_thread::cpu_task() ()
+#3  0x0000555555e8192e in cpu_thread::operator()() ()
+#4  0x000055555594477d in named_thread<ppu_thread>::entry_point(thread_base*) ()
+#5  0x00007ffff6800b8b in ?? ()
+#6  0x31203a6b63617473 in ?? ()
+#7  0x000055555a6db970 in ?? ()
+#8  0x00007fff6aafd6c0 in ?? ()
+#9  0xffffffffffffc820 in ?? ()
+
+Thread 34 (Thread 0x7fff6aefe6c0 (LWP 1150731) "Pad Thread"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6db790) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6db790) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6db790, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6db790, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6db790, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 33 (Thread 0x7fff6b2ff6c0 (LWP 1150730) "rsx::thread"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6db570) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6db570) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6db570, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6db570, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6db570, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 31 (Thread 0x7fff6bb016c0 (LWP 1150728) "PPU Syscall Usa"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a702fd0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a702fd0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a702fd0, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a702fd0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a702fd0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 30 (Thread 0x7fff6bf026c0 (LWP 1150727) "LV2 Watchdog Th"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a702df0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a702df0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a702df0, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a702df0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a702df0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 29 (Thread 0x7fff6c3036c0 (LWP 1150726) "Network Thread"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a702c10) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a702c10) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a702c10, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a702c10, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a702c10, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x0000555555a6f324 in network_thread::operator()() ()
+
+Thread 28 (Thread 0x7fff6c7046c0 (LWP 1150725) "Network P2P Thr"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a702a30) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a702a30) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a702a30, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a702a30, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a702a30, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x0000555555a6f93e in p2p_thread::operator()() ()
+
+Thread 27 (Thread 0x7fff6cb056c0 (LWP 1150724) "Tcp Over Udp Ti"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a702850) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a702850) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a702850, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a702850, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a702850, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x0000555555a6d0d0 in tcp_timeout_monitor::operator()() ()
+
+Thread 26 (Thread 0x7fff6cf066c0 (LWP 1150723) "Signaling Manag"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a702670) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a702670) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a702670, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a702670, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a702670, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x0000555555f3cfa3 in signaling_handler::operator()() ()
+
+Thread 25 (Thread 0x7fff6d3076c0 (LWP 1150722) "RsxAudioData Th"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a700d30) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a700d30) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a700d30, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a700d30, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a700d30, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x0000555555a955f5 in rsxaudio_periodic_tmr::wait(std::function<void ()> const&) ()
+#9  0x0000555555a9573b in rsxaudio_data_thread::operator()() ()
+
+Thread 24 (Thread 0x7fff6d7086c0 (LWP 1150721) "Timer Thread"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a700cb0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a700cb0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a700cb0, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a700cb0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a700cb0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 23 (Thread 0x7fff6db096c0 (LWP 1150720) "VUART AV Thread"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a700ad0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a700ad0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a700ad0, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a700ad0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a700ad0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 22 (Thread 0x7fff6df0a6c0 (LWP 1150719) "Microphone Thre"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a7008f0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a7008f0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a7008f0, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a7008f0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a7008f0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x0000555555c2b40f in mic_context::operator()() ()
+
+Thread 20 (Thread 0x7fff6e70c6c0 (LWP 1150717) "MsgDialog Close"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a700530) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a700530) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a700530, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a700530, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a700530, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x0000555555c3d338 in named_thread<msg_dlg_thread_info>::entry_point(thread_base*) ()
+
+Thread 19 (Thread 0x7fff6eb0d6c0 (LWP 1150716) "NetStart Hack"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a700350) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a700350) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a700350, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a700350, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a700350, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 18 (Thread 0x7fff6ef0e6c0 (LWP 1150715) "CPU Profiler"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a700170) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a700170) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a700170, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a700170, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a700170, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x0000555555e87ae1 in cpu_prof::operator()() ()
+
+Thread 17 (Thread 0x7fff6f30f6c0 (LWP 1150714) "GDB Server"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6fff90) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6fff90) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6fff90, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6fff90, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6fff90, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 16 (Thread 0x7fff6f7106c0 (LWP 1150713) "MediaList Threa"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6ffdb0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6ffdb0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6ffdb0, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6ffdb0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6ffdb0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 13 (Thread 0x7fff703136c0 (LWP 1150710) "cellAudio Threa"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6fec70) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6fec70) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6fec70, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6fec70, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6fec70, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 12 (Thread 0x7fff707146c0 (LWP 1150709) "Usb Manager Thr"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6fea90) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6fea90) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6fea90, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6fea90, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6fea90, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 11 (Thread 0x7fff70b156c0 (LWP 1150708) "Camera Thread"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6fe8b0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6fe8b0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6fe8b0, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6fe8b0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6fe8b0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 10 (Thread 0x7fff70f166c0 (LWP 1150707) "Gem Thread"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6fe6d0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6fe6d0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6fe6d0, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6fe6d0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6fe6d0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x0000555555bcaf9e in gem_config_data::operator()() ()
+
+Thread 9 (Thread 0x7fff713176c0 (LWP 1150706) "cellMusic State"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6f32c0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6f32c0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6f32c0, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6f32c0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6f32c0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x0000555555c45e94 in std::_Function_handler<void (), music_state::music_state()::{lambda()#1}>::_M_invoke(std::_Any_data const&) ()
+
+Thread 8 (Thread 0x7fff71c196c0 (LWP 1150705) "run-native"):
+#0  0x00007ffff791b5fd in __GI___poll (fds=0x7fff71c15750, nfds=2, timeout=-1) at ../sysdeps/unix/sysv/linux/poll.c:29
+#1  0x00005555562c1387 in linux_netlink_event_thread_main ()
+#2  0x00007ffff789cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#3  0x00007ffff7929d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 7 (Thread 0x7fff7201a6c0 (LWP 1150704) "PS Move Worker "):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6df010) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6df010) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6df010, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6df010, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6df010, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x000055555579af18 in atomic_t<unsigned int, 4ul>::wait () at /home/jaffar/chimera-core-rpcs3/extern/rpcs3/rpcs3/Emu/../util/atomic.hpp:1696
+
+Thread 6 (Thread 0x7fff7241b6c0 (LWP 1150703) "PS Move Worker "):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6ded50) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6ded50) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6ded50, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6ded50, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6ded50, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x000055555579af18 in atomic_t<unsigned int, 4ul>::wait () at /home/jaffar/chimera-core-rpcs3/extern/rpcs3/rpcs3/Emu/../util/atomic.hpp:1696
+
+Thread 5 (Thread 0x7fff7281c6c0 (LWP 1150702) "PS Move Worker "):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6dea90) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6dea90) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6dea90, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6dea90, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6dea90, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x000055555579af18 in atomic_t<unsigned int, 4ul>::wait () at /home/jaffar/chimera-core-rpcs3/extern/rpcs3/rpcs3/Emu/../util/atomic.hpp:1696
+
+Thread 4 (Thread 0x7fff72c1d6c0 (LWP 1150701) "PS Move Worker "):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6de800) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6de800) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6de800, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6de800, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6de800, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x000055555579af18 in atomic_t<unsigned int, 4ul>::wait () at /home/jaffar/chimera-core-rpcs3/extern/rpcs3/rpcs3/Emu/../util/atomic.hpp:1696
+
+Thread 3 (Thread 0x7fff73bfc6c0 (LWP 1150700) "Performance Sen"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a60fa60) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a60fa60) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a60fa60, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a60fa60, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a60fa60, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 2 (Thread 0x7fff73ffd6c0 (LWP 1150699) "Progress Dialog"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a6076b0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a6076b0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a6076b0, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a6076b0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a6076b0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555584995d in atomic_wait_engine::wait(void const*, unsigned int, unsigned long, atomic_wait::info*) ()
+#9  0x00005555558a808a in thread_ctrl::wait_for(unsigned long, bool) ()
+
+Thread 1 (Thread 0x7ffff7ea0e80 (LWP 1150696) "run-native"):
+#0  0x00007ffff7898e51 in __futex_abstimed_wait_common64 (private=<optimized out>, cancel=true, abstime=0x0, op=393, expected=0, futex_word=0x55555a5ba0a0) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=<optimized out>, abstime=0x0, clockid=0, expected=0, futex_word=0x55555a5ba0a0) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x55555a5ba0a0, expected=expected@entry=0, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=<optimized out>) at ./nptl/futex-internal.c:139
+#3  0x00007ffff78a4fff in do_futex_wait (sem=sem@entry=0x55555a5ba0a0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:111
+#4  0x00007ffff78a5098 in __new_sem_wait_slow64 (sem=0x55555a5ba0a0, abstime=0x0, clockid=0) at ./nptl/sem_waitcommon.c:183
+#5  0x000055555578d428 in switch_to () at vsched.cpp:132
+#6  0x000055555578da6e in schedule_away () at vsched.cpp:150
+#7  vsched_wait () at vsched.cpp:301
+#8  0x000055555578669d in chimera_rpcs3_frame () at rpcs3-driver.cpp:344
+#9  0x00005555556e050f in main () at run-native.cpp:67

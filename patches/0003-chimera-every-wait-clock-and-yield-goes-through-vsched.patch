@@ -1,0 +1,917 @@
+diff --git a/Utilities/File.cpp b/Utilities/File.cpp
+index 7302dda0c..6f0dd0690 100644
+--- a/Utilities/File.cpp
++++ b/Utilities/File.cpp
+@@ -14,7 +14,7 @@
+ 
+ using namespace std::literals::string_literals;
+ 
+-#ifdef ANDROID
++#if defined(ANDROID) || defined(CHIMERA_CORE)
+ std::string g_android_executable_dir;
+ std::string g_android_config_dir;
+ std::string g_android_cache_dir;
+@@ -2491,7 +2491,7 @@ std::string fs::get_executable_dir()
+ 
+ const std::string& fs::get_config_dir([[maybe_unused]] bool get_config_subdirectory)
+ {
+-#ifdef ANDROID
++#if defined(ANDROID) || defined(CHIMERA_CORE)
+ 	return g_android_config_dir;
+ #else
+ 	// Use magic static
+@@ -2588,7 +2588,7 @@ const std::string& fs::get_config_dir([[maybe_unused]] bool get_config_subdirect
+ 
+ const std::string& fs::get_cache_dir()
+ {
+-#ifdef ANDROID
++#if defined(ANDROID) || defined(CHIMERA_CORE)
+ 	return g_android_cache_dir;
+ #else
+ 	static const std::string s_dir = []
+diff --git a/Utilities/Thread.cpp b/Utilities/Thread.cpp
+index 05e7577e5..8b2a078c7 100644
+--- a/Utilities/Thread.cpp
++++ b/Utilities/Thread.cpp
+@@ -1,3 +1,6 @@
++#ifdef CHIMERA_CORE
++#include "vsched.h"
++#endif
+ #include "stdafx.h"
+ #include "Emu/System.h"
+ #include "Emu/Cell/SPUThread.h"
+@@ -2336,7 +2339,7 @@ static LONG exception_handler(PEXCEPTION_POINTERS pExp) noexcept
+ 		}
+ 		else 
+ 		{
+-			std::this_thread::sleep_for(1ms);
++			CHIMERA_SLEEP_FOR(1ms);
+ 			return EXCEPTION_CONTINUE_SEARCH;
+ 		}
+ 
+@@ -2501,6 +2504,10 @@ static LONG exception_filter(PEXCEPTION_POINTERS pExp) noexcept
+ 
+ const bool s_exception_handler_set = []() -> bool
+ {
++#ifdef CHIMERA_CORE
++	// no signals in the box: nothing faults on purpose
++	return true;
++#endif
+ #ifdef USE_ASAN
+ 	if (!AddVectoredExceptionHandler(FALSE, static_cast<PVECTORED_EXCEPTION_HANDLER>(exception_handler)))
+ #else
+@@ -2685,6 +2692,10 @@ void sigpipe_signaling_handler(int)
+ 
+ const bool s_exception_handler_set = []() -> bool
+ {
++#ifdef CHIMERA_CORE
++	// no signals in the box: nothing faults on purpose
++	return true;
++#endif
+ 	struct ::sigaction sa;
+ 	sa.sa_flags = SA_SIGINFO;
+ 	sigemptyset(&sa.sa_mask);
+@@ -2771,6 +2782,9 @@ void thread_base::start()
+ 	pthread_attr_setschedpolicy(&attrs, SCHED_RR);
+ 	pthread_attr_setschedparam(&attrs, &sp);
+ 	ensure(pthread_create(&thread_id, &attrs, entry_point, this) == 0);
++#elif defined(CHIMERA_CORE)
++	pthread_t thread_id{};
++	ensure(vsched_create(&thread_id, entry_point, this) == 0);
+ #else
+ 	pthread_t thread_id{};
+ 	ensure(pthread_create(&thread_id, nullptr, entry_point, this) == 0);
+@@ -2985,6 +2999,8 @@ thread_base::native_entry thread_base::finalize(u64 _self) noexcept
+ 
+ #ifdef _WIN32
+ 	_endthreadex(0);
++#elif defined(CHIMERA_CORE)
++	vsched_exit();
+ #else
+ 	pthread_exit(nullptr);
+ #endif
+@@ -3062,7 +3078,7 @@ void thread_ctrl::wait_for(u64 usec, [[maybe_unused]] bool alert /* true */)
+ 		usec = 50000;
+ 	}
+ 
+-#ifdef __linux__
++#if defined(__linux__) && !defined(CHIMERA_CORE)
+ 	static thread_local struct linux_timer_handle_t
+ 	{
+ 		// Allocate timer only if needed (i.e. someone calls wait_for with alert and short period)
+diff --git a/rpcs3/Emu/CPU/CPUThread.cpp b/rpcs3/Emu/CPU/CPUThread.cpp
+index baa8519f3..769385f36 100644
+--- a/rpcs3/Emu/CPU/CPUThread.cpp
++++ b/rpcs3/Emu/CPU/CPUThread.cpp
+@@ -1664,7 +1664,7 @@ extern bool try_lock_spu_threads_in_a_state_compatible_with_savestates(bool reve
+ 		}
+ 		else if (get_system_time() - start >= 150'000)
+ 		{
+-			std::this_thread::sleep_for(1ms);
++			CHIMERA_SLEEP_FOR(1ms);
+ 			passed_count++;
+ 			start = 0;
+ 			continue;
+@@ -1676,7 +1676,7 @@ extern bool try_lock_spu_threads_in_a_state_compatible_with_savestates(bool reve
+ 		if (!spu_list)
+ 		{
+ 			// Give up for now
+-			std::this_thread::sleep_for(50ms);
++			CHIMERA_SLEEP_FOR(50ms);
+ 			passed_count++;
+ 			start = 0;
+ 			continue;
+@@ -1695,7 +1695,7 @@ extern bool try_lock_spu_threads_in_a_state_compatible_with_savestates(bool reve
+ 
+ 		if (!savable_threads)
+ 		{
+-			std::this_thread::yield();
++			CHIMERA_YIELD();
+ 			continue;
+ 		}
+ 
+@@ -1753,7 +1753,7 @@ extern bool try_lock_spu_threads_in_a_state_compatible_with_savestates(bool reve
+ 				}
+ 			}
+ 
+-			std::this_thread::yield();
++			CHIMERA_YIELD();
+ 			continue;
+ 		}
+ 
+diff --git a/rpcs3/Emu/Cell/Modules/HLE_PATCHES.cpp b/rpcs3/Emu/Cell/Modules/HLE_PATCHES.cpp
+index 8b3ad0b63..f68ac4579 100644
+--- a/rpcs3/Emu/Cell/Modules/HLE_PATCHES.cpp
++++ b/rpcs3/Emu/Cell/Modules/HLE_PATCHES.cpp
+@@ -20,7 +20,7 @@ void WaitForSPUsToEmptySNRs(ppu_thread& ppu, u32 spu_id, u32 snr_mask)
+ 	}
+ 
+ 	// Wait until specified SNRs are reported empty at least once
+-	for (bool has_busy = true; has_busy && !ppu.is_stopped(); std::this_thread::yield())
++	for (bool has_busy = true; has_busy && !ppu.is_stopped(); CHIMERA_YIELD())
+ 	{
+ 		has_busy = false;
+ 
+diff --git a/rpcs3/Emu/Cell/Modules/cellMsgDialog.cpp b/rpcs3/Emu/Cell/Modules/cellMsgDialog.cpp
+index 875472a35..2b8fde403 100644
+--- a/rpcs3/Emu/Cell/Modules/cellMsgDialog.cpp
++++ b/rpcs3/Emu/Cell/Modules/cellMsgDialog.cpp
+@@ -303,7 +303,7 @@ error_code open_msg_dialog(bool is_blocking, u32 type, vm::cptr<char> msgString,
+ 			{
+ 				break;
+ 			}
+-			std::this_thread::yield();
++			CHIMERA_YIELD();
+ 		}
+ 	}
+ 
+diff --git a/rpcs3/Emu/Cell/Modules/cellOskDialog.cpp b/rpcs3/Emu/Cell/Modules/cellOskDialog.cpp
+index d48f88652..1f05e5bc7 100644
+--- a/rpcs3/Emu/Cell/Modules/cellOskDialog.cpp
++++ b/rpcs3/Emu/Cell/Modules/cellOskDialog.cpp
+@@ -194,7 +194,7 @@ extern bool close_osk_from_ps_button()
+ 		// wait for check callback
+ 		while (!done && !Emu.IsStopped())
+ 		{
+-			std::this_thread::yield();
++			CHIMERA_YIELD();
+ 		}
+ 
+ 		if (!close_osk)
+@@ -328,7 +328,7 @@ error_code cellOskDialogLoadAsync(u32 container, vm::ptr<CellOskDialogParam> dia
+ 				// wait for check callback
+ 				while (!done && !Emu.IsStopped())
+ 				{
+-					std::this_thread::yield();
++					CHIMERA_YIELD();
+ 				}
+ 			}
+ 
+diff --git a/rpcs3/Emu/Cell/PPUThread.cpp b/rpcs3/Emu/Cell/PPUThread.cpp
+index 853b40c37..43a36adb4 100644
+--- a/rpcs3/Emu/Cell/PPUThread.cpp
++++ b/rpcs3/Emu/Cell/PPUThread.cpp
+@@ -1,3 +1,6 @@
++#ifdef CHIMERA_CORE
++#include "vsched.h"
++#endif
+ #include "stdafx.h"
+ #include "Utilities/JIT.h"
+ #include "Utilities/StrUtil.h"
+@@ -2764,6 +2767,13 @@ void ppu_thread::exec_task()
+ 			return;
+ 		}
+ 
++#ifdef CHIMERA_CORE
++		if (--vsched_budget <= 0) [[unlikely]]
++		{
++			vsched_budget_expired(VSCHED_PPU);
++		}
++#endif
++
+ 		gv_zeroupper();
+ 
+ 		// Execute instruction (may be step; execute only one instruction if state)
+diff --git a/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp b/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp
+index eb9a92341..acf4b6131 100644
+--- a/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp
++++ b/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp
+@@ -1444,7 +1444,7 @@ void spu_recompiler::RDCH(spu_opcode_t op)
+ 			if (out > 1500)
+ 			{
+ 				_spu->state += cpu_flag::wait;
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 
+ 				if (_spu->test_stopped())
+ 				{
+diff --git a/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp b/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp
+index bc7190eab..288deaa62 100644
+--- a/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp
++++ b/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp
+@@ -1,3 +1,6 @@
++#ifdef CHIMERA_CORE
++#include "vsched.h"
++#endif
+ #include "stdafx.h"
+ #include "SPURecompiler.h"
+ 
+@@ -2360,6 +2363,13 @@ void spu_recompiler_base::old_interpreter(spu_thread& spu, void* ls, u8* /*rip*/
+ 				break;
+ 		}
+ 
++#ifdef CHIMERA_CORE
++		if (--vsched_budget <= 0) [[unlikely]]
++		{
++			vsched_budget_expired(VSCHED_SPU);
++		}
++#endif
++
+ 		const u32 op = *reinterpret_cast<const be_t<u32>*>(base + spu.pc);
+ 		if (table.decode(op)(spu, {op}))
+ 			spu.pc += 4;
+diff --git a/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp b/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp
+index c0525d3ba..031157e4d 100644
+--- a/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp
++++ b/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp
+@@ -4568,7 +4568,7 @@ public:
+ 		if (res > 1500 && g_cfg.core.spu_loop_detection)
+ 		{
+ 			_spu->state += cpu_flag::wait;
+-			std::this_thread::yield();
++			CHIMERA_YIELD();
+ 			static_cast<void>(_spu->test_stopped());
+ 		}
+ 
+diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
+index fb9483d88..d2b9e21cd 100644
+--- a/rpcs3/Emu/Cell/SPUThread.cpp
++++ b/rpcs3/Emu/Cell/SPUThread.cpp
+@@ -570,9 +570,9 @@ namespace spu
+ 					while (atomic_instruction_table[pc_offset].observe() >= max_concurrent_instructions)
+ 					{
+ 						if (remaining >= native_jiffy_duration_us)
+-							std::this_thread::sleep_for(1ms);
++							CHIMERA_SLEEP_FOR(1ms);
+ 						else
+-							std::this_thread::yield();
++							CHIMERA_YIELD();
+ 
+ 						const auto now = get_system_time();
+ 						const auto elapsed = now - start;
+@@ -1457,7 +1457,7 @@ void spu_thread::cpu_return()
+ 			// Wait for terminators manually if needed (ensuring they quit before value-wrapping)
+ 			while (last_stop == umax && group->wait_term_count)
+ 			{
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 			}
+ 		}
+ 		else if (status_npc.load().status >> 16 == SYS_SPU_THREAD_STOP_THREAD_EXIT)
+@@ -2193,7 +2193,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
+ 				else
+ 				{
+ 					_cpu->state += cpu_flag::wait + cpu_flag::temp;
+-					std::this_thread::yield();
++					CHIMERA_YIELD();
+ 					_cpu->check_state();
+ 				}
+ 			}())
+@@ -3631,7 +3631,7 @@ void do_cell_atomic_128_store(u32 addr, const void* to_write)
+ 					}
+ 					else
+ 					{
+-						std::this_thread::yield();
++						CHIMERA_YIELD();
+ 					}
+ 				}
+ 
+@@ -3648,7 +3648,7 @@ void do_cell_atomic_128_store(u32 addr, const void* to_write)
+ 			}
+ 			else
+ 			{
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 			}
+ 		}
+ 
+@@ -4568,7 +4568,7 @@ bool spu_thread::process_mfc_cmd()
+ 			else
+ 			{
+ 				state += cpu_flag::wait + cpu_flag::temp;
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 				static_cast<void>(check_state());
+ 			}
+ 		}())
+@@ -5535,7 +5535,7 @@ s64 spu_thread::get_ch_value(u32 ch)
+ 		if (g_cfg.core.spu_loop_detection && out > spu::scheduler::native_jiffy_duration_us)
+ 		{
+ 			state += cpu_flag::wait;
+-			std::this_thread::yield();
++			CHIMERA_YIELD();
+ 		}
+ 
+ 		return out;
+@@ -6542,7 +6542,7 @@ bool spu_thread::stop_and_signal(u32 code)
+ 	case 0x001:
+ 	{
+ 		state += cpu_flag::wait;
+-		std::this_thread::sleep_for(1ms); // hack
++		CHIMERA_SLEEP_FOR(1ms); // hack
+ 		check_state();
+ 		return true;
+ 	}
+@@ -7103,7 +7103,7 @@ bool spu_thread::capture_state()
+ 	if (fs::exists(elf_path))
+ 	{
+ 		// Wait 1 second so current_time_narrow() will return a different string
+-		std::this_thread::sleep_for(1s);
++		CHIMERA_SLEEP_FOR(1s);
+ 
+ 		if (elf_path = get_filename(); fs::exists(elf_path))
+ 		{
+diff --git a/rpcs3/Emu/Cell/lv2/lv2.cpp b/rpcs3/Emu/Cell/lv2/lv2.cpp
+index 676df5ab4..9b38ac5ec 100644
+--- a/rpcs3/Emu/Cell/lv2/lv2.cpp
++++ b/rpcs3/Emu/Cell/lv2/lv2.cpp
+@@ -2223,7 +2223,7 @@ bool lv2_obj::wait_timeout(u64 usec, ppu_thread* cpu, bool scale, bool is_usleep
+ 			else
+ 			{
+ 				// Try yielding. May cause long wake latency but helps weaker CPUs a lot by alleviating resource pressure
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 			}
+ 		}
+ 
+diff --git a/rpcs3/Emu/Cell/lv2/sys_ppu_thread.cpp b/rpcs3/Emu/Cell/lv2/sys_ppu_thread.cpp
+index f26b65034..8c351ee35 100644
+--- a/rpcs3/Emu/Cell/lv2/sys_ppu_thread.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_ppu_thread.cpp
+@@ -372,7 +372,7 @@ error_code sys_ppu_thread_get_priority(ppu_thread& ppu, u32 thread_id, vm::ptr<s
+ 	if (thread_id == ppu.id)
+ 	{
+ 		// Fast path for self
+-		for (; !ppu.is_stopped(); std::this_thread::yield())
++		for (; !ppu.is_stopped(); CHIMERA_YIELD())
+ 		{
+ 			if (reader_lock lock(lv2_obj::g_mutex); cpu_flag::suspend - ppu.state)
+ 			{
+@@ -389,7 +389,7 @@ error_code sys_ppu_thread_get_priority(ppu_thread& ppu, u32 thread_id, vm::ptr<s
+ 		return CELL_OK;
+ 	}
+ 
+-	for (; !ppu.is_stopped(); std::this_thread::yield())
++	for (; !ppu.is_stopped(); CHIMERA_YIELD())
+ 	{
+ 		bool check_state = false;
+ 		const auto thread = idm::check<named_thread<ppu_thread>>(thread_id, [&](ppu_thread& thread)
+diff --git a/rpcs3/Emu/Cell/lv2/sys_time.cpp b/rpcs3/Emu/Cell/lv2/sys_time.cpp
+index a71a11ba3..3a162e714 100644
+--- a/rpcs3/Emu/Cell/lv2/sys_time.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_time.cpp
+@@ -1,3 +1,6 @@
++#ifdef CHIMERA_CORE
++#include "vsched.h"
++#endif
+ #include "stdafx.h"
+ #include "sys_time.h"
+ 
+@@ -152,6 +155,10 @@ u64 convert_to_timebased_time(u64 time)
+ 
+ u64 get_timebased_time()
+ {
++#ifdef CHIMERA_CORE
++	const u64 result = vsched_now_ns() / 1000 * (g_timebase_freq / 1000000ull) * g_cfg.core.clocks_scale / 100u;
++	return result - g_timebase_offs;
++#endif
+ 	if (u64 freq = utils::get_tsc_freq())
+ 	{
+ 		const u64 tsc = utils::get_tsc();
+@@ -212,6 +219,9 @@ void initialize_timebased_time(u64 timebased_init, bool reset)
+ // Returns some relative time in microseconds, don't change this fact
+ u64 get_system_time()
+ {
++#ifdef CHIMERA_CORE
++	return vsched_now_ns() / 1000;
++#endif
+ 	if (u64 freq = utils::get_tsc_freq())
+ 	{
+ 		const u64 tsc = utils::get_tsc();
+diff --git a/rpcs3/Emu/Cell/lv2/sys_timer.cpp b/rpcs3/Emu/Cell/lv2/sys_timer.cpp
+index e65fa1043..a391672a4 100644
+--- a/rpcs3/Emu/Cell/lv2/sys_timer.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_timer.cpp
+@@ -476,7 +476,7 @@ error_code sys_timer_usleep(ppu_thread& ppu, u64 sleep_time)
+ 	}
+ 	else
+ 	{
+-		std::this_thread::yield();
++		CHIMERA_YIELD();
+ 	}
+ 
+ 	return CELL_OK;
+diff --git a/rpcs3/Emu/Memory/vm.cpp b/rpcs3/Emu/Memory/vm.cpp
+index 32969c233..aeed9d051 100644
+--- a/rpcs3/Emu/Memory/vm.cpp
++++ b/rpcs3/Emu/Memory/vm.cpp
+@@ -404,7 +404,7 @@ namespace vm
+ 				if (i < 100)
+ 					busy_wait(200);
+ 				else
+-					std::this_thread::yield();
++					CHIMERA_YIELD();
+ 
+ 				if (cpu_flag::wait - cpu.state)
+ 				{
+@@ -505,7 +505,7 @@ namespace vm
+ 			}
+ 			else
+ 			{
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 			}
+ 		}
+ 
+@@ -649,7 +649,7 @@ namespace vm
+ 					return -1;
+ 				}
+ 
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 			}
+ 		}
+ 	}
+@@ -684,7 +684,7 @@ namespace vm
+ 			}
+ 			else
+ 			{
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 			}
+ 		}
+ 	}
+diff --git a/rpcs3/Emu/RSX/Capture/rsx_replay.cpp b/rpcs3/Emu/RSX/Capture/rsx_replay.cpp
+index bb558744a..a109b2546 100644
+--- a/rpcs3/Emu/RSX/Capture/rsx_replay.cpp
++++ b/rpcs3/Emu/RSX/Capture/rsx_replay.cpp
+@@ -208,7 +208,7 @@ namespace rsx
+ 					if (Emu.IsPaused())
+ 						thread_ctrl::wait_for(10'000);
+ 					else
+-						std::this_thread::yield();
++						CHIMERA_YIELD();
+ 				}
+ 
+ 				stopIdx++;
+@@ -231,7 +231,7 @@ namespace rsx
+ 				if (Emu.IsPaused())
+ 					thread_ctrl::wait_for(10'000);
+ 				else
+-					std::this_thread::yield();
++					CHIMERA_YIELD();
+ 			}
+ 
+ 			// Check if the captured application used syscall instead of a gcm command to flip
+diff --git a/rpcs3/Emu/RSX/Overlays/overlay_message_dialog.cpp b/rpcs3/Emu/RSX/Overlays/overlay_message_dialog.cpp
+index a0be8ce5c..3086beed8 100644
+--- a/rpcs3/Emu/RSX/Overlays/overlay_message_dialog.cpp
++++ b/rpcs3/Emu/RSX/Overlays/overlay_message_dialog.cpp
+@@ -290,7 +290,7 @@ namespace rsx
+ 						refresh();
+ 
+ 						// Only update the screen at about 60fps since updating it everytime slows down the process
+-						std::this_thread::sleep_for(16ms);
++						CHIMERA_SLEEP_FOR(16ms);
+ 					}
+ 				}
+ 			}
+@@ -321,7 +321,7 @@ namespace rsx
+ 									refresh();
+ 
+ 									// Only update the screen at about 60fps since updating it everytime slows down the process
+-									std::this_thread::sleep_for(16ms);
++									CHIMERA_SLEEP_FOR(16ms);
+ 
+ 									if (!g_fxo->is_init<display_manager>())
+ 									{
+diff --git a/rpcs3/Emu/RSX/RSXFIFO.cpp b/rpcs3/Emu/RSX/RSXFIFO.cpp
+index 8dfc43539..73711a822 100644
+--- a/rpcs3/Emu/RSX/RSXFIFO.cpp
++++ b/rpcs3/Emu/RSX/RSXFIFO.cpp
+@@ -669,7 +669,7 @@ namespace rsx
+ 				}
+ 				else
+ 				{
+-					std::this_thread::yield();
++					CHIMERA_YIELD();
+ 				}
+ 
+ 				return;
+diff --git a/rpcs3/Emu/RSX/RSXOffload.cpp b/rpcs3/Emu/RSX/RSXOffload.cpp
+index f306784d5..c41a9f160 100644
+--- a/rpcs3/Emu/RSX/RSXOffload.cpp
++++ b/rpcs3/Emu/RSX/RSXOffload.cpp
+@@ -79,7 +79,7 @@ namespace rsx
+ 				if (m_enqueued_count.load() == m_processed_count.load())
+ 				{
+ 					m_processed_count.notify_all();
+-					std::this_thread::yield();
++					CHIMERA_YIELD();
+ 				}
+ 			}
+ 
+diff --git a/rpcs3/Emu/RSX/RSXThread.cpp b/rpcs3/Emu/RSX/RSXThread.cpp
+index bcf26d86a..d5769a3da 100644
+--- a/rpcs3/Emu/RSX/RSXThread.cpp
++++ b/rpcs3/Emu/RSX/RSXThread.cpp
+@@ -1,3 +1,6 @@
++#ifdef CHIMERA_CORE
++#include "vsched.h"
++#endif
+ #include "stdafx.h"
+ #include "RSXThread.h"
+ 
+@@ -893,7 +896,7 @@ namespace rsx
+ 		else
+ 		{
+ 			on_semaphore_acquire_wait();
+-			std::this_thread::yield();
++			CHIMERA_YIELD();
+ 		}
+ 	}
+ 
+@@ -1080,7 +1083,7 @@ namespace rsx
+ 				}
+ 				else if (wait_for >= host_min_quantum / 3 * 2)
+ 				{
+-					std::this_thread::yield();
++					CHIMERA_YIELD();
+ 				}
+ 
+ 				if (Emu.IsPaused())
+@@ -1159,6 +1162,9 @@ namespace rsx
+ 				}
+ 			}
+ 
++#ifdef CHIMERA_CORE
++			vsched_rsx_step();
++#endif
+ 			// Execute FIFO queue
+ 			run_FIFO();
+ 		}
+@@ -1175,7 +1181,7 @@ namespace rsx
+ 		g_access_violation_handler = nullptr;
+ 
+ 		// Clear any pending flush requests to release threads
+-		std::this_thread::sleep_for(10ms);
++		CHIMERA_SLEEP_FOR(10ms);
+ 		do_local_task(rsx::FIFO::state::lock_wait);
+ 
+ 		g_fxo->get<rsx::dma_manager>().join();
+@@ -2838,7 +2844,7 @@ namespace rsx
+ 		// Error. Should reset the queue
+ 		fifo_ctrl->set_get(restore_point);
+ 		fifo_ret_addr = saved_fifo_ret;
+-		std::this_thread::sleep_for(2ms);
++		CHIMERA_SLEEP_FOR(2ms);
+ 		fifo_ctrl->abort();
+ 
+ 		if (std::exchange(in_begin_end, false) && !rsx::method_registers.current_draw_clause.empty())
+@@ -2915,7 +2921,7 @@ namespace rsx
+ 			// TODO: Determine best value for yield delay
+ 			else if (remaining >= host_min_quantum / 2)
+ 			{
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 			}
+ 			else
+ 			{
+diff --git a/rpcs3/Emu/System.cpp b/rpcs3/Emu/System.cpp
+index 1e69601d0..2b898ea8a 100644
+--- a/rpcs3/Emu/System.cpp
++++ b/rpcs3/Emu/System.cpp
+@@ -2966,7 +2966,7 @@ void Emulator::FinalizeRunRequest()
+ 		{
+ 			thread_base::set_name("Close Home Menu");
+ 
+-			std::this_thread::sleep_for(2s);
++			CHIMERA_SLEEP_FOR(2s);
+ 
+ 			CallFromMainThread([this]()
+ 			{
+@@ -3617,7 +3617,7 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
+ 	{
+ 		// Notify progress dialog that we are going to stop emulation
+ 		g_system_progress_stopping = continuous_savestate_mode ? system_progress_stop_state::stop_state_continuous_savestate : system_progress_stop_state::stop_state_stopping;
+-		std::this_thread::sleep_for(30ms); // Enough for one frame to be rendered
++		CHIMERA_SLEEP_FOR(30ms); // Enough for one frame to be rendered
+ 	}
+ 
+ 	// Signal threads
+diff --git a/rpcs3/Emu/VFS.cpp b/rpcs3/Emu/VFS.cpp
+index 46a417ee6..fb57ec276 100644
+--- a/rpcs3/Emu/VFS.cpp
++++ b/rpcs3/Emu/VFS.cpp
+@@ -1000,7 +1000,7 @@ bool vfs::host::rename(const std::string& from, const std::string& to, const lv2
+ 
+ 	bool res = false;
+ 
+-	for (;; std::this_thread::yield())
++	for (;; CHIMERA_YIELD())
+ 	{
+ 		if (fs::rename(from, to, overwrite))
+ 		{
+diff --git a/rpcs3/Emu/system_utils.cpp b/rpcs3/Emu/system_utils.cpp
+index 5450d2e2c..5a37e6760 100644
+--- a/rpcs3/Emu/system_utils.cpp
++++ b/rpcs3/Emu/system_utils.cpp
+@@ -88,7 +88,7 @@ namespace rpcs3::utils
+ 		});
+ 
+ 		// Wait for the completion
+-		while (std::this_thread::sleep_for(5ms), worker <= thread_state::aborting)
++		while (CHIMERA_SLEEP_FOR(5ms), worker <= thread_state::aborting)
+ 		{
+ 			// TODO: update unified progress dialog
+ 			const int pval = reader[0].get_progress(100);
+diff --git a/rpcs3/Loader/TAR.cpp b/rpcs3/Loader/TAR.cpp
+index f3ea2970b..556ed9a55 100644
+--- a/rpcs3/Loader/TAR.cpp
++++ b/rpcs3/Loader/TAR.cpp
+@@ -369,7 +369,7 @@ bool tar_object::extract(const std::string& prefix_path, bool is_vfs)
+ 
+ 					while (filedata_read_pos == filedata_write_pos)
+ 					{
+-						std::this_thread::yield();
++						CHIMERA_YIELD();
+ 					}
+ 
+ 					const auto data_span = get_span_at(filedata_write_pos);
+diff --git a/rpcs3/util/asm.hpp b/rpcs3/util/asm.hpp
+index da7326a09..42f7bad9d 100644
+--- a/rpcs3/util/asm.hpp
++++ b/rpcs3/util/asm.hpp
+@@ -210,6 +210,11 @@ namespace utils
+ 		
+ 	inline void busy_wait(u64 cycles = 3000)
+ 	{
++#ifdef CHIMERA_CORE
++		// cycles at 3.2 GHz, and the spin gives way
++		vsched_yield(cycles * 5 / 16);
++		return;
++#endif
+ #ifdef ARCH_ARM64
+ 		const u64 stop = get_tsc() + ((cycles / 100) * arm_timer_scale);
+ #else
+@@ -324,14 +329,14 @@ namespace utils
+ 		}
+ 		else
+ 		{
+-			std::this_thread::yield();
++			CHIMERA_YIELD();
+ 		}
+ #else
+ 		(void)addr;
+ 		(void)old_value;
+ 		(void)timeout_us;
+ 
+-		std::this_thread::yield();
++		CHIMERA_YIELD();
+ #endif
+ 	}
+ 
+diff --git a/rpcs3/util/atomic.cpp b/rpcs3/util/atomic.cpp
+index 6a8ae01cc..e87ed2d7c 100644
+--- a/rpcs3/util/atomic.cpp
++++ b/rpcs3/util/atomic.cpp
+@@ -1,3 +1,6 @@
++#ifdef CHIMERA_CORE
++#include "vsched.h"
++#endif
+ #include "atomic.hpp"
+ 
+ #if defined(__linux__) || defined(__APPLE__)
+@@ -888,6 +891,22 @@ FORCE_INLINE auto root_info::slot_search(uptr iptr, F func) noexcept
+ SAFE_BUFFERS(void)
+ atomic_wait_engine::wait(const void* data, u32 old_value, u64 timeout, atomic_wait::info* ext)
+ {
++#ifdef CHIMERA_CORE
++	{
++		vsched_wait_item items[atomic_wait::max_list]{};
++		int n = 0;
++		items[n++] = {data, old_value};
++		if (ext)
++		{
++			for (auto e = ext; e->data; e++)
++			{
++				items[n++] = {e->data, e->old};
++			}
++		}
++		vsched_wait(items, n, timeout);
++		return;
++	}
++#endif
+ 	uint ext_size = 0;
+ 
+ #ifdef __linux__
+@@ -1286,6 +1305,10 @@ void atomic_wait_engine::set_one_time_use_wait_callback(bool(*cb)(u64 progress))
+ 
+ void atomic_wait_engine::notify_one(const void* data)
+ {
++#ifdef CHIMERA_CORE
++	vsched_notify(data, 0);
++	return;
++#endif
+ #ifdef __linux__
+ 	if (has_waitv())
+ 	{
+@@ -1309,6 +1332,10 @@ void atomic_wait_engine::notify_one(const void* data)
+ SAFE_BUFFERS(void)
+ atomic_wait_engine::notify_all(const void* data)
+ {
++#ifdef CHIMERA_CORE
++	vsched_notify(data, 1);
++	return;
++#endif
+ #ifdef __linux__
+ 	if (has_waitv())
+ 	{
+diff --git a/rpcs3/util/logs.cpp b/rpcs3/util/logs.cpp
+index 930cdaad2..a761fc154 100644
+--- a/rpcs3/util/logs.cpp
++++ b/rpcs3/util/logs.cpp
+@@ -500,6 +500,10 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
+ 	SetFileInformationByHandle(m_fout2.get_handle(), FileDispositionInfo, &disp, sizeof(disp));
+ #endif
+ 
++#ifdef CHIMERA_CORE
++	// the machine has no threads of its own: the log flushes as it is written
++	return;
++#endif
+ 	m_writer = std::thread([this]()
+ 	{
+ 		thread_base::set_name("Log Writer");
+@@ -513,7 +517,7 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
+ 			if (bufv % s_log_size)
+ 			{
+ 				// Wait if threads are writing logs
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 				continue;
+ 			}
+ 
+@@ -524,7 +528,7 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
+ 					break;
+ 				}
+ 
+-				std::this_thread::sleep_for(10ms);
++				CHIMERA_SLEEP_FOR(10ms);
+ 			}
+ 		}
+ 	});
+@@ -541,7 +545,9 @@ logs::file_writer::~file_writer()
+ 	file_writer::sync();
+ 
+ 	m_out = -1;
++#ifndef CHIMERA_CORE
+ 	m_writer.join();
++#endif
+ 
+ 	if (m_fout2)
+ 	{
+@@ -658,7 +664,7 @@ void logs::file_writer::log(const char* text, usz size)
+ 			if ((bufv % s_log_size) + size >= s_log_size || bufv % s_log_size)
+ 			{
+ 				// Concurrency limit reached
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 			}
+ 			else if (!m_m.is_free())
+ 			{
+@@ -686,6 +692,11 @@ void logs::file_writer::log(const char* text, usz size)
+ 		}
+ 
+ 		m_buf += (size * s_log_size) - size;
++#ifdef CHIMERA_CORE
++		while (flush(m_buf))
++		{
++		}
++#endif
+ 		break;
+ 	}
+ }
+@@ -705,7 +716,7 @@ void logs::file_writer::sync()
+ 			break;
+ 		}
+ 
+-		std::this_thread::yield();
++		CHIMERA_YIELD();
+ 	}
+ 
+ 	if (thread_ctrl::get_current())
+diff --git a/rpcs3/util/media_utils.cpp b/rpcs3/util/media_utils.cpp
+index 2c3ac5c8a..44fcb72d9 100644
+--- a/rpcs3/util/media_utils.cpp
++++ b/rpcs3/util/media_utils.cpp
+@@ -889,7 +889,7 @@ namespace utils
+ 				// Let's assume this will finish in a timely manner
+ 				while (m_flush && m_running)
+ 				{
+-					std::this_thread::sleep_for(1us);
++					CHIMERA_SLEEP_FOR(1us);
+ 				}
+ 			}
+ 		}
+@@ -908,7 +908,7 @@ namespace utils
+ 				// Let's assume this will finish in a timely manner
+ 				while (m_flush && m_running)
+ 				{
+-					std::this_thread::sleep_for(1ms);
++					CHIMERA_SLEEP_FOR(1ms);
+ 				}
+ 			}
+ 
+diff --git a/rpcs3/util/sysinfo.cpp b/rpcs3/util/sysinfo.cpp
+index fcb34af57..37583d50a 100755
+--- a/rpcs3/util/sysinfo.cpp
++++ b/rpcs3/util/sysinfo.cpp
+@@ -914,6 +914,10 @@ namespace utils
+ 
+ static const bool s_tsc_freq_evaluated = []() -> bool
+ {
++#ifdef CHIMERA_CORE
++	// no rdtsc anywhere: every clock reads virtual time
++	return true;
++#endif
+ 	static const ullong cal_tsc = []() -> ullong
+ 	{
+ #ifdef ARCH_ARM64
+diff --git a/rpcs3/util/tsc.hpp b/rpcs3/util/tsc.hpp
+index 8f65299b9..94f97c032 100644
+--- a/rpcs3/util/tsc.hpp
++++ b/rpcs3/util/tsc.hpp
+@@ -2,6 +2,10 @@
+ 
+ #include "util/types.hpp"
+ 
++#ifdef CHIMERA_CORE
++#include "vsched.h"
++#endif
++
+ #ifdef _M_X64
+ #ifdef _MSC_VER
+ extern "C" u64 __rdtsc();
+@@ -14,7 +18,10 @@ namespace utils
+ {
+ 	inline u64 get_tsc()
+ 	{
+-#if defined(ARCH_ARM64)
++#if defined(CHIMERA_CORE)
++		// virtual time at 3.2 GHz
++		return vsched_now_ns() * 16 / 5;
++#elif defined(ARCH_ARM64)
+ 		u64 r = 0;
+ 		__asm__ volatile("mrs %0, cntvct_el0" : "=r" (r));
+ 		return r;
+diff --git a/rpcs3/util/types.hpp b/rpcs3/util/types.hpp
+index 79c02609d..43cdbcf7c 100644
+--- a/rpcs3/util/types.hpp
++++ b/rpcs3/util/types.hpp
+@@ -1,5 +1,16 @@
+ #pragma once // No BOM and only basic ASCII in this header, or a neko will die
+ 
++// Chimera: the emulator's spin-and-yield and sleep sites go through the
++// virtual-time scheduler (vsched) when built as a core; upstream otherwise.
++#ifdef CHIMERA_CORE
++#include "vsched.h"
++#define CHIMERA_YIELD() vsched_yield_default()
++#define CHIMERA_SLEEP_FOR(d) vsched_sleep(static_cast<unsigned long long>(std::chrono::duration_cast<std::chrono::nanoseconds>(d).count()))
++#else
++#define CHIMERA_YIELD() std::this_thread::yield()
++#define CHIMERA_SLEEP_FOR(d) std::this_thread::sleep_for(d)
++#endif
++
+ #include <cstdint>
+ #include <cstddef>
+ #include <cstring>

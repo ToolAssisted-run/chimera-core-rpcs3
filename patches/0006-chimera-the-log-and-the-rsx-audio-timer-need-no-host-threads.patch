@@ -1,0 +1,187 @@
+diff --git a/rpcs3/Emu/Cell/lv2/sys_rsxaudio.cpp b/rpcs3/Emu/Cell/lv2/sys_rsxaudio.cpp
+index 945fcc4ad..8d3af495e 100644
+--- a/rpcs3/Emu/Cell/lv2/sys_rsxaudio.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_rsxaudio.cpp
+@@ -1,3 +1,6 @@
++#ifdef CHIMERA_CORE
++#include "vsched.h"
++#endif
+ #include "stdafx.h"
+ #include "Emu/Memory/vm.h"
+ #include "Emu/IdManager.h"
+@@ -1999,7 +2002,9 @@ void rsxaudio_periodic_tmr::sched_timer()
+ 		zero_period = false;
+ 	}
+ 
+-#if defined(_WIN32)
++#if defined(CHIMERA_CORE)
++	chimera_deadline = interval ? vsched_now_ns() + interval * 1000 : 0;
++#elif defined(_WIN32)
+ 	if (interval)
+ 	{
+ 		LARGE_INTEGER due_time{};
+@@ -2035,7 +2040,15 @@ void rsxaudio_periodic_tmr::cancel_timer_unlocked()
+ {
+ 	zero_period = false;
+ 
+-#if defined(_WIN32)
++#if defined(CHIMERA_CORE)
++	chimera_deadline = 0;
++	if (in_wait)
++	{
++		chimera_canceled = true;
++		chimera_cancel++;
++		vsched_notify(&chimera_cancel, 1);
++	}
++#elif defined(_WIN32)
+ 	ensure(CancelWaitableTimer(timer_handle));
+ 	if (in_wait)
+ 	{
+@@ -2068,7 +2081,9 @@ void rsxaudio_periodic_tmr::cancel_timer_unlocked()
+ 
+ void rsxaudio_periodic_tmr::reset_cancel_flag()
+ {
+-#if defined(_WIN32)
++#if defined(CHIMERA_CORE)
++	chimera_canceled = false;
++#elif defined(_WIN32)
+ 	ensure(ResetEvent(cancel_event));
+ #elif defined(__linux__)
+ 	u64 tmp_buf{};
+@@ -2082,7 +2097,9 @@ void rsxaudio_periodic_tmr::reset_cancel_flag()
+ 
+ rsxaudio_periodic_tmr::rsxaudio_periodic_tmr()
+ {
+-#if defined(_WIN32)
++#if defined(CHIMERA_CORE)
++	// the timer is virtual time; nothing to create
++#elif defined(_WIN32)
+ 	ensure(cancel_event = CreateEvent(nullptr, false, false, nullptr));
+ 	ensure(timer_handle = CreateWaitableTimer(nullptr, false, nullptr));
+ #elif defined(__linux__)
+@@ -2114,7 +2131,8 @@ rsxaudio_periodic_tmr::rsxaudio_periodic_tmr()
+ 
+ rsxaudio_periodic_tmr::~rsxaudio_periodic_tmr()
+ {
+-#if defined(_WIN32)
++#if defined(CHIMERA_CORE)
++#elif defined(_WIN32)
+ 	CloseHandle(timer_handle);
+ 	CloseHandle(cancel_event);
+ #elif defined(__linux__)
+@@ -2148,7 +2166,24 @@ rsxaudio_periodic_tmr::wait_result rsxaudio_periodic_tmr::wait(const std::functi
+ 		lock.unlock();
+ 		constexpr u8 obj_wait_cnt = 2;
+ 
+-#if defined(_WIN32)
++#if defined(CHIMERA_CORE)
++		for (;;)
++		{
++			const u32 seen = chimera_cancel;
++			if (chimera_canceled)
++			{
++				wait_canceled = true;
++				break;
++			}
++			const u64 now = vsched_now_ns();
++			if (chimera_deadline && now >= chimera_deadline)
++			{
++				break;
++			}
++			vsched_wait_item item{&chimera_cancel, seen};
++			vsched_wait(&item, 1, chimera_deadline ? chimera_deadline - now : VSCHED_INFINITE);
++		}
++#elif defined(_WIN32)
+ 		const HANDLE wait_arr[obj_wait_cnt] = { timer_handle, cancel_event };
+ 		const auto wait_status = WaitForMultipleObjects(obj_wait_cnt, wait_arr, false, INFINITE);
+ 
+diff --git a/rpcs3/Emu/Cell/lv2/sys_rsxaudio.h b/rpcs3/Emu/Cell/lv2/sys_rsxaudio.h
+index 58015352f..ec81a2927 100644
+--- a/rpcs3/Emu/Cell/lv2/sys_rsxaudio.h
++++ b/rpcs3/Emu/Cell/lv2/sys_rsxaudio.h
+@@ -254,7 +254,11 @@ private:
+ 	bool in_wait = false;
+ 	bool zero_period = false;
+ 
+-#if defined(_WIN32)
++#if defined(CHIMERA_CORE)
++	u64 chimera_deadline = 0; // virtual time, 0 = disarmed
++	atomic_t<u32> chimera_cancel{0};
++	bool chimera_canceled = false;
++#elif defined(_WIN32)
+ 	HANDLE cancel_event{};
+ 	HANDLE timer_handle{};
+ #elif defined(__linux__)
+diff --git a/rpcs3/util/logs.cpp b/rpcs3/util/logs.cpp
+index 930cdaad2..a761fc154 100644
+--- a/rpcs3/util/logs.cpp
++++ b/rpcs3/util/logs.cpp
+@@ -500,6 +500,10 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
+ 	SetFileInformationByHandle(m_fout2.get_handle(), FileDispositionInfo, &disp, sizeof(disp));
+ #endif
+ 
++#ifdef CHIMERA_CORE
++	// the machine has no threads of its own: the log flushes as it is written
++	return;
++#endif
+ 	m_writer = std::thread([this]()
+ 	{
+ 		thread_base::set_name("Log Writer");
+@@ -513,7 +517,7 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
+ 			if (bufv % s_log_size)
+ 			{
+ 				// Wait if threads are writing logs
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 				continue;
+ 			}
+ 
+@@ -524,7 +528,7 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
+ 					break;
+ 				}
+ 
+-				std::this_thread::sleep_for(10ms);
++				CHIMERA_SLEEP_FOR(10ms);
+ 			}
+ 		}
+ 	});
+@@ -541,7 +545,9 @@ logs::file_writer::~file_writer()
+ 	file_writer::sync();
+ 
+ 	m_out = -1;
++#ifndef CHIMERA_CORE
+ 	m_writer.join();
++#endif
+ 
+ 	if (m_fout2)
+ 	{
+@@ -658,7 +664,7 @@ void logs::file_writer::log(const char* text, usz size)
+ 			if ((bufv % s_log_size) + size >= s_log_size || bufv % s_log_size)
+ 			{
+ 				// Concurrency limit reached
+-				std::this_thread::yield();
++				CHIMERA_YIELD();
+ 			}
+ 			else if (!m_m.is_free())
+ 			{
+@@ -686,6 +692,11 @@ void logs::file_writer::log(const char* text, usz size)
+ 		}
+ 
+ 		m_buf += (size * s_log_size) - size;
++#ifdef CHIMERA_CORE
++		while (flush(m_buf))
++		{
++		}
++#endif
+ 		break;
+ 	}
+ }
+@@ -705,7 +716,7 @@ void logs::file_writer::sync()
+ 			break;
+ 		}
+ 
+-		std::this_thread::yield();
++		CHIMERA_YIELD();
+ 	}
+ 
+ 	if (thread_ctrl::get_current())

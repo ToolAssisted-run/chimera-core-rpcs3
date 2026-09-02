@@ -1,0 +1,13 @@
+diff --git a/rpcs3/Emu/RSX/display.h b/rpcs3/Emu/RSX/display.h
+index 191a111e7..0c917195b 100644
+--- a/rpcs3/Emu/RSX/display.h
++++ b/rpcs3/Emu/RSX/display.h
+@@ -30,6 +30,8 @@ using display_handle_t = std::variant<
+ 	std::pair<wl_display*, wl_surface*>
+ #elif defined(ANDROID)
+ 	struct ANativeWindow*
++#elif defined(CHIMERA_CORE)
++	std::monostate // headless: no window system at all
+ #endif
+ >;
+ #endif
