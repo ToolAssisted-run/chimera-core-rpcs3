@@ -101,6 +101,19 @@ ECL_EXPORT void SetGpuBridge(uint64_t addr)
   chimera_rpcs3_install_gpu_bridge(addr);
 }
 
+// miniBox calls this on the faulting thread when a guest instruction hits a
+// page this guest protected; nonzero means retry the access
+ECL_EXPORT int GuestFaultHandler(uint64_t addr, uint64_t is_write)
+{
+  return chimera_rpcs3_on_fault(addr, is_write != 0);
+}
+
+// how many guest faults the renderer handled so far (diagnostic)
+ECL_EXPORT uint64_t GetFaultCount(void)
+{
+  return chimera_rpcs3_fault_count();
+}
+
 ECL_EXPORT int IsGpuActive(void)
 {
   return chimera_rpcs3_gpu_active();

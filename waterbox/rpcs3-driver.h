@@ -57,6 +57,10 @@ void chimera_rpcs3_debug_ppu(void);
 void chimera_rpcs3_set_renderer(const char* name);
 // 1 when the GL renderer is drawing through the bridge
 int chimera_rpcs3_gpu_active(void);
+// a fault on a guest page (address, write?): 1 when the renderer handled it
+int chimera_rpcs3_on_fault(uint64_t addr, int is_write);
+// how many such faults the renderer handled (diagnostic, never machine state)
+uint64_t chimera_rpcs3_fault_count(void);
 
 #ifdef __cplusplus
 }

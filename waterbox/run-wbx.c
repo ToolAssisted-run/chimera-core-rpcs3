@@ -251,6 +251,12 @@ int main(int argc, char **argv)
 			fflush(stdout);
 		}
 	}
+	{
+		u64fn GetFaultCount = (u64fn)proc(h, "GetFaultCount");
+		if (GetFaultCount && GetFaultCount())
+			fprintf(stderr, "page faults served by the renderer: %llu\n", (unsigned long long)GetFaultCount());
+	}
+
 	if (ramOut) {
 		/* the memory domain the frontend sees: the main block, read through
 		 * the host's view of the guest */

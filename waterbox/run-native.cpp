@@ -14,6 +14,8 @@
 
 #include <unistd.h>
 #include <csignal>
+#include <cstring>
+#include <ucontext.h>
 
 #ifdef CHIMERA_GL_BRIDGE
 // the host half of the GPU bridge, in this same binary (waterbox/gl-host.c)
@@ -27,6 +29,17 @@ static void on_alarm(int)
 {
   chimera_rpcs3_debug_ppu();
   _exit(9);
+}
+
+static void on_fault(int, siginfo_t* info, void* uctx)
+{
+  const auto* uc = static_cast<ucontext_t*>(uctx);
+  const int is_write = (uc->uc_mcontext.gregs[REG_ERR] & 2) != 0;
+  if (chimera_rpcs3_on_fault(reinterpret_cast<uint64_t>(info->si_addr), is_write))
+    return;
+  fprintf(stderr, "fault at %p (%s), not the renderer's\n", info->si_addr, is_write ? "write" : "read");
+  chimera_rpcs3_debug_ppu();
+  _exit(11);
 }
 
 static uint64_t fnv(const uint8_t* p, int64_t n)
@@ -122,9 +135,16 @@ int main(int argc, char** argv)
     signal(SIGALRM, on_alarm);
     alarm(atoi(getenv("CHIMERA_ALARM")));
   }
-  // a crash reports the PPU state the same way (the emulator's own handler
-  // is off in this build, patch 0003)
-  signal(SIGSEGV, on_alarm);
+  // a fault on a guest page goes to the renderer's caches first (the
+  // emulator's own handler is off in this build, patch 0003); anything else
+  // reports the PPU state the way the alarm does
+  {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_sigaction = on_fault;
+    sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+    sigaction(SIGSEGV, &sa, nullptr);
+  }
   if (!chimera_rpcs3_init(work, game, firmware, dkey))
   {
     fprintf(stderr, "init failed: %s\n", chimera_rpcs3_error());
@@ -157,6 +177,8 @@ int main(int argc, char** argv)
   }
   if (getenv("CHIMERA_DEBUG"))
     chimera_rpcs3_debug_ppu();
+  if (chimera_rpcs3_fault_count())
+    fprintf(stderr, "page faults served by the renderer: %llu\n", (unsigned long long)chimera_rpcs3_fault_count());
   if (videoOut)
   {
     // the last frame's picture: two little-endian u32 (width, height), then

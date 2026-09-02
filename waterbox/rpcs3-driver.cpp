@@ -21,7 +21,10 @@
 #include "Emu/RSX/GL/GLGSRender.h"
 #endif
 #include "util/video_provider.h"
+#include "Emu/CPU/CPUThread.h"
+#include "Emu/Memory/vm_locking.h"
 extern atomic_t<recording_mode> g_recording_mode;
+namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_violation_handler; }
 #include "Emu/Audio/Null/null_enumerator.h"
 #include "Emu/Io/Null/NullKeyboardHandler.h"
 #include "Emu/Io/Null/NullMouseHandler.h"
@@ -898,4 +901,37 @@ extern "C" void chimera_rpcs3_set_renderer(const char* name)
 extern "C" int chimera_rpcs3_gpu_active(void)
 {
   return s_gpu ? 1 : 0;
+}
+
+// A fault on a guest page: the renderer's caches protect pages of guest memory
+// to learn of CPU writes, and this is how they learn. Natively the runner's
+// SIGSEGV handler calls it; in the sandbox miniBox does (GuestFaultHandler).
+// Mirrors the renderer part of RPCS3's own handle_access_violation.
+static uint64_t g_faults_served;
+
+extern "C" uint64_t chimera_rpcs3_fault_count(void)
+{
+  return g_faults_served;
+}
+
+extern "C" int chimera_rpcs3_on_fault(uint64_t addr, int is_write)
+{
+  const uint64_t base = reinterpret_cast<uint64_t>(vm::g_base_addr);
+  if (addr < base || addr - base >= 0x1'0000'0000ull)
+    return 0;
+  const u32 vaddr = static_cast<u32>(addr - base);
+  if (!rsx::g_access_violation_handler || !vm::check_addr(vaddr))
+    return 0;
+  const auto cpu = get_current_cpu_thread();
+  bool state_changed = false;
+  if (cpu)
+    state_changed = vm::temporary_unlock(*cpu);
+  const bool handled = rsx::g_access_violation_handler(vaddr, is_write != 0);
+  if (state_changed && (cpu->state += cpu_flag::temp, cpu->test_stopped()))
+  {
+    // the thread was asked to stop while it was away; nothing more to do here
+  }
+  if (handled)
+    g_faults_served++;
+  return handled ? 1 : 0;
 }

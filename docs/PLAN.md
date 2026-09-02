@@ -302,10 +302,20 @@ optimisation. No user interface, no networking, no real audio or input devices.
   `gpu:disc`; frontend leg `gpu:frontend` keeps a screenshot. Setting
   `renderer` = null | opengl-hw (default opengl-hw; without a bridge the core
   falls back to null).
-- **Still open after M5**: CPU-write detection for the GL caches (a miniBox
-  guest-fault forwarding feature: on a fault inside the block call a guest
-  handler, the way RPCS3's own signal handler drives `on_access_violation`),
-  Windows end to end, real hardware, LLVM recompilers, RawSPU.
+- **CPU-write detection for the GL caches (2026-09-02)**: miniBox spec v2.1
+  (commit 4a4bb05) forwards faults on pages the guest protected itself to a
+  guest export `GuestFaultHandler(addr, is_write)` on the faulting thread and
+  retries when it returns nonzero; wbx-entry exports it and the driver's
+  `chimera_rpcs3_on_fault` mirrors the renderer part of RPCS3's own
+  `handle_access_violation` (temporary_unlock, `rsx::g_access_violation_handler`).
+  Natively run-native's SIGSEGV handler does the same. So `rsx::mm_protect` and
+  the ZCULL protects are real again (patch 0015 no longer touches them). GTA:
+  1380 faults served in 1800 frames, memory unchanged, the pictures now
+  refresh where the CPU rewrote textures. The gate's gpu:disc leg requires
+  both flavors to serve the same number of faults.
+- **Still open after M5**: Windows end to end (the lazy 20 GiB block, the
+  bridge and the VEH fault path are all cross-compiled only), real hardware,
+  LLVM recompilers, RawSPU.
 
 ## Risks, ranked
 

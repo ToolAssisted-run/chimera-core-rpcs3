@@ -261,11 +261,15 @@ else
 		run_both_gpu gdisc 120 20 "$disc"
 		grep '^frame' "$work/disc-native.txt" | awk '{print $2, $4}' > "$work/gdisc-want.txt"
 		grep '^frame' "$work/gdisc-native.txt" | awk '{print $2, $4}' > "$work/gdisc-got.txt"
+		faults_native="$(sed -n 's/^page faults served by the renderer: //p' "$work/gdisc-native.err")"
+		faults_wbx="$(sed -n 's/^page faults served by the renderer: //p' "$work/gdisc-wbx.err")"
 		if [ -s "$work/gdisc-got.txt" ] && cmp -s "$work/gdisc-want.txt" "$work/gdisc-got.txt"; then
-			if same_both gdisc; then
-				pass "gpu:disc - 120 frames on the GL renderer, memory identical to the null renderer's run, native == sandbox"
-			else
+			if ! same_both gdisc; then
 				failed "gpu:disc - the sandbox's GL run differs from the native GL run (diff $work/gdisc-native.txt $work/gdisc-wbx.txt)"
+			elif [ -z "$faults_native" ] || [ "$have_wbx" = 1 ] && [ "$faults_native" != "$faults_wbx" ]; then
+				failed "gpu:disc - the renderer's page watch served ${faults_native:-0} faults natively and ${faults_wbx:-0} in the sandbox (both must, equally)"
+			else
+				pass "gpu:disc - 120 frames on the GL renderer, memory identical to the null renderer's run, ${faults_native} page faults served by the renderer in each flavor, native == sandbox"
 			fi
 		else
 			failed "gpu:disc - the GL run's memory differs from the null renderer's (diff $work/gdisc-want.txt $work/gdisc-got.txt; $(tail -1 "$work/gdisc-native.err"))"
