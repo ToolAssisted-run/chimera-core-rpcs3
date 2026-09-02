@@ -1,0 +1,40 @@
+diff --git a/Utilities/File.cpp b/Utilities/File.cpp
+index 637921289..9f699c8de 100644
+--- a/Utilities/File.cpp
++++ b/Utilities/File.cpp
+@@ -1665,6 +1665,35 @@ bool fs::copy_file(const std::string& from, const std::string& to, bool overwrit
+ {
+ 	const auto device = get_virtual_device(from);
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: the emulator's whole file tree is a virtual device, so a copy
++	// within it (the trophy installer does one) streams through fs::file
++	if (device && device == get_virtual_device(to))
++	{
++		if (!overwrite && exists(to))
++		{
++			g_tls_error = fs::error::exist;
++			return false;
++		}
++
++		fs::file src(from, fs::read);
++		if (!src)
++		{
++			return false;
++		}
++
++		const std::vector<u8> data = src.to_vector<u8>();
++
++		fs::file dst(to, fs::rewrite);
++		if (!dst)
++		{
++			return false;
++		}
++
++		return dst.write(data.data(), data.size()) == data.size();
++	}
++#endif
++
+ 	if (device != get_virtual_device(to) || device) // TODO
+ 	{
+ 		fmt::throw_exception("fs::copy_file() for virtual devices not implemented.\nFrom: %s\nTo: %s", from, to);

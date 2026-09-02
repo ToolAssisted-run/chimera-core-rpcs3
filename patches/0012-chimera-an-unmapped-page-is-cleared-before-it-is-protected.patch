@@ -1,0 +1,20 @@
+diff --git a/rpcs3/Emu/Memory/vm.cpp b/rpcs3/Emu/Memory/vm.cpp
+index 8209b608d..d12442ed2 100644
+--- a/rpcs3/Emu/Memory/vm.cpp
++++ b/rpcs3/Emu/Memory/vm.cpp
+@@ -1080,8 +1080,15 @@ namespace vm
+ 		}
+ 		else if (!shm)
+ 		{
++#ifdef CHIMERA_CORE
++			// Chimera: the sudo view IS the base view, so clear the pages
++			// before they go away
++			std::memset(g_sudo_addr + addr, 0, size);
++			utils::memory_protect(g_base_addr + addr, size, utils::protection::no);
++#else
+ 			utils::memory_protect(g_base_addr + addr, size, utils::protection::no);
+ 			std::memset(g_sudo_addr + addr, 0, size);
++#endif
+ 		}
+ 		else
+ 		{

@@ -90,6 +90,9 @@ int main(int argc, char** argv)
     signal(SIGALRM, on_alarm);
     alarm(atoi(getenv("CHIMERA_ALARM")));
   }
+  // a crash reports the PPU state the same way (the emulator's own handler
+  // is off in this build, patch 0003)
+  signal(SIGSEGV, on_alarm);
   if (!chimera_rpcs3_init(work, game, firmware, dkey))
   {
     fprintf(stderr, "init failed: %s\n", chimera_rpcs3_error());
