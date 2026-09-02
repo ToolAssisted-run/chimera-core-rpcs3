@@ -51,6 +51,7 @@ typedef void (MB_GUEST_ABI *framefn)(uint64_t);
 typedef uintptr_t (MB_GUEST_ABI *ptrfn)(void);
 typedef uint64_t (MB_GUEST_ABI *u64fn)(void);
 typedef int64_t (MB_GUEST_ABI *i64fn)(void);
+typedef void (MB_GUEST_ABI *btnfn)(int32_t, int32_t);
 
 static uintptr_t proc(mb_host *h, const char *n)
 {
@@ -65,11 +66,19 @@ int main(int argc, char **argv)
 	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL;
 	long frames = 60, report = 10;
 	int rewind = 0, rerecord = 0;
+	struct { long first, count; int index; } press[32];
+	int presses = 0;
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--report") && i + 1 < argc) report = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--tty-out") && i + 1 < argc) ttyOut = argv[++i];
 		else if (!strcmp(argv[i], "--firmware") && i + 1 < argc) firmware = argv[++i];
+		else if (!strcmp(argv[i], "--press") && i + 1 < argc && presses < 32) {
+			long a, b; int c;
+			if (sscanf(argv[++i], "%ld:%ld:%d", &a, &b, &c) == 3) {
+				press[presses].first = a; press[presses].count = b; press[presses].index = c; presses++;
+			}
+		}
 		else if (!strcmp(argv[i], "--rewind")) rewind = 1;
 		else if (!strcmp(argv[i], "--rerecord")) rerecord = 1;
 		else if (!core) core = argv[i];
@@ -127,6 +136,13 @@ int main(int argc, char **argv)
 	intfn GetThreadCount = (intfn)proc(h, "GetThreadCount");
 	u64fn GetMachineTimeNs = (u64fn)proc(h, "GetMachineTimeNs");
 	intfn IsRunning = (intfn)proc(h, "IsRunning");
+	btnfn SetButton = (btnfn)proc(h, "SetButton");
+	intfn InputWasRead = (intfn)proc(h, "InputWasRead");
+	ptrfn GetVideoBgra = (ptrfn)proc(h, "GetVideoBgra");
+	intfn GetVideoWidth = (intfn)proc(h, "GetVideoWidth");
+	intfn GetVideoHeight = (intfn)proc(h, "GetVideoHeight");
+	ptrfn GetAudio = (ptrfn)proc(h, "GetAudio");
+	intfn GetAudioSampleCount = (intfn)proc(h, "GetAudioSampleCount");
 
 	/* seal: the post-boot machine is the savestate baseline */
 	wbx_deactivate_host(h, &r);
@@ -156,7 +172,10 @@ int main(int argc, char **argv)
 		return pass1 == pass2 ? 0 : 1;
 	}
 
+	long lag = 0;
 	for (long f = 1; f <= frames; f++) {
+		for (int pi = 0; pi < presses; pi++)
+			SetButton(press[pi].index, f >= press[pi].first && f < press[pi].first + press[pi].count);
 		if (rerecord) {
 			membuf st = {0};
 			wbx_save_state(h, mem_write, (uintptr_t)&st, &r);
@@ -167,11 +186,16 @@ int main(int argc, char **argv)
 			free(st.b);
 		}
 		FrameAdvance(0);
+		if (!InputWasRead()) lag++;
 		if (f % report == 0 || f == frames) {
 			int64_t tn = GetTtySize();
 			const uint8_t *tty = (const uint8_t *)GetTty();
-			printf("frame %5ld ram %016" PRIx64 " tty %" PRId64 " %016" PRIx64 " threads %d time %" PRIu64 " running %d\n",
-			       f, GetMainMemoryDigest(), tn, fnv(0, tty, (size_t)tn), GetThreadCount(),
+			int vw = GetVideoWidth(), vh = GetVideoHeight(), an = GetAudioSampleCount();
+			const uint8_t *vid = (const uint8_t *)GetVideoBgra();
+			const uint8_t *aud = (const uint8_t *)GetAudio();
+			printf("frame %5ld ram %016" PRIx64 " tty %" PRId64 " %016" PRIx64 " vid %dx%d %016" PRIx64 " aud %d %016" PRIx64 " lag %ld threads %d time %" PRIu64 " running %d\n",
+			       f, GetMainMemoryDigest(), tn, fnv(0, tty, (size_t)tn), vw, vh, fnv(0, vid, (size_t)vw * vh * 4),
+			       an, fnv(0, aud, (size_t)an * 4), lag, GetThreadCount(),
 			       GetMachineTimeNs() / 1000, IsRunning());
 			fflush(stdout);
 		}

@@ -19,6 +19,7 @@ text syntax:
 
 Usage: ppc.py [--base 0x10000] [--entry symbol] in.s out.elf
 """
+import hashlib
 import re
 import struct
 import sys
@@ -31,6 +32,7 @@ class Asm:
         self.out = bytearray()
         self.pc = base
         self.pass_no = 0
+        self.prxparam = None
 
     # ---- expressions -------------------------------------------------
     def val(self, tok):
@@ -153,6 +155,9 @@ class Asm:
         elif mn == "std":
             d, ra = self.mem(a[1])
             self.emit(self.ds_form(62, R(a[0]), ra, d, 0))
+        elif mn == "stdu":
+            d, ra = self.mem(a[1])
+            self.emit(self.ds_form(62, R(a[0]), ra, d, 1))
         elif mn == "lbzx":
             self.emit(self.x_form(R(a[0]), R(a[1]), R(a[2]), 87))
         elif mn == "stbx":
@@ -237,6 +242,19 @@ class Asm:
             self.align(self.val(parts[0]))
         elif d == ".space":
             self.emit_bytes(b"\0" * self.val(parts[0]))
+        elif d == ".nid":
+            # the PS3's function id: the first word of SHA-1(name + suffix)
+            name = args.strip().strip('"')
+            suffix = bytes([0x67, 0x59, 0x65, 0x99, 0x04, 0x25, 0x04, 0x90, 0x56, 0x64, 0x27, 0x49, 0x94, 0x89, 0x74, 0x1A])
+            digest = hashlib.sha1(name.encode() + suffix).digest()
+            self.emit_bytes(struct.pack(">I", struct.unpack("<I", digest[:4])[0]))
+        elif d == ".prxparam":
+            # the PRX parameter block the loader reads from PT_LOOS+2: an
+            # empty export range and the import stub range [start, end)
+            self.align(8)
+            self.prxparam = self.pc
+            start, end = self.val(parts[0]), self.val(parts[1])
+            self.emit_bytes(struct.pack(">IIIIIIIIHHI", 0x28, 0x1B434CEC, 1, 0, start, start, start, end, 0, 0, 0))
         elif d == ".opd":
             # a PS3 function descriptor: 32-bit address, 32-bit TOC
             self.align(8)
@@ -275,18 +293,22 @@ class Asm:
         return bytes(self.out)
 
 
-def write_elf(path, base, image, entry):
-    # ELF64 big-endian PPC64 executable: one RWX PT_LOAD, no sections.
+def write_elf(path, base, image, entry, prxparam=None):
+    # ELF64 big-endian PPC64 executable: one RWX PT_LOAD (plus the PRX
+    # parameter segment when the program imports), no sections.
     ehdr_size, phdr_size = 64, 56
-    offset = ehdr_size + phdr_size
+    nph = 2 if prxparam else 1
+    offset = ehdr_size + phdr_size * nph
     # the segment's file offset must be congruent to its vaddr modulo the
     # page size for real loaders; rpcs3 copies bytes, so match anyway
     pad = (base - offset) % 0x10000
     offset += pad
     e_ident = b"\x7fELF" + bytes([2, 2, 1, 0]) + b"\0" * 8
     ehdr = e_ident + struct.pack(">HHIQQQIHHHHHH", 2, 0x15, 1, entry, ehdr_size, 0, 0,
-                                 ehdr_size, phdr_size, 1, 0, 0, 0)
+                                 ehdr_size, phdr_size, nph, 0, 0, 0)
     phdr = struct.pack(">IIQQQQQQ", 1, 7, offset, base, base, len(image), len(image), 0x10000)
+    if prxparam:
+        phdr += struct.pack(">IIQQQQQQ", 0x60000002, 4, offset + (prxparam - base), prxparam, prxparam, 0x28, 0x28, 8)
     with open(path, "wb") as f:
         f.write(ehdr + phdr + b"\0" * pad + image)
 
@@ -306,7 +328,7 @@ def main():
     image = asm.run(open(src).read())
     if entry not in asm.labels:
         raise SystemExit(f"no entry symbol {entry}")
-    write_elf(dst, base, image, asm.labels[entry])
+    write_elf(dst, base, image, asm.labels[entry], asm.prxparam)
     print(f"{dst}: {len(image)} bytes at {base:#x}, entry {asm.labels[entry]:#x}")
 
 

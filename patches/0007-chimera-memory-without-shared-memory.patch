@@ -72,7 +72,7 @@ index d2b9e21cd..79a61fed2 100644
  	, lv2_id(ar)
  	, spu_tname(make_single<std::string>(ar.operator std::string()))
 diff --git a/rpcs3/Emu/Memory/vm.cpp b/rpcs3/Emu/Memory/vm.cpp
-index aeed9d051..a36c0c2c8 100644
+index aeed9d051..5fe48f095 100644
 --- a/rpcs3/Emu/Memory/vm.cpp
 +++ b/rpcs3/Emu/Memory/vm.cpp
 @@ -24,6 +24,10 @@ LOG_CHANNEL(vm_log, "VM");
@@ -208,7 +208,7 @@ index aeed9d051..a36c0c2c8 100644
  		}
  	}
  
-@@ -2268,10 +2326,16 @@ namespace vm
+@@ -2268,9 +2326,15 @@ namespace vm
  		}
  
  		utils::memory_decommit(g_exec_addr, 0x200000000);
@@ -218,13 +218,13 @@ index aeed9d051..a36c0c2c8 100644
  		utils::memory_decommit(g_stat_addr, 0x100000000);
 +#endif
  
- #ifdef _WIN32
-+#ifndef CHIMERA_CORE
+-#ifdef _WIN32
++#if defined(CHIMERA_CORE)
++		// Chimera: the hook area is dead code and one page; nothing to release
++#elif defined(_WIN32)
  		s_hook.unmap(g_hook_addr);
-+#endif
  		ensure(utils::memory_reserve(0x800000000, g_hook_addr));
  #else
- 		utils::memory_decommit(g_hook_addr, 0x800000000);
 diff --git a/rpcs3/util/vm_native.cpp b/rpcs3/util/vm_native.cpp
 index 5b5c7746f..9073f7105 100644
 --- a/rpcs3/util/vm_native.cpp

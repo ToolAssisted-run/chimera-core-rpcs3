@@ -1028,7 +1028,7 @@ index a626995ce..87918b945 100644
  		if (get_index<T>(last) >= T::id_count)
  		{
 diff --git a/rpcs3/Emu/Memory/vm.cpp b/rpcs3/Emu/Memory/vm.cpp
-index a36c0c2c8..241d0e255 100644
+index 5fe48f095..32aceacae 100644
 --- a/rpcs3/Emu/Memory/vm.cpp
 +++ b/rpcs3/Emu/Memory/vm.cpp
 @@ -102,7 +102,8 @@ namespace vm

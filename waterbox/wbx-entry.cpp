@@ -79,9 +79,61 @@ ECL_EXPORT void FrameAdvance(uint64_t /*input*/)
   chimera_rpcs3_frame();
 }
 
+// 7 ports x 17 buttons, 7 ports x 4 axes, in the driver's wire order
+ECL_EXPORT int IsButtonActive(int32_t index)
+{
+  return index >= 0 && index < 7 * 17 && chimera_rpcs3_port_present(index / 17);
+}
+
+ECL_EXPORT int IsAxisActive(int32_t index)
+{
+  return index >= 0 && index < 7 * 4 && chimera_rpcs3_port_present(index / 4);
+}
+
+ECL_EXPORT void SetButton(int32_t index, int32_t state)
+{
+  chimera_rpcs3_set_button(index / 17, index % 17, state);
+}
+
+ECL_EXPORT void SetAxis(int32_t index, int32_t value)
+{
+  // the frontend's signed axis (-128..127) onto the pad's byte
+  chimera_rpcs3_set_axis(index / 4, index % 4, value + 128);
+}
+
 ECL_EXPORT int InputWasRead(void)
 {
-  return 1;
+  return chimera_rpcs3_input_was_read();
+}
+
+static int g_vw, g_vh, g_an;
+
+ECL_EXPORT uint32_t* GetVideoBgra(void)
+{
+  return const_cast<uint32_t*>(chimera_rpcs3_video(&g_vw, &g_vh));
+}
+
+ECL_EXPORT int GetVideoWidth(void)
+{
+  chimera_rpcs3_video(&g_vw, &g_vh);
+  return g_vw;
+}
+
+ECL_EXPORT int GetVideoHeight(void)
+{
+  chimera_rpcs3_video(&g_vw, &g_vh);
+  return g_vh;
+}
+
+ECL_EXPORT int16_t* GetAudio(void)
+{
+  return const_cast<int16_t*>(chimera_rpcs3_audio(&g_an));
+}
+
+ECL_EXPORT int GetAudioSampleCount(void)
+{
+  chimera_rpcs3_audio(&g_an);
+  return g_an;
 }
 
 ECL_EXPORT int GetVsyncNumerator(void)

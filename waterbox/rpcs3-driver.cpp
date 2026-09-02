@@ -29,6 +29,11 @@
 #include "Emu/Cell/Modules/cellSaveData.h"
 #include "Emu/Cell/Modules/sceNpTrophy.h"
 #include "Input/pad_thread.h"
+#include "Emu/Io/PadHandler.h"
+#include "Emu/Io/pad_types.h"
+#include "Emu/Cell/Modules/cellPad.h"
+#include "Emu/RSX/RSXThread.h"
+#include "Emu/RSX/rsx_utils.h"
 #include "Loader/PUP.h"
 #include "Loader/TAR.h"
 #include "Crypto/unself.h"
@@ -98,6 +103,99 @@ namespace
     chimera_log.error("%s", what);
   }
 
+  // ---- the frame's input, output and the machine's view of them ----------
+  constexpr int PORTS = 7;
+  constexpr int BUTTONS = 17;  // Up Down Left Right Select Start L3 R3 Triangle Circle Cross Square L1 R1 L2 R2 PS
+  constexpr int AXES = 4;      // LX LY RX RY
+  bool g_port_present[PORTS] = {true, false, false, false, false, false, false};
+  bool g_button[PORTS][BUTTONS];
+  u8 g_axis[PORTS][AXES] = {{128, 128, 128, 128}, {128, 128, 128, 128}, {128, 128, 128, 128}, {128, 128, 128, 128}, {128, 128, 128, 128}, {128, 128, 128, 128}, {128, 128, 128, 128}};
+  bool g_input_read = false;
+
+  // the wire order above as the pad's (offset, keycode) pairs
+  const std::pair<u32, u32> g_button_codes[BUTTONS] = {
+      {CELL_PAD_BTN_OFFSET_DIGITAL1, CELL_PAD_CTRL_UP},       {CELL_PAD_BTN_OFFSET_DIGITAL1, CELL_PAD_CTRL_DOWN},
+      {CELL_PAD_BTN_OFFSET_DIGITAL1, CELL_PAD_CTRL_LEFT},     {CELL_PAD_BTN_OFFSET_DIGITAL1, CELL_PAD_CTRL_RIGHT},
+      {CELL_PAD_BTN_OFFSET_DIGITAL1, CELL_PAD_CTRL_SELECT},   {CELL_PAD_BTN_OFFSET_DIGITAL1, CELL_PAD_CTRL_START},
+      {CELL_PAD_BTN_OFFSET_DIGITAL1, CELL_PAD_CTRL_L3},       {CELL_PAD_BTN_OFFSET_DIGITAL1, CELL_PAD_CTRL_R3},
+      {CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_TRIANGLE}, {CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_CIRCLE},
+      {CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_CROSS},    {CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_SQUARE},
+      {CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_L1},       {CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_R1},
+      {CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_L2},       {CELL_PAD_BTN_OFFSET_DIGITAL2, CELL_PAD_CTRL_R2},
+      {CELL_PAD_BTN_OFFSET_DIGITAL1, CELL_PAD_CTRL_PS},
+  };
+  const u32 g_axis_offsets[AXES] = {CELL_PAD_BTN_OFFSET_ANALOG_LEFT_X, CELL_PAD_BTN_OFFSET_ANALOG_LEFT_Y, CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_X, CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_Y};
+
+  // The core's pad handler: a DualShock 3 per present port whose state is
+  // whatever the frame set. rpcs3's pad thread calls process() every
+  // pad_sleep of machine time; cellPadGetData reads the external lists.
+  class chimera_pad_handler final : public PadHandlerBase
+  {
+  public:
+    chimera_pad_handler() : PadHandlerBase(pad_handler::null)
+    {
+      b_has_pressure_intensity_button = false;
+    }
+    void init_config(cfg_pad* cfg) override
+    {
+      if (cfg)
+        cfg->from_default();
+    }
+    std::vector<pad_list_entry> list_devices() override
+    {
+      return {pad_list_entry("Chimera Pad", false)};
+    }
+    bool bindPadToDevice(std::shared_ptr<Pad> pad) override
+    {
+      const u32 port = pad->m_player_id;
+      if (port >= PORTS || !g_port_present[port])
+        return false;
+      pad->m_port_status = CELL_PAD_STATUS_CONNECTED | CELL_PAD_STATUS_ASSIGN_CHANGES;
+      pad->m_device_capability = CELL_PAD_CAPABILITY_PS3_CONFORMITY | CELL_PAD_CAPABILITY_PRESS_MODE | CELL_PAD_CAPABILITY_HP_ANALOG_STICK | CELL_PAD_CAPABILITY_ACTUATOR | CELL_PAD_CAPABILITY_SENSOR_MODE;
+      pad->m_device_type = CELL_PAD_DEV_TYPE_STANDARD;
+      pad->m_class_type = CELL_PAD_PCLASS_TYPE_STANDARD;
+      pad->m_class_profile = 0;
+      // the pad thread mirrors these into the external lists cellPad reads
+      pad->m_buttons.clear();
+      for (int b = 0; b < BUTTONS; b++)
+        pad->m_buttons.emplace_back(g_button_codes[b].first, std::vector<std::set<u32>>{}, g_button_codes[b].second);
+      for (int a = 0; a < AXES; a++)
+        pad->m_sticks[a] = AnalogStick(g_axis_offsets[a], {}, {});
+      m_pads[port] = pad;
+      return true;
+    }
+    void process() override
+    {
+      connected_devices = 0;
+      for (int port = 0; port < PORTS; port++)
+      {
+        auto& pad = m_pads[port];
+        if (!pad)
+          continue;
+        connected_devices++;
+        for (int b = 0; b < BUTTONS; b++)
+        {
+          pad->m_buttons[b].m_pressed = g_button[port][b];
+          pad->m_buttons[b].m_value = g_button[port][b] ? 255 : 0;
+        }
+        for (int a = 0; a < AXES; a++)
+          pad->m_sticks[a].m_value = g_axis[port][a];
+      }
+    }
+
+  private:
+    std::shared_ptr<Pad> m_pads[PORTS];
+  };
+
+  // ---- audio: mixed blocks by machine time -------------------------------
+  std::vector<s16> g_audio_ring;  // interleaved stereo
+  std::vector<s16> g_audio_frame;
+  u64 g_audio_residue = 0;
+
+  // ---- video: the display buffer at flip ----------------------------------
+  std::vector<u32> g_video;
+  int g_video_w = 0, g_video_h = 0;
+
   // The window the RSX backend presents to: there is none. The null backend
   // never draws, and the bridged GL backend arrives with its milestone.
   class headless_frame final : public GSFrameBase
@@ -112,7 +210,34 @@ namespace
     void delete_context(draw_context_t) override {}
     draw_context_t make_context() override { return nullptr; }
     void set_current(draw_context_t) override {}
-    void flip(draw_context_t, bool) override {}
+    // A flip: the machine's current display buffer (in guest VRAM) becomes
+    // the picture. With the null backend that buffer holds whatever the
+    // program wrote; the bridged GL backend fills it later.
+    void flip(draw_context_t, bool) override
+    {
+      auto* r = rsx::get_current_renderer();
+      if (!r)
+        return;
+      const auto& db = r->display_buffers[r->current_display_buffer];
+      if (!db.valid())
+        return;
+      const u32 w = db.width, h = db.height, pitch = db.pitch ? +db.pitch : w * 4;
+      if (w > 4096 || h > 4096)
+        return;
+      const u32 addr = rsx::get_address(db.offset, CELL_GCM_LOCATION_LOCAL);
+      g_video.assign(static_cast<size_t>(w) * h, 0);
+      for (u32 y = 0; y < h; y++)
+      {
+        const u32 row = addr + y * pitch;
+        if (!vm::check_addr(row, vm::page_readable, w * 4))
+          continue;
+        const be_t<u32>* src = vm::_ptr<be_t<u32>>(row);
+        for (u32 x = 0; x < w; x++)
+          g_video[static_cast<size_t>(y) * w + x] = src[x];  // X8R8G8B8 big-endian word == BGRA little-endian
+      }
+      g_video_w = static_cast<int>(w);
+      g_video_h = static_cast<int>(h);
+    }
     int client_width() override { return 1280; }
     int client_height() override { return 720; }
     f64 client_display_rate() override { return 60.0; }
@@ -343,6 +468,27 @@ namespace
   }
 }  // namespace
 
+std::shared_ptr<PadHandlerBase> Chimera_MakePadHandler()
+{
+  return std::make_shared<chimera_pad_handler>();
+}
+
+void Chimera_PadPolled(u32)
+{
+  g_input_read = true;
+}
+
+void Chimera_AudioBlock(const f32* samples, u32 frames, u32 channels)
+{
+  for (u32 i = 0; i < frames; i++)
+  {
+    const f32 l = samples[i * channels];
+    const f32 rr = channels > 1 ? samples[i * channels + 1] : l;
+    g_audio_ring.push_back(static_cast<s16>(std::clamp(l, -1.0f, 1.0f) * 32767.0f));
+    g_audio_ring.push_back(static_cast<s16>(std::clamp(rr, -1.0f, 1.0f) * 32767.0f));
+  }
+}
+
 extern "C" {
 
 const char* chimera_rpcs3_error(void)
@@ -446,6 +592,7 @@ void chimera_rpcs3_frame(void)
   if (!g_booted)
     return;
   g_frame_index++;
+  g_input_read = false;
   // the vblank thread itself computes start + n * 1000000 / 60 in whole
   // microseconds; the frame ends on that same grid
   const u64 frame_end = g_frame_base_ns + (g_frame_index * 1000000ull / 60) * 1000ull;
@@ -459,6 +606,13 @@ void chimera_rpcs3_frame(void)
     vsched_wait(&item, 1, frame_end - vsched_now_ns());
   }
   run_main_queue();
+  // audio by machine time: 48000 / 60 = 800 frames per vblank (integer),
+  // silence when the machine mixed less
+  const size_t want = 800;
+  g_audio_frame.assign(want * 2, 0);
+  const size_t have = std::min(want * 2, g_audio_ring.size());
+  std::copy(g_audio_ring.begin(), g_audio_ring.begin() + have, g_audio_frame.begin());
+  g_audio_ring.erase(g_audio_ring.begin(), g_audio_ring.begin() + have);
 }
 
 void chimera_rpcs3_shutdown(void)
@@ -555,6 +709,47 @@ uint64_t chimera_rpcs3_machine_time_ns(void)
 int chimera_rpcs3_thread_count(void)
 {
   return vsched_thread_count();
+}
+
+void chimera_rpcs3_set_port(int port, int present)
+{
+  if (port >= 0 && port < PORTS)
+    g_port_present[port] = present != 0;
+}
+
+int chimera_rpcs3_port_present(int port)
+{
+  return port >= 0 && port < PORTS && g_port_present[port];
+}
+
+void chimera_rpcs3_set_button(int port, int index, int state)
+{
+  if (port >= 0 && port < PORTS && index >= 0 && index < BUTTONS)
+    g_button[port][index] = state != 0;
+}
+
+void chimera_rpcs3_set_axis(int port, int index, int value)
+{
+  if (port >= 0 && port < PORTS && index >= 0 && index < AXES)
+    g_axis[port][index] = static_cast<u8>(std::clamp(value, 0, 255));
+}
+
+int chimera_rpcs3_input_was_read(void)
+{
+  return g_input_read ? 1 : 0;
+}
+
+const uint32_t* chimera_rpcs3_video(int* w, int* h)
+{
+  *w = g_video_w;
+  *h = g_video_h;
+  return g_video.data();
+}
+
+const int16_t* chimera_rpcs3_audio(int* frames)
+{
+  *frames = static_cast<int>(g_audio_frame.size() / 2);
+  return g_audio_frame.data();
 }
 
 const char* chimera_rpcs3_firmware_version(void)

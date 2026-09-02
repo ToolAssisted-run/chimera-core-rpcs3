@@ -8,6 +8,9 @@
 #   firmware:lle           with Sony's PUP (tests/roms-local, never committed):
 #                          the firmware installs in the box, liblv2 is LLE, and
 #                          native == sandbox still holds
+#   input:press            padtest.elf (cellPad through the firmware) reports a
+#                          scripted Cross exactly on the pressed frames, in both
+#                          flavors alike; a program that never polls is all lag
 # Run from anywhere; artifacts land in waterbox/work/gate.
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -66,6 +69,33 @@ else
 	fi
 fi
 
+# ---- input:press (needs the firmware too: cellPad is libio) --------------
+padrom="$root/tests/roms/padtest.elf"
+[ -f "$padrom" ] || python3 "$root/tests/asm/ppc.py" "$root/tests/asm/padtest.s" "$padrom" >/dev/null
+if [ ! -f "$pup" ]; then
+	skip "input:press - no firmware (would prove: a scripted press reaches cellPadGetData on the right frames)"
+else
+	"$native" --work "$work/pad" --firmware "$pup" --frames 40 --report 40 --press 10:5:10 --tty-out "$work/pad-native.txt" "$padrom" 2>"$work/pad-native.err" | grep '^frame' > "$work/pad-native-frame.txt"
+	"$wbx" "$core" --firmware "$pup" --frames 40 --report 40 --press 10:5:10 --tty-out "$work/pad-wbx.txt" "$padrom" 2>"$work/pad-wbx.err" | grep '^frame' > "$work/pad-wbx-frame.txt"
+	pressed="$(grep -c ' 00000040 ' "$work/pad-native.txt")"
+	first="$(grep -n ' 00000040 ' "$work/pad-native.txt" | head -1 | cut -d: -f1)"
+	if [ "$pressed" = 5 ] && [ "$first" = 11 ] && grep -q ' lag 0 ' "$work/pad-native-frame.txt"; then
+		if cmp -s "$work/pad-native.txt" "$work/pad-wbx.txt" && cmp -s "$work/pad-native-frame.txt" "$work/pad-wbx-frame.txt"; then
+			pass "input:press - Cross seen on exactly the 5 pressed frames (first at line $first), lag 0, native == sandbox"
+		else
+			failed "input:press - the sandbox's pad trace differs from native (diff $work/pad-native.txt $work/pad-wbx.txt)"
+		fi
+	else
+		failed "input:press - expected 5 pressed lines starting at line 11 with lag 0, got $pressed from line ${first:-none} ($(tail -1 "$work/pad-native-frame.txt"))"
+	fi
+	# a program that never polls the pad is lag on every frame
+	if grep -q ' lag 200 ' "$work/fw-native-frames.txt" 2>/dev/null || grep -q " lag $((frames / 3)) " "$work/fw-native.txt"; then
+		pass "input:lag - a program that never polls counts every frame as lag"
+	else
+		failed "input:lag - lv2test should be all lag ($(tail -1 "$work/fw-native.txt"))"
+	fi
+fi
+
 exit $fail
 fi
 
@@ -105,6 +135,33 @@ else
 		pass "firmware:lle - $(grep '^booted' "$work/fw-native.txt" | sed 's/booted; //'), liblv2 LLE, native == sandbox at $((frames / 3)) frames"
 	else
 		failed "firmware:lle - sandbox differs from native with firmware (diff $work/fw-native.txt $work/fw-wbx.txt)"
+	fi
+fi
+
+# ---- input:press (needs the firmware too: cellPad is libio) --------------
+padrom="$root/tests/roms/padtest.elf"
+[ -f "$padrom" ] || python3 "$root/tests/asm/ppc.py" "$root/tests/asm/padtest.s" "$padrom" >/dev/null
+if [ ! -f "$pup" ]; then
+	skip "input:press - no firmware (would prove: a scripted press reaches cellPadGetData on the right frames)"
+else
+	"$native" --work "$work/pad" --firmware "$pup" --frames 40 --report 40 --press 10:5:10 --tty-out "$work/pad-native.txt" "$padrom" 2>"$work/pad-native.err" | grep '^frame' > "$work/pad-native-frame.txt"
+	"$wbx" "$core" --firmware "$pup" --frames 40 --report 40 --press 10:5:10 --tty-out "$work/pad-wbx.txt" "$padrom" 2>"$work/pad-wbx.err" | grep '^frame' > "$work/pad-wbx-frame.txt"
+	pressed="$(grep -c ' 00000040 ' "$work/pad-native.txt")"
+	first="$(grep -n ' 00000040 ' "$work/pad-native.txt" | head -1 | cut -d: -f1)"
+	if [ "$pressed" = 5 ] && [ "$first" = 11 ] && grep -q ' lag 0 ' "$work/pad-native-frame.txt"; then
+		if cmp -s "$work/pad-native.txt" "$work/pad-wbx.txt" && cmp -s "$work/pad-native-frame.txt" "$work/pad-wbx-frame.txt"; then
+			pass "input:press - Cross seen on exactly the 5 pressed frames (first at line $first), lag 0, native == sandbox"
+		else
+			failed "input:press - the sandbox's pad trace differs from native (diff $work/pad-native.txt $work/pad-wbx.txt)"
+		fi
+	else
+		failed "input:press - expected 5 pressed lines starting at line 11 with lag 0, got $pressed from line ${first:-none} ($(tail -1 "$work/pad-native-frame.txt"))"
+	fi
+	# a program that never polls the pad is lag on every frame
+	if grep -q ' lag 200 ' "$work/fw-native-frames.txt" 2>/dev/null || grep -q " lag $((frames / 3)) " "$work/fw-native.txt"; then
+		pass "input:lag - a program that never polls counts every frame as lag"
+	else
+		failed "input:lag - lv2test should be all lag ($(tail -1 "$work/fw-native.txt"))"
 	fi
 fi
 

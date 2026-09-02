@@ -1,0 +1,52 @@
+diff --git a/rpcs3/Emu/Cell/Modules/cellAudio.cpp b/rpcs3/Emu/Cell/Modules/cellAudio.cpp
+index 557c7ef13..e314ff953 100644
+--- a/rpcs3/Emu/Cell/Modules/cellAudio.cpp
++++ b/rpcs3/Emu/Cell/Modules/cellAudio.cpp
+@@ -307,6 +307,12 @@ void audio_ringbuffer::commit_data(f32* buf, u32 sample_cnt)
+ 	// Downmix if necessary
+ 	AudioBackend::downmix(sample_cnt_in, cfg.audio_channels, cfg.backend_channel_layout, buf, buf);
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: every mixed block goes to the frontend, by machine time
++	extern void Chimera_AudioBlock(const f32* samples, u32 frames, u32 channels);
++	Chimera_AudioBlock(buf, sample_cnt, cfg.backend_ch_cnt);
++#endif
++
+ 	if (cfg.backend->get_convert_to_s16())
+ 	{
+ 		AudioBackend::convert_to_s16(sample_cnt_out, buf, buf);
+diff --git a/rpcs3/Emu/Cell/Modules/cellPad.cpp b/rpcs3/Emu/Cell/Modules/cellPad.cpp
+index da69da434..93bdd7d39 100644
+--- a/rpcs3/Emu/Cell/Modules/cellPad.cpp
++++ b/rpcs3/Emu/Cell/Modules/cellPad.cpp
+@@ -696,6 +696,12 @@ error_code cellPadGetData(u32 port_no, vm::ptr<CellPadData> data)
+ {
+ 	cellPad.trace("cellPadGetData(port_no=%d, data=*0x%x)", port_no, data);
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: a frame in which nobody asked for a pad is a lag frame
++	extern void Chimera_PadPolled(u32 port_no);
++	Chimera_PadPolled(port_no);
++#endif
++
+ 	std::lock_guard lock(pad::g_pad_mutex);
+ 
+ 	auto& config = g_fxo->get<pad_info>();
+diff --git a/rpcs3/Input/pad_thread.cpp b/rpcs3/Input/pad_thread.cpp
+index 599dea14a..58bb69677 100644
+--- a/rpcs3/Input/pad_thread.cpp
++++ b/rpcs3/Input/pad_thread.cpp
+@@ -161,7 +161,13 @@ void pad_thread::Init()
+ #endif
+ 
+ 	// Always have a Null Pad Handler
++#ifdef CHIMERA_CORE
++	// Chimera: the "null" handler is the core's own, fed by the frame's input
++	extern std::shared_ptr<PadHandlerBase> Chimera_MakePadHandler();
++	std::shared_ptr<PadHandlerBase> nullpad = Chimera_MakePadHandler();
++#else
+ 	std::shared_ptr<NullPadHandler> nullpad = std::make_shared<NullPadHandler>();
++#endif
+ 	m_handlers.emplace(pad_handler::null, nullpad);
+ 
+ 	for (u32 i = 0; i < CELL_PAD_MAX_PORT_NUM; i++) // max 7 pads

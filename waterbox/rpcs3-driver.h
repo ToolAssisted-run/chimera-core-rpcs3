@@ -26,6 +26,20 @@ uint64_t chimera_rpcs3_main_memory_digest(void);
 // What the machine wrote to its TTY so far (bytes appended since init).
 const uint8_t* chimera_rpcs3_tty(int64_t* size);
 
+// Input: 7 ports of DualShock 3, buttons in wire order Up Down Left Right
+// Select Start L3 R3 Triangle Circle Cross Square L1 R1 L2 R2 PS (17), axes
+// LX LY RX RY (0..255, 128 centre). A port not present is disconnected.
+void chimera_rpcs3_set_port(int port, int present);
+int chimera_rpcs3_port_present(int port);
+void chimera_rpcs3_set_button(int port, int index, int state);
+void chimera_rpcs3_set_axis(int port, int index, int value);
+// Whether any cellPadGetData happened during the last frame.
+int chimera_rpcs3_input_was_read(void);
+// The picture at the last flip (BGRA), 0x0 before the first.
+const uint32_t* chimera_rpcs3_video(int* w, int* h);
+// The last frame's audio: interleaved stereo s16, 800 frames at 48 kHz.
+const int16_t* chimera_rpcs3_audio(int* frames);
+
 int chimera_rpcs3_vsync_numerator(void);
 int chimera_rpcs3_vsync_denominator(void);
 uint64_t chimera_rpcs3_machine_time_ns(void);

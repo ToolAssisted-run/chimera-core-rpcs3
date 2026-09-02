@@ -40,6 +40,8 @@ int main(int argc, char** argv)
   long report = 10;
   const char* tty_out = nullptr;
   const char* firmware = nullptr;
+  struct { long first, count; int index; } press[32];
+  int presses = 0;
   for (int i = 1; i < argc; i++)
   {
     if (!strcmp(argv[i], "--frames") && i + 1 < argc)
@@ -52,12 +54,30 @@ int main(int argc, char** argv)
       tty_out = argv[++i];
     else if (!strcmp(argv[i], "--firmware") && i + 1 < argc)
       firmware = argv[++i];
+    else if (!strcmp(argv[i], "--ports") && i + 1 < argc)
+    {
+      const char* mask = argv[++i];  // e.g. "1010000": ports 1 and 3
+      for (int pi = 0; pi < 7 && mask[pi]; pi++)
+        chimera_rpcs3_set_port(pi, mask[pi] == '1');
+    }
+    else if (!strcmp(argv[i], "--press") && i + 1 < argc && presses < 32)
+    {
+      long a, b;
+      int c;
+      if (sscanf(argv[++i], "%ld:%ld:%d", &a, &b, &c) == 3)
+      {
+        press[presses].first = a;
+        press[presses].count = b;
+        press[presses].index = c;
+        presses++;
+      }
+    }
     else
       game = argv[i];
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--frames N] [--report N] [--tty-out F] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--frames N] [--report N] [--tty-out F] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -75,15 +95,24 @@ int main(int argc, char** argv)
   printf("booted; threads %d firmware %s\n", chimera_rpcs3_thread_count(), chimera_rpcs3_firmware_version()[0] ? chimera_rpcs3_firmware_version() : "none");
   fflush(stdout);
 
+  long lag = 0;
   for (long f = 1; f <= frames; f++)
   {
+    for (int pi = 0; pi < presses; pi++)
+      chimera_rpcs3_set_button(0, press[pi].index, f >= press[pi].first && f < press[pi].first + press[pi].count);
     chimera_rpcs3_frame();
+    if (!chimera_rpcs3_input_was_read())
+      lag++;
     if (f % report == 0 || f == frames)
     {
       int64_t tn;
       const uint8_t* tty = chimera_rpcs3_tty(&tn);
-      printf("frame %5ld ram %016" PRIx64 " tty %" PRId64 " %016" PRIx64 " threads %d time %" PRIu64 " running %d\n",
-             f, chimera_rpcs3_main_memory_digest(), tn, fnv(tty, tn), chimera_rpcs3_thread_count(),
+      int vw, vh, an;
+      const uint32_t* vid = chimera_rpcs3_video(&vw, &vh);
+      const int16_t* aud = chimera_rpcs3_audio(&an);
+      printf("frame %5ld ram %016" PRIx64 " tty %" PRId64 " %016" PRIx64 " vid %dx%d %016" PRIx64 " aud %d %016" PRIx64 " lag %ld threads %d time %" PRIu64 " running %d\n",
+             f, chimera_rpcs3_main_memory_digest(), tn, fnv(tty, tn), vw, vh, fnv((const uint8_t*)vid, (int64_t)vw * vh * 4),
+             an, fnv((const uint8_t*)aud, (int64_t)an * 4), lag, chimera_rpcs3_thread_count(),
              chimera_rpcs3_machine_time_ns() / 1000, chimera_rpcs3_is_running());
       fflush(stdout);
     }
