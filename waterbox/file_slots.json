@@ -1,0 +1,29 @@
+{
+  "_comment": "The core-declared file form for chimera's project wizard: a PS3 project is one game, either a homebrew executable booted directly or a disc image with its key.",
+  "slots": [
+    {
+      "id": "game",
+      "title": "Game",
+      "min": 1,
+      "max": 1,
+      "formats": [
+        "elf",
+        "self",
+        "bin",
+        "iso"
+      ],
+      "help": "A PS3 executable (.elf, .self, EBOOT.BIN) booted directly the way a modded console would, or a disc image (.iso): a decrypted image, or a Redump image with its disc key in the Disc key slot."
+    },
+    {
+      "id": "dkey",
+      "title": "Disc key",
+      "min": 0,
+      "max": 1,
+      "formats": [
+        "dkey",
+        "key"
+      ],
+      "help": "The 32-character disc key that decrypts a Redump PS3 image (the .dkey file distributed alongside it). Not needed for a decrypted image or a homebrew executable."
+    }
+  ]
+}

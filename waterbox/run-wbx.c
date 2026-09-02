@@ -52,6 +52,8 @@ typedef uintptr_t (MB_GUEST_ABI *ptrfn)(void);
 typedef uint64_t (MB_GUEST_ABI *u64fn)(void);
 typedef int64_t (MB_GUEST_ABI *i64fn)(void);
 typedef void (MB_GUEST_ABI *btnfn)(int32_t, int32_t);
+typedef uintptr_t (MB_GUEST_ABI *ptrfn_i)(int);
+typedef int64_t (MB_GUEST_ABI *i64fn_i)(int);
 
 static uintptr_t proc(mb_host *h, const char *n)
 {
@@ -63,7 +65,7 @@ static uintptr_t proc(mb_host *h, const char *n)
 
 int main(int argc, char **argv)
 {
-	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL;
+	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL, *ramOut = NULL;
 	long frames = 60, report = 10;
 	int rewind = 0, rerecord = 0;
 	struct { long first, count; int index; } press[32];
@@ -73,6 +75,7 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--report") && i + 1 < argc) report = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--tty-out") && i + 1 < argc) ttyOut = argv[++i];
 		else if (!strcmp(argv[i], "--firmware") && i + 1 < argc) firmware = argv[++i];
+		else if (!strcmp(argv[i], "--ram-out") && i + 1 < argc) ramOut = argv[++i];
 		else if (!strcmp(argv[i], "--press") && i + 1 < argc && presses < 32) {
 			long a, b; int c;
 			if (sscanf(argv[++i], "%ld:%ld:%d", &a, &b, &c) == 3) {
@@ -199,6 +202,15 @@ int main(int argc, char **argv)
 			       GetMachineTimeNs() / 1000, IsRunning());
 			fflush(stdout);
 		}
+	}
+	if (ramOut) {
+		/* the memory domain the frontend sees: the main block, read through
+		 * the host's view of the guest */
+		ptrfn_i GetMemoryDomainPtr = (ptrfn_i)proc(h, "GetMemoryDomainPtr");
+		i64fn_i GetMemoryDomainSize = (i64fn_i)proc(h, "GetMemoryDomainSize");
+		const uint8_t *ram = (const uint8_t *)GetMemoryDomainPtr(0);
+		FILE *rf = fopen(ramOut, "wb");
+		if (rf) { fwrite(ram, 1, (size_t)GetMemoryDomainSize(0), rf); fclose(rf); }
 	}
 	if (ttyOut) {
 		int64_t tn = GetTtySize();

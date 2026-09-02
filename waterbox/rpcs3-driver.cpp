@@ -651,6 +651,13 @@ void chimera_rpcs3_read_main_memory(uint32_t offset, uint32_t size, uint8_t* dst
   }
 }
 
+uint8_t* chimera_rpcs3_main_memory_ptr(void)
+{
+  // the main block (0x00010000 for 0x0FFF0000) is mapped whole at init and
+  // stays mapped: a direct view, no copy; the first 64 KiB are never mapped
+  return vm::g_base_addr + 0x10000;
+}
+
 uint64_t chimera_rpcs3_main_memory_digest(void)
 {
   u64 h = 1469598103934665603ULL;

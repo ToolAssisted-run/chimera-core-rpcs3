@@ -146,11 +146,8 @@ ECL_EXPORT int GetVsyncDenominator(void)
   return chimera_rpcs3_vsync_denominator();
 }
 
-// The PS3's main memory as the machine sees it (256 MiB from 0), served
-// through a copy the harness can hash: the flat guest view has unmapped
-// holes and those read as zero.
-static uint8_t* g_ram_copy;
-
+// The PS3's main memory block: 0x00010000 for 0x0FFF0000 bytes, mapped whole
+// at init and never unmapped, so the frontend reads the guest view directly.
 ECL_EXPORT int GetMemoryDomainCount(void)
 {
   return 1;
@@ -163,20 +160,17 @@ ECL_EXPORT const char* GetMemoryDomainName(int)
 
 ECL_EXPORT uint8_t* GetMemoryDomainPtr(int)
 {
-  if (!g_ram_copy)
-    g_ram_copy = (uint8_t*)alloc_invisible(256u << 20);
-  chimera_rpcs3_read_main_memory(0, 256u << 20, g_ram_copy);
-  return g_ram_copy;
+  return chimera_rpcs3_main_memory_ptr();
 }
 
 ECL_EXPORT int64_t GetMemoryDomainSize(int)
 {
-  return 256 << 20;
+  return 0x0FFF0000;
 }
 
 ECL_EXPORT int GetMemoryDomainWritable(int)
 {
-  return 0;
+  return 1;
 }
 
 ECL_EXPORT uint64_t GetMainMemoryDigest(void)

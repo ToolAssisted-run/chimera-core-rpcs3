@@ -222,6 +222,22 @@ optimisation. No user interface, no networking, no real audio or input devices.
   threads. The nine patches are a consecutive series (regenerated from commits
   replayed on a temp branch; per-file diffs had overlapped).
 
+- **M3 DONE (2026-09-02)**: Sony's PUP decrypts into /dev_flash of the memory
+  filesystem before the seal (1.3 s, 194 MB; rpcs3's own pipeline freed from
+  its Qt dialog), liblv2 LLE; the core's pad handler (patch 0010: the pad
+  thread's "null" handler is ours; fill `m_buttons`/`m_sticks`, the thread
+  mirrors them into the external lists cellPad reads), `cellPadGetData` marks
+  the frame polled, `commit_data` hands every mixed block to the driver (800
+  frames per vblank), the RSX flip copies the display buffer from VRAM.
+  `padtest.elf` imports cellPad through the real stub-table shape (PT_LOOS+2
+  PRX param, ppu_prx_module_info, SHA-1 NIDs; the assembler grew `.nid` and
+  `.prxparam`). Gate 7/7 (firmware:lle, input:press, input:lag). Not yet: an
+  audio tone leg and a flip leg need a program that uses cellAudio/cellGcm
+  (the homebrew toolchain waits on host packages; hand-assembly possible).
+  Patch-series rule learned: a later patch may not rewrite an earlier patch's
+  hunk (apply-patches.sh checks each patch alone); fold it by replaying the
+  series in a worktree.
+
 ## Risks, ranked
 
 1. **vsched completeness**: any wait outside the engine (a `std::mutex` contended

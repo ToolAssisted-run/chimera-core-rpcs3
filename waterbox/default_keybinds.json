@@ -1,0 +1,60 @@
+{
+	"_comment": [
+		"Default bindings for the PlayStation 3 Controller this package declares. The frontend",
+		"ships no bindings of its own - a package that declares a controller says how it is",
+		"played by default, and the user's own bindings always win.",
+		"",
+		"The face buttons follow the pad's own geometry: Cross bottom, Circle right, Square",
+		"left, Triangle top. The keyboard arrows drive the d-pad; the left stick takes WASD",
+		"as an analog pair, the right stick IJKL. Shoulders Q/E, triggers 1/3, stick clicks",
+		"R/Y, Select is Backspace, Start is Enter, PS is Home."
+	],
+	"AllTrollers": {
+		"PlayStation 3 Controller": {
+			"P1 Up": "UpArrow, J1 POV1U, X1 DpadUp",
+			"P1 Down": "DownArrow, J1 POV1D, X1 DpadDown",
+			"P1 Left": "LeftArrow, J1 POV1L, X1 DpadLeft",
+			"P1 Right": "RightArrow, J1 POV1R, X1 DpadRight",
+			"P1 Select": "Backspace, J1 B9, X1 Back",
+			"P1 Start": "Enter, J1 B10, X1 Start",
+			"P1 L3": "R, J1 B11, X1 LeftThumb",
+			"P1 R3": "Y, J1 B12, X1 RightThumb",
+			"P1 Triangle": "C, J1 B4, X1 Y",
+			"P1 Circle": "X, J1 B3, X1 B",
+			"P1 Cross": "Z, J1 B2, X1 A",
+			"P1 Square": "V, J1 B1, X1 X",
+			"P1 L1": "Q, J1 B5, X1 LeftShoulder",
+			"P1 R1": "E, J1 B6, X1 RightShoulder",
+			"P1 L2": "1, J1 B7, X1 LeftTrigger",
+			"P1 R2": "3, J1 B8, X1 RightTrigger",
+			"P1 PS": "Home, J1 B13, X1 Guide"
+		}
+	},
+	"AllTrollersAutoFire": {
+		"PlayStation 3 Controller": {}
+	},
+	"AllTrollersAnalog": {
+		"PlayStation 3 Controller": {
+			"P1 Left Stick X": {
+				"Value": "J1 X Axis, X1 LStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P1 Left Stick Y": {
+				"Value": "J1 Y Axis, X1 LStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P1 Right Stick X": {
+				"Value": "J1 Z Axis, X1 RStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P1 Right Stick Y": {
+				"Value": "J1 RotationZ Axis, X1 RStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			}
+		}
+	}
+}

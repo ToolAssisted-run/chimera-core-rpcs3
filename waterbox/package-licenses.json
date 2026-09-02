@@ -1,0 +1,134 @@
+{
+  "package": "rpcs3",
+  "effectiveTerms": "GPL-2.0-only",
+  "commercialUse": "allowed under the GPL",
+  "note": "The built core combines this repository's integration with RPCS3 and is distributed under the GPL-2.0-only, RPCS3's licence. Everything linked travels inside those terms: asmjit is Zlib; ffmpeg (built from source, no assembly) is LGPL-2.1-or-later; zlib is Zlib; zstd is BSD-3-Clause; libpng is the PNG licence; pugixml and yaml-cpp are MIT; SoundTouch is LGPL-2.1; curl is the curl licence; wolfSSL is GPL-2.0-or-later; miniupnpc is BSD-3-Clause; libusb is LGPL-2.1-or-later; protobuf is BSD-3-Clause and its abseil dependency Apache-2.0 (linked upstream by RPCS3 the same way); rtmidi is its own MIT-style licence; glslang is BSD-3-Clause; cubeb is ISC; stb is MIT; Fusion is MIT; unordered_dense is MIT; 7zip (the SDK) is public domain. No firmware and no game is part of this package: the PS3 system software is Sony's, supplied by the user through the firmware channel.",
+  "components": [
+    {
+      "name": "chimera-core-rpcs3 (integration)",
+      "license": "MIT, and RPCS3's terms for patches/",
+      "url": "https://github.com/ToolAssisted-run/chimera-core-rpcs3",
+      "commit": "{selfCommit}",
+      "file": "LICENSE",
+      "sourceUrl": "https://github.com/ToolAssisted-run/chimera-core-rpcs3/archive/{commit}.tar.gz"
+    },
+    {
+      "name": "RPCS3",
+      "license": "GPL-2.0-only",
+      "url": "https://github.com/RPCS3/rpcs3",
+      "commit": "{submodule:extern/rpcs3}",
+      "file": "extern/rpcs3/LICENSE",
+      "sourceUrl": "https://github.com/RPCS3/rpcs3/archive/{commit}.tar.gz"
+    },
+    {
+      "name": "FFmpeg",
+      "license": "LGPL-2.1-or-later",
+      "url": "https://ffmpeg.org",
+      "commit": "{submodule:extern/ffmpeg}",
+      "file": "extern/ffmpeg/COPYING.LGPLv2.1",
+      "sourceUrl": "https://github.com/FFmpeg/FFmpeg/archive/{commit}.tar.gz"
+    },
+    {
+      "name": "asmjit",
+      "license": "Zlib",
+      "url": "https://asmjit.com",
+      "file": "extern/rpcs3/3rdparty/asmjit/asmjit/LICENSE.md"
+    },
+    {
+      "name": "zlib",
+      "license": "Zlib",
+      "url": "https://zlib.net",
+      "file": "extern/rpcs3/3rdparty/zlib/zlib/LICENSE"
+    },
+    {
+      "name": "zstd",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/facebook/zstd",
+      "file": "extern/rpcs3/3rdparty/zstd/zstd/LICENSE"
+    },
+    {
+      "name": "libpng",
+      "license": "PNG",
+      "url": "http://www.libpng.org",
+      "file": "extern/rpcs3/3rdparty/libpng/libpng/LICENSE"
+    },
+    {
+      "name": "pugixml",
+      "license": "MIT",
+      "url": "https://pugixml.org",
+      "file": "extern/rpcs3/3rdparty/pugixml/LICENSE.md"
+    },
+    {
+      "name": "yaml-cpp",
+      "license": "MIT",
+      "url": "https://github.com/jbeder/yaml-cpp",
+      "file": "extern/rpcs3/3rdparty/yaml-cpp/yaml-cpp/LICENSE"
+    },
+    {
+      "name": "SoundTouch",
+      "license": "LGPL-2.1",
+      "url": "https://www.surina.net/soundtouch",
+      "file": "extern/rpcs3/3rdparty/SoundTouch/soundtouch/COPYING.TXT"
+    },
+    {
+      "name": "curl",
+      "license": "curl",
+      "url": "https://curl.se",
+      "file": "extern/rpcs3/3rdparty/curl/curl/COPYING"
+    },
+    {
+      "name": "wolfSSL",
+      "license": "GPL-2.0-or-later",
+      "url": "https://www.wolfssl.com",
+      "file": "extern/rpcs3/3rdparty/wolfssl/wolfssl/COPYING"
+    },
+    {
+      "name": "miniupnpc",
+      "license": "BSD-3-Clause",
+      "url": "https://miniupnp.tuxfamily.org",
+      "file": "extern/rpcs3/3rdparty/miniupnp/miniupnp/miniupnpc/LICENSE"
+    },
+    {
+      "name": "libusb",
+      "license": "LGPL-2.1-or-later",
+      "url": "https://libusb.info",
+      "file": "extern/rpcs3/3rdparty/libusb/libusb/COPYING"
+    },
+    {
+      "name": "protobuf",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/protocolbuffers/protobuf",
+      "file": "extern/rpcs3/3rdparty/protobuf/protobuf/LICENSE"
+    },
+    {
+      "name": "glslang",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/KhronosGroup/glslang",
+      "file": "extern/rpcs3/3rdparty/glslang/glslang/LICENSE.txt"
+    },
+    {
+      "name": "cubeb",
+      "license": "ISC",
+      "url": "https://github.com/mozilla/cubeb",
+      "file": "extern/rpcs3/3rdparty/cubeb/cubeb/LICENSE"
+    },
+    {
+      "name": "rtmidi",
+      "license": "RtMidi",
+      "url": "https://github.com/thestk/rtmidi",
+      "file": "extern/rpcs3/3rdparty/rtmidi/rtmidi/LICENSE"
+    },
+    {
+      "name": "stb",
+      "license": "MIT",
+      "url": "https://github.com/nothings/stb",
+      "file": "extern/rpcs3/3rdparty/stblib/stb/LICENSE"
+    },
+    {
+      "name": "Fusion",
+      "license": "MIT",
+      "url": "https://github.com/xioTechnologies/Fusion",
+      "file": "extern/rpcs3/3rdparty/fusion/fusion/LICENSE.md"
+    }
+  ]
+}

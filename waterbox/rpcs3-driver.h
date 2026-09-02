@@ -21,6 +21,8 @@ void chimera_rpcs3_shutdown(void);
 // PS3 main memory as the machine sees it: 256 MiB from 0x00000000, unmapped
 // pages read as zero. Copies `size` bytes from `offset` into dst.
 void chimera_rpcs3_read_main_memory(uint32_t offset, uint32_t size, uint8_t* dst);
+// The main memory block itself, 0x00010000 for 0x0FFF0000 bytes, always mapped.
+uint8_t* chimera_rpcs3_main_memory_ptr(void);
 // FNV-1a over every mapped page of main memory (cheaper than a copy).
 uint64_t chimera_rpcs3_main_memory_digest(void);
 // What the machine wrote to its TTY so far (bytes appended since init).
