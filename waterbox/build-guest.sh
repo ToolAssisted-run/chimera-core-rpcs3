@@ -6,5 +6,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 . "$here/configure-flags.sh"
 "$here/apply-patches.sh"
-cmake -G Ninja -B "$root/build/guest" -DCMAKE_TOOLCHAIN_FILE="$here/guest-toolchain.cmake" $RPCS3_OPTS "$root/extern/rpcs3"
+# ffmpeg: the guest configure only needs the headers (the static libraries are
+# linked by guest.mk from the musl build of extern/ffmpeg)
+ffmpeg_inc="${CHIMERA_FFMPEG_INCLUDE:-$root/extern/rpcs3/3rdparty/ffmpeg/include}"
+cmake -G Ninja -B "$root/build/guest" -DCMAKE_TOOLCHAIN_FILE="$here/guest-toolchain.cmake" $RPCS3_OPTS -DUSE_SYSTEM_FFMPEG=ON -DFFMPEG_INCLUDE_DIR="$ffmpeg_inc" -DFFMPEG_LIBRARIES=avcodec "$root/extern/rpcs3"
 ninja -C "$root/build/guest" rpcs3_emu Fusion "$@"

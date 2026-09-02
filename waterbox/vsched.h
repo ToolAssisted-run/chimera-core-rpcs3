@@ -80,6 +80,9 @@ void vsched_yield_default(void);
 #define VSCHED_SLOTS 256
 int vsched_slot(void);
 void vsched_register_slot_reset(void (*fn)(int slot));
+// Runs on the exiting thread, before its slot is freed (what a thread_local
+// destructor used to do).
+void vsched_register_thread_exit(void (*fn)(int slot));
 
 // Diagnostics.
 int vsched_thread_count(void);

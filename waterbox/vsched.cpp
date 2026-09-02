@@ -74,6 +74,8 @@ int64_t vsched_budget = BUDGET_PER_SLICE;
 static bool g_slot_used[VSCHED_SLOTS];
 static void (*g_slot_resets[1024])(int);
 static int g_slot_reset_count;
+static void (*g_thread_exits[64])(int);
+static int g_thread_exit_count;
 
 static int take_slot(void)
 {
@@ -258,6 +260,8 @@ void vsched_exit(void)
   vthread* self = g_cur;
   if (self == g_head)
     die("the driver thread tried to exit");
+  for (int i = 0; i < g_thread_exit_count; i++)
+    g_thread_exits[i](self->slot);
   self->state = DEAD;
   g_slot_used[self->slot] = false;
   // unlink
@@ -382,6 +386,13 @@ void vsched_register_slot_reset(void (*fn)(int))
     die("too many thread-local resetters");
   g_slot_resets[g_slot_reset_count++] = fn;
   fn(0);
+}
+
+void vsched_register_thread_exit(void (*fn)(int))
+{
+  if (g_thread_exit_count >= 64)
+    die("too many thread-exit hooks");
+  g_thread_exits[g_thread_exit_count++] = fn;
 }
 
 int vsched_thread_count(void)

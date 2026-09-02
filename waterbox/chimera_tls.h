@@ -42,6 +42,14 @@ struct chimera_tls_registrar
 
 #define CHIMERA_TLS_DECLARE(type, name) extern type name##_slots[VSCHED_SLOTS]
 
+// header-defined (C++17 inline) variables
+#define CHIMERA_TLS_DEFINE_INLINE(type, name, ...) \
+  inline type name##_slots[VSCHED_SLOTS]{}; \
+  inline chimera_tls_registrar name##_tls_registrar([](int s) { name##_slots[s] = type(__VA_ARGS__); })
+
+// the in-class declaration of a static member (define it with CHIMERA_TLS_MEMBER)
+#define CHIMERA_TLS_MEMBER_DECL(type, name) static type name##_slots[VSCHED_SLOTS]
+
 #define CHIMERA_TLS_MEMBER(type, cls, name, ...) \
   type cls::name##_slots[VSCHED_SLOTS]{}; \
   static chimera_tls_registrar cls##_##name##_tls_registrar([](int s) { cls::name##_slots[s] = type(__VA_ARGS__); })
