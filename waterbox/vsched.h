@@ -71,6 +71,16 @@ void vsched_budget_expired(int kind);
 void vsched_rsx_step(void);
 void vsched_yield_default(void);
 
+// Thread-local storage without ELF TLS: every thread owns a slot in
+// [0, VSCHED_SLOTS) for its whole life (slots are reused after exit), and a
+// per-thread variable is an array indexed by the running thread's slot.
+// Resetters registered here run for a slot whenever a thread is born into
+// it (and once for slot 0 at registration), so each thread starts from the
+// variable's initial value. See chimera_tls.h for the macros.
+#define VSCHED_SLOTS 256
+int vsched_slot(void);
+void vsched_register_slot_reset(void (*fn)(int slot));
+
 // Diagnostics.
 int vsched_thread_count(void);
 uint32_t vsched_current_id(void);

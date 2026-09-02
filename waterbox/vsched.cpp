@@ -43,8 +43,11 @@ struct vthread
   uint16_t fcw;
   vsched_entry_fn fn;
   void* arg;
+  int slot;
   vthread* next;  // creation-order ring
 };
+
+
 
 static vthread* g_head;  // first created (the driver)
 static vthread* g_tail;
@@ -66,6 +69,23 @@ int64_t vsched_budget = BUDGET_PER_SLICE;
             (unsigned long long)t->deadline, t->nitems);
   fflush(stderr);
   abort();
+}
+
+static bool g_slot_used[VSCHED_SLOTS];
+static void (*g_slot_resets[1024])(int);
+static int g_slot_reset_count;
+
+static int take_slot(void)
+{
+  for (int i = 0; i < VSCHED_SLOTS; i++)
+    if (!g_slot_used[i])
+    {
+      g_slot_used[i] = true;
+      for (int r = 0; r < g_slot_reset_count; r++)
+        g_slot_resets[r](i);
+      return i;
+    }
+  die("out of thread slots");
 }
 
 static void fpu_save(vthread* t)
@@ -178,6 +198,7 @@ void vsched_init(void)
   t->id = g_next_id++;
   t->state = RUNNABLE;
   t->deadline = VSCHED_INFINITE;
+  t->slot = take_slot();  // slot 0: its resetters already ran at registration
   fpu_save(t);
   g_head = g_tail = g_cur = t;
   g_count = 1;
@@ -207,6 +228,7 @@ int vsched_create(unsigned long* out_pthread, vsched_entry_fn fn, void* arg)
   t->deadline = VSCHED_INFINITE;
   t->fn = fn;
   t->arg = arg;
+  t->slot = take_slot();
   // a new thread starts with the machine's default FPU state, not the
   // creator's (rpcs3 sets rounding per thread anyway)
   t->mxcsr = 0x1f80;
@@ -218,6 +240,7 @@ int vsched_create(unsigned long* out_pthread, vsched_entry_fn fn, void* arg)
   pthread_attr_destroy(&attr);
   if (rc != 0)
   {
+    g_slot_used[t->slot] = false;
     sem_destroy(&t->sem);
     free(t);
     return rc;
@@ -236,6 +259,7 @@ void vsched_exit(void)
   if (self == g_head)
     die("the driver thread tried to exit");
   self->state = DEAD;
+  g_slot_used[self->slot] = false;
   // unlink
   vthread* prev = g_head;
   while (prev->next != self)
@@ -345,6 +369,19 @@ void vsched_budget_expired(int kind)
   uint64_t cost = ((uint64_t)BUDGET_PER_SLICE * q10) >> 10;
   vsched_budget = BUDGET_PER_SLICE;
   vsched_yield(cost);
+}
+
+int vsched_slot(void)
+{
+  return g_cur ? g_cur->slot : 0;
+}
+
+void vsched_register_slot_reset(void (*fn)(int))
+{
+  if (g_slot_reset_count >= 1024)
+    die("too many thread-local resetters");
+  g_slot_resets[g_slot_reset_count++] = fn;
+  fn(0);
 }
 
 int vsched_thread_count(void)
