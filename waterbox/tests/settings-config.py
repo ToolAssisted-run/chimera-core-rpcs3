@@ -15,7 +15,7 @@ cfg.setdefault("CoreSettings", {})["Chimera.Emulation.Common.Waterbox.WaterboxCo
 if len(sys.argv) > 4:
     fw = cfg.setdefault("CoreFirmware", {})
     for decl_id, path in json.loads(sys.argv[4]).items():
-        fw["Dolphin/" + decl_id] = path
-# Pick this core explicitly: an install can hold several packages claiming the Xbox system, and --core only LOADS a package, it does not choose it.
-cfg.setdefault("DefaultCores", {})["GC"] = "Dolphin"
+        fw["RPCS3/" + decl_id] = path
+# Pick this core explicitly: an install can hold several packages claiming the PS3, and --core only LOADS a package, it does not choose it.
+cfg.setdefault("DefaultCores", {})["PS3"] = "RPCS3"
 json.dump(cfg, open(sys.argv[2], "w"), indent=2)

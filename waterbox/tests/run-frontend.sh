@@ -116,7 +116,7 @@ reference_ram() {
 	head -c "$SLICE" "$work/ref.$tag.ram.full" > "$work/ref.$tag.ram.bin"
 }
 
-settings_config() { python3 "$here/settings-config.py" "$config" "$1" "$2" "{}"; }
+settings_config() { python3 "$here/settings-config.py" "$config" "$1" "$2" "${3:-{\}}"; }
 
 # --- 1. lv2test through the frontend: RAM == the sandbox reference ---------
 if ! reference_ram "base" "$game"; then
@@ -131,8 +131,35 @@ else
 	report "game:frontend" PASS "$frames frames of lv2test, main memory identical to the sandbox reference"
 fi
 
-# --- 2. a disc through the frontend: waits for a disc image with its key ----
-report "disc:frontend" SKIP "no decrypted or keyed disc in tests/roms-local"
+# --- 2. a disc through the frontend -----------------------------------------
+# A decrypted disc image in tests/roms-local (the user's, never committed)
+# boots through Chimera with the firmware resolved the way the Firmware
+# window stores it (keyed by core name and declaration id), and its main
+# memory after a fixed number of frames is the sandbox reference's.
+for f in "$root"/tests/roms-local/*.iso; do
+	[ -f "$f" ] && { disc="$f"; break; }
+done
+pup="$root/tests/roms-local/PS3UPDAT.PUP"
+dframes=120
+if [ -z "$disc" ] || [ ! -f "$pup" ]; then
+	report "disc:frontend" SKIP "needs a decrypted .iso and PS3UPDAT.PUP in tests/roms-local"
+else
+	firmware_json="$(python3 -c "import json,sys; print(json.dumps({'PS3UPDAT.PUP': sys.argv[1]}))" "$pup")"
+	settings_config "$work/config.disc.ini" '{}' "$firmware_json"
+	if ! env -u LD_LIBRARY_PATH timeout 900 "$runwbx" "$wbx" --firmware "$pup" \
+		--frames "$dframes" --report "$dframes" --ram-out "$work/ref.disc.ram.full" \
+		"$disc" > "$work/ref.disc.log" 2>&1; then
+		report "disc:frontend" FAIL "reference runner error (see tests/work/ref.disc.log)"
+	elif ! head -c "$SLICE" "$work/ref.disc.ram.full" > "$work/ref.disc.ram.bin"; then
+		report "disc:frontend" FAIL "no reference memory"
+	elif ! run_frontend "disc" "$work/config.disc.ini" "$dframes" "$work/disc.png" "$disc"; then
+		report "disc:frontend" FAIL "no OK meta (see tests/work/disc.log)"
+	elif ! cmp -s "$work/ref.disc.ram.bin" "$work/disc.ram.bin"; then
+		report "disc:frontend" FAIL "main memory differs from the sandbox reference"
+	else
+		report "disc:frontend" PASS "$dframes frames of $(basename "$disc" | cut -c1-30), main memory identical to the sandbox reference"
+	fi
+fi
 
 # --- 4. the package's bindings became the frontend's defaults ---------------
 if out="$(python3 "$here/check-keybinds.py" "$config" "$wb/default_keybinds.json" "PlayStation 3 Controller" 2>&1)"; then

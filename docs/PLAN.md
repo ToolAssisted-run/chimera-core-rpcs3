@@ -256,8 +256,8 @@ optimisation. No user interface, no networking, no real audio or input devices.
   `disc:boot`). Three patches the game found: 0011 cross-thread spins yield
   (rsx pause handshake, timestamp wait, SPU exit wait, vm cpu-flag wait,
   overlay join: a host spin never lets the other thread run under vsched),
-  0012 an unmapped page is cleared before it loses access (sudo view == base
-  view), 0013 copy_file within the memory filesystem (the trophy installer).
+  0012 an unmapped page is cleared and stays readable (the frontend reads main
+  memory as one plain buffer; a no-access page inside it faulted the frontend), 0013 copy_file within the memory filesystem (the trophy installer).
   The dkey slot rides as `game/<stem>.dkey` for encrypted discs. Encrypted
   discs need their Redump key; nothing else is missing.
 - **Audio and video proven (2026-09-02)**: PSL1GHT toolchain built in

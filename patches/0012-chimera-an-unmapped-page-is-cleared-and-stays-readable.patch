@@ -1,5 +1,5 @@
 diff --git a/rpcs3/Emu/Memory/vm.cpp b/rpcs3/Emu/Memory/vm.cpp
-index 8209b608d..d12442ed2 100644
+index 8209b608d..2ec940c08 100644
 --- a/rpcs3/Emu/Memory/vm.cpp
 +++ b/rpcs3/Emu/Memory/vm.cpp
 @@ -1080,8 +1080,15 @@ namespace vm
@@ -7,10 +7,10 @@ index 8209b608d..d12442ed2 100644
  		else if (!shm)
  		{
 +#ifdef CHIMERA_CORE
-+			// Chimera: the sudo view IS the base view, so clear the pages
-+			// before they go away
++			// Chimera: pages are uniformly RW (patch 0007: no mirror, and the
++			// frontend reads main memory as one plain buffer), so an unmapped
++			// page is cleared and stays where it is; g_pages says it is gone
 +			std::memset(g_sudo_addr + addr, 0, size);
-+			utils::memory_protect(g_base_addr + addr, size, utils::protection::no);
 +#else
  			utils::memory_protect(g_base_addr + addr, size, utils::protection::no);
  			std::memset(g_sudo_addr + addr, 0, size);
