@@ -23,7 +23,13 @@
 #include "util/video_provider.h"
 #include "Emu/CPU/CPUThread.h"
 #include "Emu/Memory/vm_locking.h"
+#include "Emu/system_progress.hpp"
+#include "Emu/VFS.h"
+#include "Utilities/Thread.h"
 extern atomic_t<recording_mode> g_recording_mode;
+u32 g_chimera_precompile_index = 0, g_chimera_precompile_count = 0, g_chimera_precompile_done = 0, g_chimera_precompile_total = 0, g_chimera_precompile_parts_done = 0, g_chimera_precompile_parts_total = 0;
+void chimera_ppu_precompile(std::vector<std::string>& dir_queue);
+extern void ppu_initialize();
 namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_violation_handler; }
 #include "Emu/Audio/Null/null_enumerator.h"
 #include "Emu/Io/Null/NullKeyboardHandler.h"
@@ -211,6 +217,12 @@ namespace
   bool s_gpu = false;
   char s_spu_decoder[16] = "asmjit";
   char s_ppu_decoder[16] = "interpreter";
+  // a precompile session: boot, compile every Nth module of the sweep, stop
+  int s_precompile_index = 0, s_precompile_count = 0;
+  bool s_precompile_firmware = true;
+  std::atomic<bool> s_precompile_done{false};
+  // one of the emulator's own threads: those go through the scheduler
+  std::unique_ptr<named_thread<std::function<void()>>> s_precompile_thread;
   extern "C" int chimera_rpcs3_gpu_bridge_present(void) __attribute__((weak));
   // the native reference's renderer calls the driver directly and must bind
   // the host context on its own thread; the guest resolves this to null (the
@@ -725,6 +737,31 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     fail(fmt::format("boot did not reach the ready state (state %d)", static_cast<int>(Emu.GetStatus(false))));
     return 0;
   }
+  if (s_precompile_count > 0)
+  {
+    // A precompile session: no run. Every worker compiles its share of the
+    // parts of the main executable and the modules it loaded (patch 0019:
+    // the part's name decides whose it is), then sweeps the game's
+    // directories (and the firmware's libraries) for every Nth file. Compiled objects reach the host through
+    // the cache bridge as they finish; the driver thread pumps meanwhile.
+    g_chimera_precompile_index = static_cast<u32>(s_precompile_index);
+    g_chimera_precompile_count = static_cast<u32>(s_precompile_count);
+    s_precompile_thread = std::make_unique<named_thread<std::function<void()>>>("Chimera Precompile"sv, []()
+    {
+      // every worker analyses and compiles its share of the parts of the
+      // main executable and the modules it loaded (the part's name decides)
+      ppu_initialize();
+      std::vector<std::string> dirs;
+      for (const std::string& d : Emu.GetGameDirs())
+        dirs.emplace_back(d);
+      if (s_precompile_firmware)
+        dirs.emplace_back(vfs::get("/dev_flash/sys/external/"));
+      chimera_ppu_precompile(dirs);
+      s_precompile_done = true;
+    });
+    g_booted = true;
+    return 1;
+  }
   Emu.Run(true);
   run_main_queue();
   g_booted = true;
@@ -766,6 +803,7 @@ void chimera_rpcs3_shutdown(void)
   if (!g_booted)
     return;
   g_booted = false;
+  s_precompile_thread.reset();  // joins
   Emu.Kill(false);
   // the emulator's own join thread tears the machine down and hands the
   // final step back to the driver thread as a task: pump until stopped
@@ -1056,4 +1094,27 @@ void Chimera_CacheStore(const std::string& path)
   args.size = data.size();
   if (g_cache_bridge(CACHE_OP_STORE, reinterpret_cast<uint64_t>(&args), 0, 0, 0, 0))
     g_cache_stored++;
+}
+
+// ---- precompile sessions -------------------------------------------------
+extern "C" void chimera_rpcs3_set_precompile(int index, int count, int firmware_too)
+{
+  s_precompile_index = index;
+  s_precompile_count = count;
+  s_precompile_firmware = firmware_too != 0;
+}
+
+extern "C" int chimera_rpcs3_precompile_done(void)
+{
+  return s_precompile_done ? 1 : 0;
+}
+
+// files of the sweep done and in total, for a progress line
+extern "C" void chimera_rpcs3_precompile_progress(uint32_t* done, uint32_t* total)
+{
+  // the parts every module compiles as: what takes the time, whether the
+  // module was loaded by the executable or found by the sweep. A part left
+  // to another worker counts as done here, so every worker's bar fills.
+  *done = g_chimera_precompile_parts_done;
+  *total = g_chimera_precompile_parts_total;
 }

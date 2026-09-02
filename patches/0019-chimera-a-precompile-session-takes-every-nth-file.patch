@@ -1,0 +1,126 @@
+diff --git a/rpcs3/Emu/Cell/PPUThread.cpp b/rpcs3/Emu/Cell/PPUThread.cpp
+index 844f3e3bf..c49f908a9 100644
+--- a/rpcs3/Emu/Cell/PPUThread.cpp
++++ b/rpcs3/Emu/Cell/PPUThread.cpp
+@@ -4337,6 +4337,27 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+ 		}
+ 	}
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: a precompile session may be one of several running side by
++	// side, each taking every Nth file of the same deterministic queue
++	extern u32 g_chimera_precompile_index, g_chimera_precompile_count;
++	if (g_chimera_precompile_count > 1)
++	{
++		decltype(file_queue) mine;
++		for (usz i = 0; i < file_queue.size(); i++)
++		{
++			if (i % g_chimera_precompile_count == g_chimera_precompile_index)
++				mine.emplace_back(std::move(file_queue[i]));
++		}
++		file_queue = std::move(mine);
++	}
++#endif
++#ifdef CHIMERA_CORE
++	{
++		extern u32 g_chimera_precompile_total;
++		g_chimera_precompile_total += ::size32(file_queue);
++	}
++#endif
+ 	g_progr_ftotal += ::size32(file_queue);
+ 
+ 	u64 total_files_size = 0;
+@@ -4632,6 +4653,12 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+ 
+ 	// Join every thread
+ 	workers.join();
++#ifdef CHIMERA_CORE
++	{
++		extern u32 g_chimera_precompile_done;
++		g_chimera_precompile_done += ::size32(file_queue);
++	}
++#endif
+ 
+ 	named_thread exec_worker("PPU Exec Worker", [&]
+ 	{
+@@ -4763,6 +4790,14 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+ 	exec_worker();
+ }
+ 
++#ifdef CHIMERA_CORE
++// Chimera: the sweep, for a precompile session (no template types at the seam)
++void chimera_ppu_precompile(std::vector<std::string>& dir_queue)
++{
++	ppu_precompile(dir_queue, nullptr, false);
++}
++#endif
++
+ extern void ppu_initialize()
+ {
+ 	if (!g_fxo->is_init<main_ppu_module<lv2_obj>>())
+@@ -4913,6 +4948,14 @@ extern void ppu_initialize()
+ 
+ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_size)
+ {
++#ifdef CHIMERA_CORE
++	// Chimera: one more module a precompile session's progress counts
++	{
++		extern u32 g_chimera_precompile_total;
++		if (!check_only)
++			g_chimera_precompile_total++;
++	}
++#endif
+ 	ppu_log.notice("Entering ppu_initialize(const ppu_module&..)");
+ 
+ 	struct log_guard
+@@ -5674,6 +5717,12 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
+ 		atomic_t<u64> work_done = 0;
+ 
+ 		// Update progress dialog
++#ifdef CHIMERA_CORE
++		{
++			extern u32 g_chimera_precompile_parts_total;
++			g_chimera_precompile_parts_total += ::size32(workload);
++		}
++#endif
+ 		g_progr_ptotal += ::size32(workload);
+ 
+ 		*progress_dialog = get_localized_string(localized_string_id::PROGRESS_DIALOG_COMPILING_PPU_MODULES);
+@@ -5745,6 +5794,18 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
+ 					// Keep allocating workload
+ 					const auto& [obj_name, part] = std::as_const(workload)[i];
+ 
++#ifdef CHIMERA_CORE
++					// Chimera: a precompile session is one of several; the part's
++					// name decides whose it is, whatever the others already stored
++					{
++						extern u32 g_chimera_precompile_index, g_chimera_precompile_count, g_chimera_precompile_parts_done;
++						g_chimera_precompile_parts_done++;
++						if (g_chimera_precompile_count > 1 && std::hash<std::string>{}(obj_name) % g_chimera_precompile_count != g_chimera_precompile_index)
++						{
++							continue;
++						}
++					}
++#endif
+ 					ppu_log.warning("LLVM: Compiling module %s%s", cache_path, obj_name);
+ 
+ 					{
+@@ -5807,6 +5868,18 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
+ 		
+ 		thread_ctrl::set_name(old_name);
+ 		g_watchdog_hold_ctr--;
++
++#ifdef CHIMERA_CORE
++		// Chimera: a precompile session compiles and stores; it never loads
++		{
++			extern u32 g_chimera_precompile_count, g_chimera_precompile_done;
++			g_chimera_precompile_done++;
++			if (g_chimera_precompile_count > 0)
++			{
++				return compiled_new;
++			}
++		}
++#endif
+ 	}
+ 
+ 	// Initialize compiler instance

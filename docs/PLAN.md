@@ -381,9 +381,21 @@ optimisation. No user interface, no networking, no real audio or input devices.
   emits endbr64 into JIT code whenever the compiler binary itself was built
   with CET (`#ifdef __CET__` in X86IndirectBranchTracking.cpp), which Ubuntu's
   GCC does by default: the native LLVM is built with -fcf-protection=none so
-  both flavors emit the same bytes. Phase 2: the threaded precompile session
-  (miniBox syscall lock for concurrent guest threads, a compile-only entry
-  point). Phase 3: the frontend dialog.
+  both flavors emit the same bytes. Phase 2 DONE (2026-09-02): NOT threads in one
+  sandbox (guest threads are green threads on one host thread; concurrency
+  would need a miniBox redesign) but N sandboxes side by side, each one
+  compiling its share. Patch 0019: a precompile session (SetPrecompile(index,
+  count, firmware_too) before Init) boots and never runs; every module's parts
+  go to the worker whose index the part's name hashes to (stable whatever the
+  others already stored), the sweep's files to every Nth; a session returns
+  after compiling, before loading; parts done/total drive the progress
+  (GetPrecompileDone/Total, IsPrecompileDone; the runners print "Precompiled
+  D/T modules"). The precompile thread must be one of RPCS3's named threads
+  (a bare std::thread runs beside the scheduler's baton and trips its guard).
+  GTA game scope: 4 workers 130 s wall against 434 s for one, 72 objects
+  split 13/20/21/18, a warm boot fetches all 72; the firmware scope
+  (default) also covers libraries a game loads later. Gate leg
+  cache:precompile. Phase 3: the frontend dialog and the child processes.
 - **Still open after M5**: Windows end to end (the lazy 20 GiB block, the
   bridge and the VEH fault path are all cross-compiled only), real hardware,
   LLVM recompilers, RawSPU.

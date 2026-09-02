@@ -69,6 +69,7 @@ int main(int argc, char** argv)
   const char* dkey = nullptr;
   const char* videoOut = nullptr;
   const char* cacheDir = nullptr;
+  int preIndex = -1, preCount = 0, preFirmware = 1;
   struct { long first, count; int index; } press[32];
   int presses = 0;
   for (int i = 1; i < argc; i++)
@@ -87,6 +88,19 @@ int main(int argc, char** argv)
       dkey = argv[++i];
     else if (!strcmp(argv[i], "--video-out") && i + 1 < argc)
       videoOut = argv[++i];
+    else if (!strcmp(argv[i], "--precompile") && i + 1 < argc)
+    {
+      // INDEX/COUNT[/game]: a precompile session, worker INDEX of COUNT; "game"
+      // limits the sweep to the game's directories (no firmware libraries)
+      const char* spec = argv[++i];
+      if (sscanf(spec, "%d/%d", &preIndex, &preCount) != 2 || preIndex < 0 || preCount < 1 || preIndex >= preCount)
+      {
+        fprintf(stderr, "bad --precompile %s (want INDEX/COUNT)\n", spec);
+        return 2;
+      }
+      preFirmware = strstr(spec, "/game") == nullptr;
+      chimera_rpcs3_set_precompile(preIndex, preCount, preFirmware);
+    }
     else if (!strcmp(argv[i], "--cache") && i + 1 < argc)
     {
       cacheDir = argv[++i];
@@ -139,7 +153,7 @@ int main(int argc, char** argv)
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--video-out F] [--cache DIR] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -168,6 +182,26 @@ int main(int argc, char** argv)
   fflush(stdout);
 
   long lag = 0;
+  if (preCount > 0)
+  {
+    // a precompile session: pump until the sweep is done, one line per change
+    uint32_t last_done = ~0u;
+    while (!chimera_rpcs3_precompile_done())
+    {
+      chimera_rpcs3_frame();
+      uint32_t done = 0, total = 0;
+      chimera_rpcs3_precompile_progress(&done, &total);
+      if (done != last_done)
+      {
+        fprintf(stderr, "Precompiled %u/%u modules\n", done, total);
+        last_done = done;
+      }
+    }
+    uint32_t done = 0, total = 0;
+    chimera_rpcs3_precompile_progress(&done, &total);
+    printf("precompiled %u/%u modules (worker %d of %d)\n", done, total, preIndex, preCount);
+    frames = 0;
+  }
   for (long f = 1; f <= frames; f++)
   {
     for (int pi = 0; pi < presses; pi++)

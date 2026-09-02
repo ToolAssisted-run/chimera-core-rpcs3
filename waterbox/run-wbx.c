@@ -3,7 +3,7 @@
  * digests in run-native's exact format, so the sandboxed build can be
  * diffed against the native reference.
  *
- * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--cache DIR] [--frames N] [--report N] [--tty-out F]
+ * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F]
  *        [--rewind] [--rerecord] <game.elf>
  *
  * The game is mounted under its own basename (extension drives type
@@ -58,6 +58,8 @@ static intptr_t mem_read(uintptr_t ud, uint8_t *d, uintptr_t n)
 
 typedef int (MB_GUEST_ABI *intfn)(void);
 typedef void (MB_GUEST_ABI *setfn_v)(uint64_t);
+typedef void (MB_GUEST_ABI *prefn)(int32_t, int32_t, int32_t);
+typedef uint32_t (MB_GUEST_ABI *u32fn)(void);
 typedef void (MB_GUEST_ABI *framefn)(uint64_t);
 typedef uintptr_t (MB_GUEST_ABI *ptrfn)(void);
 typedef uint64_t (MB_GUEST_ABI *u64fn)(void);
@@ -76,7 +78,7 @@ static uintptr_t proc(mb_host *h, const char *n)
 
 int main(int argc, char **argv)
 {
-	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL, *ramOut = NULL, *dkey = NULL, *settingsJson = NULL, *cacheDir = NULL;
+	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL, *ramOut = NULL, *dkey = NULL, *settingsJson = NULL, *cacheDir = NULL, *preSpec = NULL;
 	long frames = 60, report = 10;
 	int rewind = 0, rerecord = 0;
 	struct { long first, count; int index; } press[32];
@@ -89,6 +91,7 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--dkey") && i + 1 < argc) dkey = argv[++i];
 		else if (!strcmp(argv[i], "--settings") && i + 1 < argc) settingsJson = argv[++i];
 		else if (!strcmp(argv[i], "--cache") && i + 1 < argc) cacheDir = argv[++i];
+		else if (!strcmp(argv[i], "--precompile") && i + 1 < argc) preSpec = argv[++i];
 		else if (!strcmp(argv[i], "--ram-out") && i + 1 < argc) ramOut = argv[++i];
 		else if (!strcmp(argv[i], "--press") && i + 1 < argc && presses < 32) {
 			long a, b; int c;
@@ -102,7 +105,7 @@ int main(int argc, char **argv)
 		else game = argv[i];
 	}
 	if (!core || !game) {
-		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--cache DIR] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] <game.elf>\n");
+		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] <game.elf>\n");
 		return 2;
 	}
 
@@ -195,6 +198,18 @@ int main(int argc, char **argv)
 	}
 #endif
 
+	/* a precompile session: worker INDEX of COUNT, "/game" for the game's
+	 * directories only; set before Init, pumped until done below */
+	int preIndex = -1, preCount = 0;
+	if (preSpec) {
+		if (sscanf(preSpec, "%d/%d", &preIndex, &preCount) != 2 || preIndex < 0 || preCount < 1 || preIndex >= preCount) {
+			fprintf(stderr, "bad --precompile %s (want INDEX/COUNT)\n", preSpec); return 2;
+		}
+		prefn SetPrecompile = (prefn)proc(h, "SetPrecompile");
+		if (!SetPrecompile) { fprintf(stderr, "this core has no precompile session\n"); return 2; }
+		SetPrecompile(preIndex, preCount, strstr(preSpec, "/game") == NULL ? 1 : 0);
+	}
+
 	intfn Init = (intfn)proc(h, "Init");
 	if (Init() != 1) {
 		ptrfn GetLoadError = (ptrfn)proc(h, "GetLoadError");
@@ -246,6 +261,19 @@ int main(int argc, char **argv)
 	}
 
 	long lag = 0;
+	if (preCount > 0) {
+		intfn IsPrecompileDone = (intfn)proc(h, "IsPrecompileDone");
+		u32fn GetDone = (u32fn)proc(h, "GetPrecompileDone");
+		u32fn GetTotal = (u32fn)proc(h, "GetPrecompileTotal");
+		uint32_t last = ~0u;
+		while (!IsPrecompileDone()) {
+			FrameAdvance(0);
+			uint32_t done = GetDone(), total = GetTotal();
+			if (done != last) { fprintf(stderr, "Precompiled %u/%u modules\n", done, total); last = done; }
+		}
+		printf("precompiled %u/%u modules (worker %d of %d)\n", GetDone(), GetTotal(), preIndex, preCount);
+		frames = 0;
+	}
 	for (long f = 1; f <= frames; f++) {
 		for (int pi = 0; pi < presses; pi++)
 			SetButton(press[pi].index, f >= press[pi].first && f < press[pi].first + press[pi].count);

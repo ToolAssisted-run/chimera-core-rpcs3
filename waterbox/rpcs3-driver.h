@@ -69,6 +69,11 @@ uint64_t chimera_rpcs3_fault_count(void);
 void chimera_rpcs3_install_cache_bridge(uint64_t addr);
 uint64_t chimera_rpcs3_cache_fetched(void);
 uint64_t chimera_rpcs3_cache_stored(void);
+// a precompile session (before init): worker index of count; no run, the
+// sweep compiles every Nth module into the cache bridge, then done
+void chimera_rpcs3_set_precompile(int index, int count, int firmware_too);
+int chimera_rpcs3_precompile_done(void);
+void chimera_rpcs3_precompile_progress(uint32_t* done, uint32_t* total);
 
 #ifdef __cplusplus
 }

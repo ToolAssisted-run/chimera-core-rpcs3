@@ -279,6 +279,31 @@ if [ "$have_wbx" = 1 ]; then
 	fi
 fi
 
+# ---- cache:precompile ----------------------------------------------------
+# Two precompile sessions side by side, each taking its share of the parts
+# (game scope: the executable and what it loads at boot), store between them
+# exactly the objects a run compiles for those modules, byte-identical to the
+# native compiler's; a run afterwards fetches them
+if [ "$have_wbx" = 1 ]; then
+	rm -rf "$work/cache-pre"
+	"$wbx" "$core" --firmware "$pup" --settings '{"ppu_decoder":"llvm"}' --cache "$work/cache-pre" --precompile 0/2/game "$rom" > "$work/pre-0.txt" 2>&1 &
+	"$wbx" "$core" --firmware "$pup" --settings '{"ppu_decoder":"llvm"}' --cache "$work/cache-pre" --precompile 1/2/game "$rom" > "$work/pre-1.txt" 2>&1 &
+	wait
+	stored0="$(sed -n 's/^compile cache: \([0-9]*\) stored.*/\1/p' "$work/pre-0.txt")"
+	stored1="$(sed -n 's/^compile cache: \([0-9]*\) stored.*/\1/p' "$work/pre-1.txt")"
+	(cd "$work/cache-pre" 2>/dev/null && find . -type f -exec sha1sum {} \; | sort) > "$work/cache-pre.sha"
+	npre="$(wc -l < "$work/cache-pre.sha")"
+	# every precompiled object is one the native run compiled, byte for byte
+	missing="$(comm -23 "$work/cache-pre.sha" "$work/cache-native.sha" | wc -l)"
+	"$wbx" "$core" --firmware "$pup" --settings '{"ppu_decoder":"llvm"}' --cache "$work/cache-pre" --frames 50 --report 50 "$rom" 2>"$work/pre-warm.err" | grep -c '^frame' > /dev/null
+	fetched="$(sed -n 's/^compile cache: [0-9]* stored, \([0-9]*\) fetched.*/\1/p' "$work/pre-warm.err")"
+	if [ "$npre" -ge 2 ] && [ "$((stored0 + stored1))" = "$npre" ] && [ "$stored0" -ge 1 ] && [ "$stored1" -ge 1 ] && [ "$missing" = 0 ] && [ "${fetched:-0}" = "$npre" ]; then
+		pass "cache:precompile - two sessions stored $stored0 + $stored1 objects of the boot set, all byte-identical to native's, and a run fetched all $npre"
+	else
+		failed "cache:precompile - stored $stored0 + $stored1 (want $npre, both >= 1), $missing not native's, run fetched ${fetched:-0} ($(grep -a 'fatal\|vsched\|unhandled' "$work/pre-0.txt" "$work/pre-1.txt" | head -1 | cut -c1-120))"
+	fi
+fi
+
 # ---- spu:interpreter and spu:asmjit ------------------------------------
 # sputest.elf keeps one SPU thread busy and reports its checksums; the
 # interpreter and the recompiler must produce the same lines (the machine's

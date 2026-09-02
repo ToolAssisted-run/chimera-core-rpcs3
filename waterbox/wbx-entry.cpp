@@ -137,6 +137,32 @@ ECL_EXPORT uint64_t GetCacheStored(void)
   return chimera_rpcs3_cache_stored();
 }
 
+// A precompile session: set before Init; the host then pumps FrameAdvance
+// until IsPrecompileDone, reading GetPrecompileDone/Total for its bar
+ECL_EXPORT void SetPrecompile(int32_t index, int32_t count, int32_t firmware_too)
+{
+  chimera_rpcs3_set_precompile(index, count, firmware_too);
+}
+
+ECL_EXPORT int IsPrecompileDone(void)
+{
+  return chimera_rpcs3_precompile_done();
+}
+
+static uint32_t g_pre_done, g_pre_total;
+
+ECL_EXPORT uint32_t GetPrecompileDone(void)
+{
+  chimera_rpcs3_precompile_progress(&g_pre_done, &g_pre_total);
+  return g_pre_done;
+}
+
+ECL_EXPORT uint32_t GetPrecompileTotal(void)
+{
+  chimera_rpcs3_precompile_progress(&g_pre_done, &g_pre_total);
+  return g_pre_total;
+}
+
 ECL_EXPORT int IsGpuActive(void)
 {
   return chimera_rpcs3_gpu_active();
