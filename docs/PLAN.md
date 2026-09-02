@@ -313,6 +313,13 @@ optimisation. No user interface, no networking, no real audio or input devices.
   1380 faults served in 1800 frames, memory unchanged, the pictures now
   refresh where the CPU rewrote textures. The gate's gpu:disc leg requires
   both flavors to serve the same number of faults.
+- **Savestates under the GL renderer (2026-09-02)**: a state taken and loaded
+  while GTA draws through the bridge replays to the same memory (run-wbx
+  --rewind, 240 frames, EQUAL; gate leg `gpu:rewind`). The renderer's caches
+  live in guest memory and the pages they protected are part of the state, so
+  a load restores both together; the GL objects themselves stay in the host
+  context and are only as current as the last draw, which is the accepted
+  cost of a GPU outside the savestate.
 - **Still open after M5**: Windows end to end (the lazy 20 GiB block, the
   bridge and the VEH fault path are all cross-compiled only), real hardware,
   LLVM recompilers, RawSPU.

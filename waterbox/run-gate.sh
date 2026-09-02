@@ -30,6 +30,10 @@
 #   gpu:disc               the disc on the GL renderer: memory identical to
 #                          the null renderer's run (the GPU changes the
 #                          picture, not the machine), native == sandbox
+#   gpu:rewind             a savestate taken and loaded while the GL renderer
+#                          draws: the machine after the load runs on to the
+#                          same memory (the renderer's caches, in guest
+#                          memory, survive the load consistently)
 # Run from anywhere; artifacts land in waterbox/work/gate.
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -273,6 +277,13 @@ else
 			fi
 		else
 			failed "gpu:disc - the GL run's memory differs from the null renderer's (diff $work/gdisc-want.txt $work/gdisc-got.txt; $(tail -1 "$work/gdisc-native.err"))"
+		fi
+		if [ "$have_wbx" = 1 ]; then
+			if CHIMERA_GPU=1 "$wbx" "$core" --firmware "$pup" --settings '{"renderer":"opengl-hw"}' --frames 120 --rewind "$disc" > "$work/grewind.txt" 2>"$work/grewind.err"; then
+				pass "gpu:rewind - $(grep '^rewind' "$work/grewind.txt")"
+			else
+				failed "gpu:rewind - $(grep '^rewind' "$work/grewind.txt" || tail -1 "$work/grewind.err")"
+			fi
 		fi
 	fi
 fi
