@@ -29,7 +29,7 @@ CFLAGS   := $(WBFLAGS) -DCHIMERA_GUEST -DCHIMERA_CORE
 UPSTREAM_TUS := Input/pad_thread.cpp Input/product_info.cpp Input/ps_move_tracker.cpp Input/ps_move_config.cpp rpcs3_version.cpp
 UPSTREAM_OBJS := $(patsubst %.cpp,$(O)/upstream/%.o,$(UPSTREAM_TUS))
 
-OBJS := $(O)/rpcs3-driver.o $(O)/host-stubs.o $(O)/memfs.o $(O)/wbx-entry.o $(O)/guest-syscalls.o $(O)/vsched.o $(UPSTREAM_OBJS)
+OBJS := $(O)/rpcs3-driver.o $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/wbx-entry.o $(O)/guest-syscalls.o $(O)/vsched.o $(UPSTREAM_OBJS)
 
 all: $(OBJS)
 

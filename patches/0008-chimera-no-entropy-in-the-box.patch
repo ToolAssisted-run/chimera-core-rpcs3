@@ -57,7 +57,7 @@ index cac546162..67a0a25e7 100644
  	std::uniform_int_distribution<u32> uniform_dist;
  	std::mt19937 prng;
 diff --git a/rpcs3/util/media_utils.cpp b/rpcs3/util/media_utils.cpp
-index 2c3ac5c8a..7a60af998 100644
+index 44fcb72d9..7a60af998 100644
 --- a/rpcs3/util/media_utils.cpp
 +++ b/rpcs3/util/media_utils.cpp
 @@ -763,8 +763,12 @@ namespace utils
@@ -71,23 +71,5 @@ index 2c3ac5c8a..7a60af998 100644
  				auto engine = std::default_random_engine{rd()};
 +#endif
  				std::shuffle(std::begin(m_context.playlist), std::end(m_context.playlist), engine);
- 			}
- 
-@@ -889,7 +893,7 @@ namespace utils
- 				// Let's assume this will finish in a timely manner
- 				while (m_flush && m_running)
- 				{
--					std::this_thread::sleep_for(1us);
-+					CHIMERA_SLEEP_FOR(1us);
- 				}
- 			}
- 		}
-@@ -908,7 +912,7 @@ namespace utils
- 				// Let's assume this will finish in a timely manner
- 				while (m_flush && m_running)
- 				{
--					std::this_thread::sleep_for(1ms);
-+					CHIMERA_SLEEP_FOR(1ms);
- 				}
  			}
  

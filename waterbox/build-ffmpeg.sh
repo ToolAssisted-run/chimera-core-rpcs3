@@ -21,7 +21,7 @@ if [ "$flavor" = guest ]; then
 else
 	CC="gcc"
 	CFLAGS="-O2"
-	cross=""
+	cross="--enable-pic"
 fi
 cd "$bld"
 "$src/configure" --prefix="$out" --cc="$CC" --extra-cflags="$CFLAGS" $cross \

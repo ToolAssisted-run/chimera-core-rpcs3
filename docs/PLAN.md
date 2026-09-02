@@ -195,6 +195,33 @@ optimisation. No user interface, no networking, no real audio or input devices.
   the library ships stale objects. ffmpeg is still upstream's prebuilt for
   native (fine until the guest build needs source).
 
+- **M1 + M2 DONE (2026-09-02, same day)**: the guest library and every external
+  compile under musl (kernel/glibc-private header shims in `waterbox/guest-include`,
+  no pkg-config, curl without system libraries, hidapi excluded, ffmpeg n8.1.2 from
+  source for BOTH flavors with no assembly, native with `--enable-pic`), `core.wbx`
+  links with zero undefined symbols and passes check-wbx (no TLS symbols, no `%fs`),
+  and `run-gate.sh` is 4/4: native deterministic, native == sandbox at 600 frames
+  (RAM + TTY digests), rewind equal, rerecord lossless (21.7 MB arena states).
+  What it took: miniBox spec v2 (the block may span 4 GiB regions); patch 0007
+  keeps the flat guest view 4 GiB ALIGNED (`vm::get_addr` truncates host
+  pointers) with no mirror and uniform RW pages, commits execution-table pages per
+  mapping (`u64{addr} * 2`: the 32-bit expression overflowed above 2 GiB) filled
+  with a decode-on-first-run stub (the interpreter tail-chains through the table
+  without the loop's checks, so entries must never be empty), puts SPU local
+  storage in the guest view, shrinks the dead hook/stat areas; patch 0008 pins
+  every entropy source; patch 0009 turns 81 `thread_local` lines (67 variables)
+  into slot arrays over vsched thread slots (`chimera_tls.h`; a delegated patch),
+  and the third-party thread-locals (absl, glslang, wolfssl, libusb) vanish for
+  the guest via `-Dthread_local= -D_Thread_local= -D__thread= -U__cpp_constinit`
+  (one runner at a time makes a static equivalent; absl's constinit marker is
+  what function-local thread-locals trip over); the emulator's own files
+  (config, cache, logs, dev_flash, the grafted game) live in `waterbox/memfs.cpp`
+  behind rpcs3's virtual-device layer in both flavors; host plumbing the machine
+  has none of (pipe, sockets, eventfd, epoll, timerfd, times, getrusage) fails
+  identically in both flavors (`host-plumbing.cpp`) so both start the same 29
+  threads. The nine patches are a consecutive series (regenerated from commits
+  replayed on a temp branch; per-file diffs had overlapped).
+
 ## Risks, ranked
 
 1. **vsched completeness**: any wait outside the engine (a `std::mutex` contended

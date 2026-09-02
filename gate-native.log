@@ -1,10 +1,5 @@
 Segmentation fault (core dumped)
 Segmentation fault (core dumped)
-PASS: native deterministic at 600 frames (30651 TTY bytes, threads 31 time 11000001 running 1)
-Segmentation fault (core dumped)
-FAIL: sandbox run produced no frames ([tripguard] unhandled fault: addr=0x7f1082374100 read/exec rip=0x36f002a3e6e, OUTSIDE every registered block [1 block(s) registered])
-FAIL: rewind leg - Segmentation fault (core dumped)
-Segmentation fault (core dumped)
-Segmentation fault (core dumped)
-FAIL: rerecord leg - [tripguard] unhandled fault: addr=0x76cfc6910100 read/exec rip=0x36f002a3e6e, OUTSIDE every registered block [1 block(s) registered]
-NATIVE-CHAIN EXIT 1
+PASS: native deterministic at 300 frames (15351 TTY bytes, threads 31 time 6000001 running 1)
+SKIP: sandbox legs: build-core.sh has not produced bin/core.wbx + bin/run-wbx
+NATIVE-CHAIN EXIT 0

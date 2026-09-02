@@ -95,14 +95,6 @@ char* getcwd(char* buf, size_t size)
   return buf;
 }
 
-// Thread accounting the exit log prints; the box keeps no such books.
-int getrusage(int, struct rusage* r)
-{
-  if (r)
-    memset(r, 0, sizeof *r);
-  return 0;
-}
-
 int uname(struct utsname* u)
 {
   if (!u)

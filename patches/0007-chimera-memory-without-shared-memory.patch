@@ -1,15 +1,8 @@
 diff --git a/rpcs3/Emu/Cell/PPUThread.cpp b/rpcs3/Emu/Cell/PPUThread.cpp
-index 853b40c37..4006a13bf 100644
+index 43a36adb4..4006a13bf 100644
 --- a/rpcs3/Emu/Cell/PPUThread.cpp
 +++ b/rpcs3/Emu/Cell/PPUThread.cpp
-@@ -1,3 +1,6 @@
-+#ifdef CHIMERA_CORE
-+#include "vsched.h"
-+#endif
- #include "stdafx.h"
- #include "Utilities/JIT.h"
- #include "Utilities/StrUtil.h"
-@@ -854,6 +857,35 @@ extern void ppu_register_function_at(u32 addr, u32 size, u64 ptr)
+@@ -857,6 +857,35 @@ extern void ppu_register_function_at(u32 addr, u32 size, u64 ptr)
  	return ppu_register_function_at(addr, size, reinterpret_cast<ppu_intrp_func_t>(ptr));
  }
  
@@ -45,45 +38,10 @@ index 853b40c37..4006a13bf 100644
  u32 ppu_get_exported_func_addr(u32 fnid, const std::string& module_name);
  
  void ppu_return_from_far_jump(ppu_thread& ppu, ppu_opcode_t, be_t<u32>*, ppu_intrp_func*)
-@@ -2764,6 +2796,13 @@ void ppu_thread::exec_task()
- 			return;
- 		}
- 
-+#ifdef CHIMERA_CORE
-+		if (--vsched_budget <= 0) [[unlikely]]
-+		{
-+			vsched_budget_expired(VSCHED_PPU);
-+		}
-+#endif
-+
- 		gv_zeroupper();
- 
- 		// Execute instruction (may be step; execute only one instruction if state)
 diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
-index fb9483d88..79a61fed2 100644
+index d2b9e21cd..79a61fed2 100644
 --- a/rpcs3/Emu/Cell/SPUThread.cpp
 +++ b/rpcs3/Emu/Cell/SPUThread.cpp
-@@ -570,9 +570,9 @@ namespace spu
- 					while (atomic_instruction_table[pc_offset].observe() >= max_concurrent_instructions)
- 					{
- 						if (remaining >= native_jiffy_duration_us)
--							std::this_thread::sleep_for(1ms);
-+							CHIMERA_SLEEP_FOR(1ms);
- 						else
--							std::this_thread::yield();
-+							CHIMERA_YIELD();
- 
- 						const auto now = get_system_time();
- 						const auto elapsed = now - start;
-@@ -1457,7 +1457,7 @@ void spu_thread::cpu_return()
- 			// Wait for terminators manually if needed (ensuring they quit before value-wrapping)
- 			while (last_stop == umax && group->wait_term_count)
- 			{
--				std::this_thread::yield();
-+				CHIMERA_YIELD();
- 			}
- 		}
- 		else if (status_npc.load().status >> 16 == SYS_SPU_THREAD_STOP_THREAD_EXIT)
 @@ -1740,6 +1740,7 @@ enum : s64
  
  spu_thread::~spu_thread()
@@ -113,71 +71,8 @@ index fb9483d88..79a61fed2 100644
  	, option(ar)
  	, lv2_id(ar)
  	, spu_tname(make_single<std::string>(ar.operator std::string()))
-@@ -2193,7 +2200,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
- 				else
- 				{
- 					_cpu->state += cpu_flag::wait + cpu_flag::temp;
--					std::this_thread::yield();
-+					CHIMERA_YIELD();
- 					_cpu->check_state();
- 				}
- 			}())
-@@ -3631,7 +3638,7 @@ void do_cell_atomic_128_store(u32 addr, const void* to_write)
- 					}
- 					else
- 					{
--						std::this_thread::yield();
-+						CHIMERA_YIELD();
- 					}
- 				}
- 
-@@ -3648,7 +3655,7 @@ void do_cell_atomic_128_store(u32 addr, const void* to_write)
- 			}
- 			else
- 			{
--				std::this_thread::yield();
-+				CHIMERA_YIELD();
- 			}
- 		}
- 
-@@ -4568,7 +4575,7 @@ bool spu_thread::process_mfc_cmd()
- 			else
- 			{
- 				state += cpu_flag::wait + cpu_flag::temp;
--				std::this_thread::yield();
-+				CHIMERA_YIELD();
- 				static_cast<void>(check_state());
- 			}
- 		}())
-@@ -5535,7 +5542,7 @@ s64 spu_thread::get_ch_value(u32 ch)
- 		if (g_cfg.core.spu_loop_detection && out > spu::scheduler::native_jiffy_duration_us)
- 		{
- 			state += cpu_flag::wait;
--			std::this_thread::yield();
-+			CHIMERA_YIELD();
- 		}
- 
- 		return out;
-@@ -6542,7 +6549,7 @@ bool spu_thread::stop_and_signal(u32 code)
- 	case 0x001:
- 	{
- 		state += cpu_flag::wait;
--		std::this_thread::sleep_for(1ms); // hack
-+		CHIMERA_SLEEP_FOR(1ms); // hack
- 		check_state();
- 		return true;
- 	}
-@@ -7103,7 +7110,7 @@ bool spu_thread::capture_state()
- 	if (fs::exists(elf_path))
- 	{
- 		// Wait 1 second so current_time_narrow() will return a different string
--		std::this_thread::sleep_for(1s);
-+		CHIMERA_SLEEP_FOR(1s);
- 
- 		if (elf_path = get_filename(); fs::exists(elf_path))
- 		{
 diff --git a/rpcs3/Emu/Memory/vm.cpp b/rpcs3/Emu/Memory/vm.cpp
-index 32969c233..a36c0c2c8 100644
+index aeed9d051..a36c0c2c8 100644
 --- a/rpcs3/Emu/Memory/vm.cpp
 +++ b/rpcs3/Emu/Memory/vm.cpp
 @@ -24,6 +24,10 @@ LOG_CHANNEL(vm_log, "VM");
@@ -236,42 +131,6 @@ index 32969c233..a36c0c2c8 100644
  
  	// For SPU
  	u8* const g_free_addr = g_stat_addr + 0x1'0000'0000;
-@@ -404,7 +439,7 @@ namespace vm
- 				if (i < 100)
- 					busy_wait(200);
- 				else
--					std::this_thread::yield();
-+					CHIMERA_YIELD();
- 
- 				if (cpu_flag::wait - cpu.state)
- 				{
-@@ -505,7 +540,7 @@ namespace vm
- 			}
- 			else
- 			{
--				std::this_thread::yield();
-+				CHIMERA_YIELD();
- 			}
- 		}
- 
-@@ -649,7 +684,7 @@ namespace vm
- 					return -1;
- 				}
- 
--				std::this_thread::yield();
-+				CHIMERA_YIELD();
- 			}
- 		}
- 	}
-@@ -684,7 +719,7 @@ namespace vm
- 			}
- 			else
- 			{
--				std::this_thread::yield();
-+				CHIMERA_YIELD();
- 			}
- 		}
- 	}
 @@ -809,10 +844,14 @@ namespace vm
  		}
  

@@ -12,7 +12,8 @@ TUFLAGS := $(shell python3 extract-tu-flags.py $(B)/compile_commands.json Emu/Sy
 CXXFLAGS := -O2 -g1 $(TUFLAGS) -msse -msse2 -mcx16 -fno-exceptions -I.
 CFLAGS := -O2 -g1 -I.
 
-LIBS := $(shell find $(B) -name '*.a')
+# the CMake archives plus the source-built ffmpeg (never the prebuilt zip)
+LIBS := $(shell find $(B) -name '*.a' | grep -v /3rdparty/ffmpeg/) $(shell find $(ROOT)/build/ffmpeg-native/lib -name '*.a')
 
 # upstream sources that live in rpcs3's user-interface library but are not
 # user interface: the pad thread and the version strings
@@ -33,7 +34,7 @@ $(O)/vsched.o: vsched.cpp vsched.h
 	@mkdir -p $(O)
 	g++ -O2 -g1 -I. -c -o $@ $<
 
-$(O)/run-native: $(O)/run-native.o $(O)/rpcs3-driver.o $(O)/host-stubs.o $(O)/memfs.o $(O)/vsched.o $(UPSTREAM_OBJS) $(LIBS)
+$(O)/run-native: $(O)/run-native.o $(O)/rpcs3-driver.o $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/vsched.o $(UPSTREAM_OBJS) $(LIBS)
 	g++ -o $@ $(filter %.o,$^) -Wl,--start-group $(LIBS) -Wl,--end-group -lpthread -lm -ldl -lrt -lasound
 
 clean:

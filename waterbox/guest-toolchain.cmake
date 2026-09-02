@@ -12,7 +12,7 @@ endif()
 
 execute_process(COMMAND gcc -dumpfullversion OUTPUT_VARIABLE GCCVER OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-set(WB "-specs=${SR}/lib/musl-gcc.specs -fvisibility=hidden -mcmodel=large -mstack-protector-guard=global -fno-stack-protector -fno-pic -fno-pie -fcf-protection=none -DCHIMERA_NO_TLS -DSTBI_NO_THREAD_LOCALS -DZ_TLS= -DCHIMERA_CORE -I/home/jaffar/chimera-core-rpcs3/waterbox -isystem /home/jaffar/chimera-core-rpcs3/waterbox/guest-include")
+set(WB "-specs=${SR}/lib/musl-gcc.specs -fvisibility=hidden -mcmodel=large -mstack-protector-guard=global -fno-stack-protector -fno-pic -fno-pie -fcf-protection=none -DCHIMERA_NO_TLS -DSTBI_NO_THREAD_LOCALS -DZ_TLS= -DCHIMERA_CORE -Dthread_local= -D_Thread_local= -D__thread= -U__cpp_constinit -I/home/jaffar/chimera-core-rpcs3/waterbox -isystem /home/jaffar/chimera-core-rpcs3/waterbox/guest-include")
 set(CMAKE_C_FLAGS_INIT "${WB}")
 set(CMAKE_CXX_FLAGS_INIT "${WB} -nostdinc++ -I${SR}/include/c++/${GCCVER} -I${SR}/include/c++/${GCCVER}/x86_64-linux-musl")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-static -nostdlib++")

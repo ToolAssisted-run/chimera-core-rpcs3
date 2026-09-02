@@ -53,7 +53,7 @@ g++ -specs "$sr/lib/musl-gcc.specs" -mcmodel=large -fno-pic -fno-pie \
 	-Wl,-u,pthread_mutexattr_init -Wl,-u,pthread_mutexattr_settype -Wl,-u,pthread_mutexattr_destroy \
 	-o "$out/core.wbx" \
 	"$here"/obj-guest/wbx-entry.o "$here"/obj-guest/rpcs3-driver.o "$here"/obj-guest/memfs.o \
-	"$here"/obj-guest/host-stubs.o "$here"/obj-guest/guest-syscalls.o "$here"/obj-guest/vsched.o \
+	"$here"/obj-guest/host-stubs.o "$here"/obj-guest/host-plumbing.o "$here"/obj-guest/guest-syscalls.o "$here"/obj-guest/vsched.o \
 	"$here"/obj-guest/upstream/Input/pad_thread.o "$here"/obj-guest/upstream/Input/product_info.o \
 	"$here"/obj-guest/upstream/Input/ps_move_tracker.o "$here"/obj-guest/upstream/Input/ps_move_config.o \
 	"$here"/obj-guest/upstream/rpcs3_version.o \
@@ -64,9 +64,11 @@ sh "$mb/source/guest/check-wbx.sh" "$out/core.wbx"
 echo "built $out/core.wbx"
 
 # host driver for the gate
-mblinux="$mb/build/meson-linux"
-[ -f "$mblinux/source/host/libminiboxhost.so" ] || mblinux="$mbuild"
+# (MINIBOX_HOST_DIR overrides where libminiboxhost.so comes from: the PS3
+# needs a host at spec v2, the multi-region block)
+mbhost="${MINIBOX_HOST_DIR:-$mb/build/meson-linux/source/host}"
+[ -f "$mbhost/libminiboxhost.so" ] || mbhost="$mbuild/source/host"
 gcc -O2 -Wall -I"$mb/source/host" \
 	-o "$out/run-wbx" "$here/run-wbx.c" \
-	"$mblinux/source/host/libminiboxhost.so" -Wl,-rpath,"$mblinux/source/host"
+	"$mbhost/libminiboxhost.so" -Wl,-rpath,"$mbhost"
 echo "built $out/run-wbx"

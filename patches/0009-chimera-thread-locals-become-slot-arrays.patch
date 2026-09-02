@@ -1,0 +1,1521 @@
+diff --git a/Utilities/File.cpp b/Utilities/File.cpp
+index 6f0dd0690..637921289 100644
+--- a/Utilities/File.cpp
++++ b/Utilities/File.cpp
+@@ -308,7 +308,7 @@ static std::string path_append(std::string_view path, std::string_view more)
+ 
+ namespace fs
+ {
+-	thread_local error g_tls_error = error::ok;
++	CHIMERA_TLS_DEFINE(error, g_tls_error, error::ok);
+ 
+ 	class device_manager final
+ 	{
+diff --git a/Utilities/File.h b/Utilities/File.h
+index 39df1f168..36f69be14 100644
+--- a/Utilities/File.h
++++ b/Utilities/File.h
+@@ -701,7 +701,8 @@ namespace fs
+ 	};
+ 
+ 	// Error code returned
+-	extern thread_local error g_tls_error;
++	CHIMERA_TLS_DECLARE(error, g_tls_error);
++#define g_tls_error CHIMERA_TLS(g_tls_error)
+ 
+ 	template <typename T>
+ 	struct container_stream final : file_base
+diff --git a/Utilities/Thread.cpp b/Utilities/Thread.cpp
+index 8b2a078c7..01b067a91 100644
+--- a/Utilities/Thread.cpp
++++ b/Utilities/Thread.cpp
+@@ -106,13 +106,21 @@ LOG_CHANNEL(sig_log, "SIG");
+ LOG_CHANNEL(sys_log, "SYS");
+ LOG_CHANNEL(vm_log, "VM");
+ 
+-thread_local u64 g_tls_fault_all = 0;
+-thread_local u64 g_tls_fault_rsx = 0;
+-thread_local u64 g_tls_fault_spu = 0;
+-thread_local u64 g_tls_wait_time = 0;
+-thread_local u64 g_tls_wait_fail = 0;
+-thread_local u64 g_tls_access_violation_recovered = umax;
+-extern thread_local std::string(*g_tls_log_prefix)();
++CHIMERA_TLS_DEFINE(u64, g_tls_fault_all, 0);
++#define g_tls_fault_all CHIMERA_TLS(g_tls_fault_all)
++CHIMERA_TLS_DEFINE(u64, g_tls_fault_rsx, 0);
++#define g_tls_fault_rsx CHIMERA_TLS(g_tls_fault_rsx)
++CHIMERA_TLS_DEFINE(u64, g_tls_fault_spu, 0);
++#define g_tls_fault_spu CHIMERA_TLS(g_tls_fault_spu)
++CHIMERA_TLS_DEFINE(u64, g_tls_wait_time, 0);
++#define g_tls_wait_time CHIMERA_TLS(g_tls_wait_time)
++CHIMERA_TLS_DEFINE(u64, g_tls_wait_fail, 0);
++#define g_tls_wait_fail CHIMERA_TLS(g_tls_wait_fail)
++CHIMERA_TLS_DEFINE(u64, g_tls_access_violation_recovered, umax);
++#define g_tls_access_violation_recovered CHIMERA_TLS(g_tls_access_violation_recovered)
++using g_tls_log_prefix_t = std::string(*)();
++CHIMERA_TLS_DECLARE(g_tls_log_prefix_t, g_tls_log_prefix);
++#define g_tls_log_prefix CHIMERA_TLS(g_tls_log_prefix)
+ 
+ namespace stx
+ {
+@@ -302,7 +310,8 @@ enum x64_op_t : u32
+ 	X64OP_BEXTR,
+ };
+ 
+-static thread_local x64_reg_t s_tls_reg3{};
++CHIMERA_TLS_DEFINE_STATIC(x64_reg_t, s_tls_reg3);
++#define s_tls_reg3 CHIMERA_TLS(s_tls_reg3)
+ 
+ void decode_x64_reg_op(const u8* code, x64_op_t& out_op, x64_reg_t& out_reg, usz& out_size, usz& out_length)
+ {
+@@ -2751,9 +2760,10 @@ const bool s_terminate_handler_set = []() -> bool
+ 	return true;
+ }();
+ 
+-thread_local DECLARE(thread_ctrl::g_tls_this_thread) = nullptr;
++using thread_base_ptr_t = thread_base*;
++CHIMERA_TLS_MEMBER(thread_base_ptr_t, thread_ctrl, g_tls_this_thread, nullptr);
+ 
+-thread_local DECLARE(thread_ctrl::g_tls_error_callback) = nullptr;
++CHIMERA_TLS_MEMBER(thread_ctrl::g_tls_error_callback_t, thread_ctrl, g_tls_error_callback, nullptr);
+ 
+ DECLARE(thread_ctrl::g_native_core_layout) { native_core_arrangement::undefined };
+ 
+@@ -2900,6 +2910,15 @@ void thread_base::set_name(std::string name)
+ #endif
+ }
+ 
++#if !defined(_WIN32) && defined(RUSAGE_THREAD)
++// Per-thread usage counters already reported by finalize (hoisted out of it)
++CHIMERA_TLS_DEFINE_STATIC(u64, s_tls_finalize_time);
++CHIMERA_TLS_DEFINE_STATIC(u64, s_tls_finalize_fsoft);
++CHIMERA_TLS_DEFINE_STATIC(u64, s_tls_finalize_fhard);
++CHIMERA_TLS_DEFINE_STATIC(u64, s_tls_finalize_ctxvol);
++CHIMERA_TLS_DEFINE_STATIC(u64, s_tls_finalize_ctxinv);
++#endif
++
+ u64 thread_base::finalize(thread_state result_state) noexcept
+ {
+ 	// Report pending errors
+@@ -2921,7 +2940,11 @@ u64 thread_base::finalize(thread_state result_state) noexcept
+ 	const u64 ctxvol = 0;
+ 	const u64 ctxinv = 0;
+ #elif defined(RUSAGE_THREAD)
+-	static thread_local u64 tls_time{}, tls_fsoft{}, tls_fhard{}, tls_ctxvol{}, tls_ctxinv{};
++	auto& tls_time = CHIMERA_TLS(s_tls_finalize_time);
++	auto& tls_fsoft = CHIMERA_TLS(s_tls_finalize_fsoft);
++	auto& tls_fhard = CHIMERA_TLS(s_tls_finalize_fhard);
++	auto& tls_ctxvol = CHIMERA_TLS(s_tls_finalize_ctxvol);
++	auto& tls_ctxinv = CHIMERA_TLS(s_tls_finalize_ctxinv);
+ 	const u64 cycles = 0; // Not supported
+ 	struct ::rusage stats{};
+ 	::getrusage(RUSAGE_THREAD, &stats);
+@@ -3046,12 +3069,15 @@ thread_base::native_entry thread_base::make_trampoline(u64(*entry)(thread_base*
+ 	});
+ }
+ 
++// Guard for recursive thread_ctrl::state() calls (hoisted out of it)
++CHIMERA_TLS_DEFINE_STATIC(bool, s_tls_state_exec_guard, false);
++
+ thread_state thread_ctrl::state()
+ {
+ 	auto _this = g_tls_this_thread;
+ 
+ 	// Guard for recursive calls (TODO: may be more effective to reuse one of m_sync bits)
+-	static thread_local bool s_tls_exec = false;
++	auto& s_tls_exec = CHIMERA_TLS(s_tls_state_exec_guard);
+ 
+ 	// Drain execution queue
+ 	if (!s_tls_exec)
+@@ -3225,6 +3251,9 @@ void thread_ctrl::wait_for_accurate(u64 usec)
+ #endif
+ }
+ 
++// The name last seen by get_name_cached() (hoisted out of it)
++CHIMERA_TLS_DEFINE_STATIC(shared_ptr<std::string>, s_tls_thread_name_cache);
++
+ std::string thread_ctrl::get_name_cached()
+ {
+ 	auto _this = thread_ctrl::g_tls_this_thread;
+@@ -3234,7 +3263,7 @@ std::string thread_ctrl::get_name_cached()
+ 		return {};
+ 	}
+ 
+-	static thread_local shared_ptr<std::string> name_cache;
++	auto& name_cache = CHIMERA_TLS(s_tls_thread_name_cache);
+ 
+ 	if (!_this->m_tname.is_equal(name_cache)) [[unlikely]]
+ 	{
+@@ -4021,9 +4050,13 @@ std::pair<void*, usz> thread_ctrl::get_thread_stack()
+ 	return {saddr, ssize};
+ }
+ 
++// Native thread id, fetched on first use (hoisted out of get_tid)
++CHIMERA_TLS_DEFINE_STATIC(u64, s_tls_tid, 0);
++#define s_tls_tid CHIMERA_TLS(s_tls_tid)
++
+ u64 thread_ctrl::get_tid()
+ {
+-	static thread_local u64 s_tls_tid = []() -> u64
++	if (!s_tls_tid) s_tls_tid = []() -> u64
+ 	{
+ 	#ifdef _WIN32
+ 		return GetCurrentThreadId();
+diff --git a/Utilities/Thread.h b/Utilities/Thread.h
+index cc6c82658..7825eb927 100644
+--- a/Utilities/Thread.h
++++ b/Utilities/Thread.h
+@@ -198,12 +198,6 @@ private:
+ // Collection of global function for current thread
+ class thread_ctrl final
+ {
+-	// Current thread
+-	static thread_local thread_base* g_tls_this_thread;
+-
+-	// Error handling details
+-	static thread_local void(*g_tls_error_callback)();
+-
+ 	// Target cpu core layout
+ 	static atomic_t<native_core_arrangement> g_native_core_layout;
+ 
+@@ -213,15 +207,22 @@ class thread_ctrl final
+ 	static std::string get_name_cached();
+ 
+ public:
++	// Current thread (per-thread slots; public so the slot resetter can reach them)
++	CHIMERA_TLS_MEMBER_DECL(thread_base*, g_tls_this_thread);
++
++	// Error handling details
++	using g_tls_error_callback_t = void(*)();
++	CHIMERA_TLS_MEMBER_DECL(g_tls_error_callback_t, g_tls_error_callback);
++
+ 	// Get current thread name
+ 	static std::string get_name()
+ 	{
+-		if (!g_tls_this_thread)
++		if (!CHIMERA_TLS(g_tls_this_thread))
+ 		{
+ 			return "not named_thread";
+ 		}
+ 
+-		return *g_tls_this_thread->m_tname.load();
++		return *CHIMERA_TLS(g_tls_this_thread)->m_tname.load();
+ 	}
+ 
+ 	// Get thread name
+@@ -240,9 +241,9 @@ public:
+ 	{
+ 		static_cast<thread_base&>(thread).m_tname.store(make_single<std::string>(name));
+ 
+-		if (g_tls_this_thread == std::addressof(static_cast<thread_base&>(thread)))
++		if (CHIMERA_TLS(g_tls_this_thread) == std::addressof(static_cast<thread_base&>(thread)))
+ 		{
+-			g_tls_this_thread->set_name(std::move(name));
++			CHIMERA_TLS(g_tls_this_thread)->set_name(std::move(name));
+ 		}
+ 	}
+ 
+@@ -286,7 +287,7 @@ public:
+ 	template <uint Max, typename Func>
+ 	static inline void wait_on_custom(Func&& setter, u64 usec = -1)
+ 	{
+-		auto _this = g_tls_this_thread;
++		auto _this = CHIMERA_TLS(g_tls_this_thread);
+ 
+ 		if (_this->m_sync.bit_test_reset(2) || _this->m_taskq)
+ 		{
+@@ -321,7 +322,7 @@ public:
+ 	// Get current thread (may be nullptr)
+ 	static thread_base* get_current()
+ 	{
+-		return g_tls_this_thread;
++		return CHIMERA_TLS(g_tls_this_thread);
+ 	}
+ 
+ 	// Detect layout
+@@ -374,6 +375,9 @@ private:
+ 	static const u64 process_affinity_mask;
+ };
+ 
++#define g_tls_this_thread CHIMERA_TLS(g_tls_this_thread)
++#define g_tls_error_callback CHIMERA_TLS(g_tls_error_callback)
++
+ #if defined(__has_cpp_attribute)
+ #if __has_cpp_attribute(no_unique_address)
+ #define NO_UNIQUE_ADDRESS [[no_unique_address]]
+diff --git a/rpcs3/Crypto/ec.cpp b/rpcs3/Crypto/ec.cpp
+index 378992849..f398399eb 100644
+--- a/rpcs3/Crypto/ec.cpp
++++ b/rpcs3/Crypto/ec.cpp
+@@ -169,15 +169,34 @@ struct point
+ 	u8 y[20];
+ };
+ 
+-static thread_local u8 ec_p[20]{};
+-static thread_local u8 ec_a[20]{}; // mon
+-static thread_local u8 ec_b[20]{}; // mon
+-static thread_local u8 ec_N[21]{};
+-static thread_local point ec_G{}; // mon
+-static thread_local point ec_Q{}; // mon
+-static thread_local u8 ec_k[21]{};
+-static thread_local bool ec_curve_initialized{};
+-static thread_local bool ec_pub_initialized{};
++// A byte array that still decays to a pointer (a slot array cannot hold plain C arrays)
++template <usz N>
++struct ec_bytes
++{
++	u8 v[N]{};
++
++	operator u8*() noexcept { return v; }
++	operator const u8*() const noexcept { return v; }
++};
++
++CHIMERA_TLS_DEFINE_STATIC(ec_bytes<20>, ec_p);
++#define ec_p CHIMERA_TLS(ec_p)
++CHIMERA_TLS_DEFINE_STATIC(ec_bytes<20>, ec_a); // mon
++#define ec_a CHIMERA_TLS(ec_a)
++CHIMERA_TLS_DEFINE_STATIC(ec_bytes<20>, ec_b); // mon
++#define ec_b CHIMERA_TLS(ec_b)
++CHIMERA_TLS_DEFINE_STATIC(ec_bytes<21>, ec_N);
++#define ec_N CHIMERA_TLS(ec_N)
++CHIMERA_TLS_DEFINE_STATIC(point, ec_G); // mon
++#define ec_G CHIMERA_TLS(ec_G)
++CHIMERA_TLS_DEFINE_STATIC(point, ec_Q); // mon
++#define ec_Q CHIMERA_TLS(ec_Q)
++CHIMERA_TLS_DEFINE_STATIC(ec_bytes<21>, ec_k);
++#define ec_k CHIMERA_TLS(ec_k)
++CHIMERA_TLS_DEFINE_STATIC(bool, ec_curve_initialized);
++#define ec_curve_initialized CHIMERA_TLS(ec_curve_initialized)
++CHIMERA_TLS_DEFINE_STATIC(bool, ec_pub_initialized);
++#define ec_pub_initialized CHIMERA_TLS(ec_pub_initialized)
+ 
+ static inline bool elt_is_zero(const u8* d)
+ {
+diff --git a/rpcs3/Emu/CPU/CPUThread.cpp b/rpcs3/Emu/CPU/CPUThread.cpp
+index 769385f36..94fd165a3 100644
+--- a/rpcs3/Emu/CPU/CPUThread.cpp
++++ b/rpcs3/Emu/CPU/CPUThread.cpp
+@@ -31,13 +31,19 @@ DECLARE(cpu_thread::g_suspend_counter){0};
+ LOG_CHANNEL(profiler);
+ LOG_CHANNEL(sys_log, "SYS");
+ 
+-static thread_local u32 s_tls_thread_slot = -1;
++CHIMERA_TLS_DEFINE_STATIC(u32, s_tls_thread_slot, -1);
++#define s_tls_thread_slot CHIMERA_TLS(s_tls_thread_slot)
+ 
+ // Suspend counter stamp
+-static thread_local u64 s_tls_sctr = -1;
++CHIMERA_TLS_DEFINE_STATIC(u64, s_tls_sctr, -1);
++#define s_tls_sctr CHIMERA_TLS(s_tls_sctr)
+ 
+-extern thread_local void(*g_tls_log_control)(const char* fmt, u64 progress);
+-extern thread_local std::string(*g_tls_log_prefix)();
++using g_tls_log_control_t = void(*)(const char* fmt, u64 progress);
++CHIMERA_TLS_DECLARE(g_tls_log_control_t, g_tls_log_control);
++#define g_tls_log_control CHIMERA_TLS(g_tls_log_control)
++using g_tls_log_prefix_t = std::string(*)();
++CHIMERA_TLS_DECLARE(g_tls_log_prefix_t, g_tls_log_prefix);
++#define g_tls_log_prefix CHIMERA_TLS(g_tls_log_prefix)
+ 
+ template <>
+ void fmt_class_string<cpu_flag>::format(std::string& out, u64 arg)
+@@ -500,7 +506,8 @@ extern f64 get_cpu_program_usage_percent(u64 hash)
+ 	return 0;
+ }
+ 
+-thread_local DECLARE(cpu_thread::g_tls_this_thread) = nullptr;
++using cpu_thread_ptr_t = cpu_thread*;
++CHIMERA_TLS_MEMBER(cpu_thread_ptr_t, cpu_thread, g_tls_this_thread, nullptr);
+ 
+ // Total number of CPU threads
+ static atomic_t<u64, 128> s_cpu_counter{0};
+@@ -649,6 +656,82 @@ namespace cpu_counter
+ 	}
+ }
+ 
++// What a cpu_thread leaves behind when its operator() ends (hoisted out of it). The thread_local
++// destructor reported a thread that never reached the graceful cleanup; under the core a
++// thread-exit hook does that.
++struct cpu_thread_cleanup_t
++{
++	cpu_thread* _this = nullptr;
++	std::string name;
++	std::string(*log_prefix)() = nullptr;
++
++	void cleanup()
++	{
++		if (_this == nullptr)
++		{
++			return;
++		}
++
++		if (auto ptr = vm::g_tls_locked)
++		{
++			ptr->compare_and_swap(_this, nullptr);
++		}
++
++		g_tls_log_control = [](const char*, u64){};
++
++		if (s_tls_thread_slot != umax)
++		{
++			cpu_counter::remove(_this);
++		}
++
++		s_cpu_lock.lock_unlock();
++
++		s_cpu_counter--;
++
++		g_tls_log_prefix = log_prefix;
++
++		cpu_thread::g_tls_this_thread = nullptr;
++
++		cpu_thread::g_threads_deleted++;
++
++		_this = nullptr;
++	}
++
++	void on_thread_exit()
++	{
++		if (_this)
++		{
++			cleanup();
++
++			auto log_thread = named_thread("CPU Thread Cleanup Logger", [name = name]()
++			{
++				sys_log.warning("CPU Thread '%s' terminated abnormally!", name);
++			});
++
++			log_thread();
++		}
++	}
++
++#ifndef CHIMERA_CORE
++	~cpu_thread_cleanup_t()
++	{
++		on_thread_exit();
++	}
++#endif
++};
++
++CHIMERA_TLS_DEFINE_STATIC(cpu_thread_cleanup_t, s_tls_cpu_thread_cleanup);
++
++#ifdef CHIMERA_CORE
++static struct s_tls_cpu_thread_cleanup_exit_registrar_t
++{
++	s_tls_cpu_thread_cleanup_exit_registrar_t()
++	{
++		vsched_register_thread_exit([](int slot) { s_tls_cpu_thread_cleanup_slots[slot].on_thread_exit(); });
++	}
++} s_tls_cpu_thread_cleanup_exit_registrar;
++#endif
++
+ void cpu_thread::operator()()
+ {
+ 	const auto old_prefix = g_tls_log_prefix;
+@@ -688,59 +771,7 @@ void cpu_thread::operator()()
+ 	// Register thread in g_cpu_array
+ 	s_cpu_counter++;
+ 
+-	static thread_local struct thread_cleanup_t
+-	{
+-		cpu_thread* _this = nullptr;
+-		std::string name;
+-		std::string(*log_prefix)() = nullptr;
+-
+-		void cleanup()
+-		{
+-			if (_this == nullptr)
+-			{
+-				return;
+-			}
+-
+-			if (auto ptr = vm::g_tls_locked)
+-			{
+-				ptr->compare_and_swap(_this, nullptr);
+-			}
+-
+-			g_tls_log_control = [](const char*, u64){};
+-
+-			if (s_tls_thread_slot != umax)
+-			{
+-				cpu_counter::remove(_this);
+-			}
+-
+-			s_cpu_lock.lock_unlock();
+-
+-			s_cpu_counter--;
+-
+-			g_tls_log_prefix = log_prefix;
+-
+-			g_tls_this_thread = nullptr;
+-
+-			g_threads_deleted++;
+-
+-			_this = nullptr;
+-		}
+-
+-		~thread_cleanup_t()
+-		{
+-			if (_this)
+-			{
+-				cleanup();
+-
+-				auto log_thread = named_thread("CPU Thread Cleanup Logger", [name = name]()
+-				{
+-					sys_log.warning("CPU Thread '%s' terminated abnormally!", name);
+-				});
+-
+-				log_thread();
+-			}
+-		}
+-	} cleanup;
++	auto& cleanup = CHIMERA_TLS(s_tls_cpu_thread_cleanup);
+ 
+ 	cleanup._this = this;
+ 	cleanup.name = thread_ctrl::get_name();
+diff --git a/rpcs3/Emu/CPU/CPUThread.h b/rpcs3/Emu/CPU/CPUThread.h
+index e723fd2d4..09b9358df 100644
+--- a/rpcs3/Emu/CPU/CPUThread.h
++++ b/rpcs3/Emu/CPU/CPUThread.h
+@@ -292,7 +292,7 @@ public:
+ 	template <DerivedFrom<cpu_thread> T = cpu_thread>
+ 	static inline T* get_current() noexcept
+ 	{
+-		if (const auto cpu = g_tls_this_thread)
++		if (const auto cpu = CHIMERA_TLS(g_tls_this_thread))
+ 		{
+ 			return cpu->try_get<T>();
+ 		}
+@@ -300,10 +300,12 @@ public:
+ 		return nullptr;
+ 	}
+ 
+-private:
+-	static thread_local cpu_thread* g_tls_this_thread;
++	// Current cpu_thread (per-thread slots; public so the slot resetter can reach them)
++	CHIMERA_TLS_MEMBER_DECL(cpu_thread*, g_tls_this_thread);
+ };
+ 
++#define g_tls_this_thread CHIMERA_TLS(g_tls_this_thread)
++
+ template <DerivedFrom<cpu_thread> T = cpu_thread>
+ inline T* get_current_cpu_thread() noexcept
+ {
+diff --git a/rpcs3/Emu/Cell/ErrorCodes.cpp b/rpcs3/Emu/Cell/ErrorCodes.cpp
+index f81fe16a6..cc1d266bd 100644
+--- a/rpcs3/Emu/Cell/ErrorCodes.cpp
++++ b/rpcs3/Emu/Cell/ErrorCodes.cpp
+@@ -7,10 +7,15 @@ LOG_CHANNEL(sys_log, "SYS");
+ 
+ bool g_log_all_errors = false;
+ 
++// Error text and statistics of error_report (hoisted out of it)
++using error_stats_map_t = std::unordered_map<std::string, usz>;
++CHIMERA_TLS_DEFINE_STATIC(std::string, s_tls_error_report_str);
++CHIMERA_TLS_DEFINE_STATIC(error_stats_map_t, s_tls_error_report_stats);
++
+ s32 error_code::error_report(s32 result, const logs::message* channel, const char* fmt, const fmt_type_info* sup, const u64* args)
+ {
+-	static thread_local std::string g_tls_error_str;
+-	static thread_local std::unordered_map<std::string, usz> g_tls_error_stats;
++	auto& g_tls_error_str = CHIMERA_TLS(s_tls_error_report_str);
++	auto& g_tls_error_stats = CHIMERA_TLS(s_tls_error_report_stats);
+ 
+ 	if (!channel)
+ 	{
+diff --git a/rpcs3/Emu/Cell/Modules/cellGem.cpp b/rpcs3/Emu/Cell/Modules/cellGem.cpp
+index 85a7d91ff..9d8d38a49 100644
+--- a/rpcs3/Emu/Cell/Modules/cellGem.cpp
++++ b/rpcs3/Emu/Cell/Modules/cellGem.cpp
+@@ -861,6 +861,11 @@ namespace gem
+ 			debayer_raw8_downscale_impl<false>(src, dst, alpha, gain_r, gain_g, gain_b);
+ 	}
+ 
++	// Scratch buffers of convert_image_format (hoisted out of it)
++	CHIMERA_TLS_DEFINE_STATIC(std::vector<u8>, s_tls_gem_corrected_buffer);
++	CHIMERA_TLS_DEFINE_STATIC(std::vector<u8>, s_tls_gem_combined_buffer);
++	CHIMERA_TLS_DEFINE_STATIC(std::vector<u8>, s_tls_gem_conversion_buffer);
++
+ 	bool convert_image_format(CellCameraFormat input_format, const CellGemVideoConvertAttribute& vc,
+ 	                          const std::vector<u8>& video_data_in, u32 width, u32 height,
+ 	                          u8* video_data_out, u32 video_data_out_size, u8* buffer_memory,
+@@ -891,9 +896,9 @@ namespace gem
+ 			return false;
+ 		}
+ 
+-		thread_local std::vector<u8> corrected_buffer;
+-		thread_local std::vector<u8> combined_buffer;
+-		thread_local std::vector<u8> conversion_buffer;
++		auto& corrected_buffer = CHIMERA_TLS(s_tls_gem_corrected_buffer);
++		auto& combined_buffer = CHIMERA_TLS(s_tls_gem_combined_buffer);
++		auto& conversion_buffer = CHIMERA_TLS(s_tls_gem_conversion_buffer);
+ 
+ 		const u8* src_data = video_data_in.data();
+ 		const u8 alpha = vc.alpha;
+diff --git a/rpcs3/Emu/Cell/Modules/sys_libc_.cpp b/rpcs3/Emu/Cell/Modules/sys_libc_.cpp
+index 787d7a39a..4a360febe 100644
+--- a/rpcs3/Emu/Cell/Modules/sys_libc_.cpp
++++ b/rpcs3/Emu/Cell/Modules/sys_libc_.cpp
+@@ -474,16 +474,18 @@ error_code _sys_vsprintf()
+ 	return CELL_OK;
+ }
+ 
++// The guest comparator of the running _sys_qsort (hoisted out of it)
++CHIMERA_TLS_DEFINE_STATIC(vm::ptr<qsortcmp>, s_tls_qsort_cmp);
++
+ void _sys_qsort(vm::ptr<void> base, u32 nelem, u32 size, vm::ptr<qsortcmp> cmp)
+ {
+ 	sysPrxForUser.warning("_sys_qsort(base=*0x%x, nelem=%d, size=0x%x, cmp=*0x%x)", base, nelem, size, cmp);
+ 
+-	static thread_local decltype(cmp) g_tls_cmp;
+-	g_tls_cmp = cmp;
++	CHIMERA_TLS(s_tls_qsort_cmp) = cmp;
+ 
+ 	std::qsort(base.get_ptr(), nelem, size, [](const void* a, const void* b) -> s32
+ 	{
+-		return g_tls_cmp(static_cast<ppu_thread&>(*get_current_cpu_thread()), vm::get_addr(a), vm::get_addr(b));
++		return CHIMERA_TLS(s_tls_qsort_cmp)(static_cast<ppu_thread&>(*get_current_cpu_thread()), vm::get_addr(a), vm::get_addr(b));
+ 	});
+ }
+ 
+diff --git a/rpcs3/Emu/Cell/PPUModule.cpp b/rpcs3/Emu/Cell/PPUModule.cpp
+index dc78ddcb8..eaf9e076a 100644
+--- a/rpcs3/Emu/Cell/PPUModule.cpp
++++ b/rpcs3/Emu/Cell/PPUModule.cpp
+@@ -537,16 +537,21 @@ static void ppu_initialize_modules(ppu_linkage_info* link, utils::serial* ar = n
+ 	}
+ }
+ 
++// The per-thread answer of get_exported_function_names_as_addr_indexed_map (hoisted out of it)
++struct ppu_exported_names_info_t
++{
++	std::unordered_map<u32, std::string_view> res;
++	u64 update_time = 0;
++};
++
++CHIMERA_TLS_DEFINE_STATIC(std::unique_ptr<ppu_exported_names_info_t>, s_tls_ppu_exported_names_info);
++
+ // For the debugger (g_ppu_function_names shouldn't change, string_view should suffice)
+ extern const std::unordered_map<u32, std::string_view>& get_exported_function_names_as_addr_indexed_map()
+ {
+-	struct info_t
+-	{
+-		std::unordered_map<u32, std::string_view> res;
+-		u64 update_time = 0;
+-	};
++	using info_t = ppu_exported_names_info_t;
+ 
+-	static thread_local std::unique_ptr<info_t> info;
++	auto& info = CHIMERA_TLS(s_tls_ppu_exported_names_info);
+ 
+ 	if (!info)
+ 	{
+diff --git a/rpcs3/Emu/Cell/PPUThread.cpp b/rpcs3/Emu/Cell/PPUThread.cpp
+index 4006a13bf..f63adc580 100644
+--- a/rpcs3/Emu/Cell/PPUThread.cpp
++++ b/rpcs3/Emu/Cell/PPUThread.cpp
+@@ -2514,7 +2514,12 @@ void ppu_thread::dump_all(std::string& ret) const
+ 	}
+ }
+ 
+-extern thread_local std::string(*g_tls_log_prefix)();
++using g_tls_log_prefix_t = std::string(*)();
++CHIMERA_TLS_DECLARE(g_tls_log_prefix_t, g_tls_log_prefix);
++#define g_tls_log_prefix CHIMERA_TLS(g_tls_log_prefix)
++
++// The name last seen by the PPU log prefix provider (hoisted out of it)
++CHIMERA_TLS_DEFINE_STATIC(shared_ptr<std::string>, s_tls_ppu_name_cache);
+ 
+ void ppu_thread::cpu_task()
+ {
+@@ -3261,7 +3266,7 @@ void ppu_thread::fast_call(u32 addr, u64 rtoc, bool is_thread_entry)
+ 	{
+ 		const auto _this = static_cast<ppu_thread*>(get_current_cpu_thread());
+ 
+-		static thread_local shared_ptr<std::string> name_cache;
++		auto& name_cache = CHIMERA_TLS(s_tls_ppu_name_cache);
+ 
+ 		if (!_this->ppu_tname.is_equal(name_cache)) [[unlikely]]
+ 		{
+diff --git a/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp b/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp
+index 288deaa62..58e03e86b 100644
+--- a/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp
++++ b/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp
+@@ -1429,10 +1429,26 @@ spu_item* spu_runtime::add_empty(spu_program&& data)
+ 	return prev;
+ }
+ 
++// Scratch storage of rebuild_ubertrampoline (hoisted out of it)
++using spu_ubertrampoline_flat_list_t = std::vector<std::pair<std::span<const u32>, spu_function_t>>;
++
++struct spu_ubertrampoline_work
++{
++	u32 size;
++	u16 from;
++	u16 level;
++	u8* rel32;
++	spu_ubertrampoline_flat_list_t::iterator beg;
++	spu_ubertrampoline_flat_list_t::iterator end;
++};
++
++CHIMERA_TLS_DEFINE_STATIC(spu_ubertrampoline_flat_list_t, s_tls_spu_ubertrampoline_flat_list);
++CHIMERA_TLS_DEFINE_STATIC(std::vector<spu_ubertrampoline_work>, s_tls_spu_ubertrampoline_workload);
++
+ spu_function_t spu_runtime::rebuild_ubertrampoline(u32 id_inst)
+ {
+ 	// Prepare sorted list
+-	static thread_local std::vector<std::pair<std::span<const u32>, spu_function_t>> m_flat_list;
++	auto& m_flat_list = CHIMERA_TLS(s_tls_spu_ubertrampoline_flat_list);
+ 
+ 	// Remember top position
+ 	auto stuff_it = ::at32(m_stuff, id_inst >> 12).begin();
+@@ -1463,18 +1479,8 @@ spu_function_t spu_runtime::rebuild_ubertrampoline(u32 id_inst)
+ 
+ 	std::sort(m_flat_list.begin(), m_flat_list.end(), FN(s_span_less<const u32>(x.first, y.first)));
+ 
+-	struct work
+-	{
+-		u32 size;
+-		u16 from;
+-		u16 level;
+-		u8* rel32;
+-		decltype(m_flat_list)::iterator beg;
+-		decltype(m_flat_list)::iterator end;
+-	};
+-
+ 	// Scratch vector
+-	static thread_local std::vector<work> workload;
++	auto& workload = CHIMERA_TLS(s_tls_spu_ubertrampoline_workload);
+ 
+ 	// Generate a dispatcher (übertrampoline)
+ 	const auto beg = m_flat_list.begin();
+@@ -2862,9 +2868,12 @@ reg_state_t reg_state_t::from_value(u32 value) noexcept
+ 	return v;
+ }
+ 
++// Tag counter of reg_state_t::alloc_tag (hoisted out of it)
++CHIMERA_TLS_DEFINE_STATIC(u32, s_tls_reg_state_tag, 0);
++
+ u32 reg_state_t::alloc_tag(bool reset) noexcept
+ {
+-	static thread_local u32 g_tls_tag = 0;
++	auto& g_tls_tag = CHIMERA_TLS(s_tls_reg_state_tag);
+ 
+ 	if (reset)
+ 	{
+diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
+index 79a61fed2..45a7ec921 100644
+--- a/rpcs3/Emu/Cell/SPUThread.cpp
++++ b/rpcs3/Emu/Cell/SPUThread.cpp
+@@ -523,7 +523,8 @@ namespace vm
+ 
+ void do_cell_atomic_128_store(u32 addr, const void* to_write);
+ 
+-extern thread_local u64 g_tls_fault_spu;
++CHIMERA_TLS_DECLARE(u64, g_tls_fault_spu);
++#define g_tls_fault_spu CHIMERA_TLS(g_tls_fault_spu)
+ 
+ const extern spu_decoder<spu_itype> g_spu_itype;
+ const extern spu_decoder<spu_iflag> g_spu_iflag;
+@@ -1467,7 +1468,19 @@ void spu_thread::cpu_return()
+ 	}
+ }
+ 
+-extern thread_local std::string(*g_tls_log_prefix)();
++using g_tls_log_prefix_t = std::string(*)();
++CHIMERA_TLS_DECLARE(g_tls_log_prefix_t, g_tls_log_prefix);
++#define g_tls_log_prefix CHIMERA_TLS(g_tls_log_prefix)
++
++// The name last seen by the SPU log prefix provider (hoisted out of it)
++CHIMERA_TLS_DEFINE_STATIC(shared_ptr<std::string>, s_tls_spu_name_cache);
++
++// Busy/system wait tallies of the SPU wait heuristic (hoisted out of it)
++CHIMERA_TLS_DEFINE_STATIC(usz, s_tls_spu_system_wait, 0);
++CHIMERA_TLS_DEFINE_STATIC(usz, s_tls_spu_busy_wait, 0);
++
++// Set when the reservation waiter has something to notify (hoisted out of spu_thread::process_mfc_cmd)
++CHIMERA_TLS_DEFINE_STATIC(bool, s_tls_spu_try_notify, false);
+ 
+ void spu_thread::cpu_task()
+ {
+@@ -1492,7 +1505,7 @@ void spu_thread::cpu_task()
+ 	{
+ 		const auto cpu = static_cast<spu_thread*>(get_current_cpu_thread());
+ 
+-		static thread_local shared_ptr<std::string> name_cache;
++		auto& name_cache = CHIMERA_TLS(s_tls_spu_name_cache);
+ 
+ 		if (!cpu->spu_tname.is_equal(name_cache)) [[unlikely]]
+ 		{
+@@ -4196,7 +4209,8 @@ u32 evaluate_spin_optimization(std::span<u8> stats, u64 evaluate_time, const cfg
+ 	// Evalute its value (shift-right to ensure its randomness with different CPUs)
+ 	const u32 busy_waiting_switch = ((evaluate_time >> 8) % 100 + add_count < percent) ? 1 : 0;
+ 
+-	thread_local usz g_system_wait = 0, g_busy_wait = 0;
++	auto& g_system_wait = CHIMERA_TLS(s_tls_spu_system_wait);
++	auto& g_busy_wait = CHIMERA_TLS(s_tls_spu_busy_wait);
+ 
+ 	if (busy_waiting_switch)
+ 	{
+@@ -5890,7 +5904,7 @@ s64 spu_thread::get_ch_value(u32 ch)
+ 						vm::reservation_notifier_end_wait(*wait_var);
+ 					}
+ #else
+-					static thread_local bool s_tls_try_notify = false;
++					auto& s_tls_try_notify = CHIMERA_TLS(s_tls_spu_try_notify);
+ 					s_tls_try_notify = false;
+ 
+ 					const auto wait_cb = mask1 != SPU_EVENT_LR ? nullptr : +[](u64 attempts) -> bool
+diff --git a/rpcs3/Emu/Cell/lv2/lv2.cpp b/rpcs3/Emu/Cell/lv2/lv2.cpp
+index 9b38ac5ec..9780622a2 100644
+--- a/rpcs3/Emu/Cell/lv2/lv2.cpp
++++ b/rpcs3/Emu/Cell/lv2/lv2.cpp
+@@ -1314,9 +1314,9 @@ DECLARE(lv2_obj::g_ppu){};
+ DECLARE(lv2_obj::g_pending){};
+ DECLARE(lv2_obj::g_priority_order_tag){};
+ 
+-thread_local DECLARE(lv2_obj::g_to_notify){};
+-thread_local DECLARE(lv2_obj::g_postpone_notify_barrier){};
+-thread_local DECLARE(lv2_obj::g_to_awake);
++CHIMERA_TLS_MEMBER(lv2_obj::g_to_notify_t, lv2_obj, g_to_notify);
++CHIMERA_TLS_MEMBER(bool, lv2_obj, g_postpone_notify_barrier);
++CHIMERA_TLS_MEMBER(std::vector<class cpu_thread*>, lv2_obj, g_to_awake);
+ 
+ // Scheduler queue for timeouts (wait until -> thread)
+ static std::deque<std::pair<u64, class cpu_thread*>> g_waiting;
+@@ -1363,7 +1363,7 @@ bool lv2_obj::sleep(cpu_thread& cpu, const u64 timeout)
+ 			ppu.res_notify = 0;
+ 			ppu.res_notify_postpone_streak = 0;
+ 
+-			if (auto it = std::find(g_to_notify, std::end(g_to_notify), std::add_pointer_t<const void>{}); it != std::end(g_to_notify))
++			if (auto it = std::find(std::begin(g_to_notify), std::end(g_to_notify), std::add_pointer_t<const void>{}); it != std::end(g_to_notify))
+ 			{
+ 				if ((*it++ = vm::reservation_notifier_notify(addr, ppu.res_notify_time, true)))
+ 				{
+@@ -1414,7 +1414,7 @@ bool lv2_obj::awake(cpu_thread* thread, s32 prio)
+ 			ppu->res_notify = 0;
+ 			ppu->res_notify_postpone_streak = 0;
+ 
+-			if (auto it = std::find(g_to_notify, std::end(g_to_notify), std::add_pointer_t<const void>{}); it != std::end(g_to_notify))
++			if (auto it = std::find(std::begin(g_to_notify), std::end(g_to_notify), std::add_pointer_t<const void>{}); it != std::end(g_to_notify))
+ 			{
+ 				if ((*it++ = vm::reservation_notifier_notify(addr, ppu->res_notify_time, true)))
+ 				{
+@@ -1856,7 +1856,7 @@ void lv2_obj::cleanup()
+ 
+ void lv2_obj::schedule_all(u64 current_time)
+ {
+-	auto it = std::find(g_to_notify, std::end(g_to_notify), std::add_pointer_t<const void>{});
++	auto it = std::find(std::begin(g_to_notify), std::end(g_to_notify), std::add_pointer_t<const void>{});
+ 
+ 	if (!g_pending && g_scheduler_ready)
+ 	{
+diff --git a/rpcs3/Emu/Cell/lv2/sys_spu.cpp b/rpcs3/Emu/Cell/lv2/sys_spu.cpp
+index ee0e07050..1ec5a53e2 100644
+--- a/rpcs3/Emu/Cell/lv2/sys_spu.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_spu.cpp
+@@ -252,7 +252,7 @@ lv2_spu_group::lv2_spu_group(utils::serial& ar) noexcept
+ 	{
+ 		if (ar.pop<bool>())
+ 		{
+-			ar(id_manager::g_id);
++			ar(id_manager::g_tls_last_id);
+ 			thread = stx::make_shared<named_thread<spu_thread>>(stx::launch_retainer{}, ar, this);
+ 			ensure(idm::import_existing<named_thread<spu_thread>>(thread, idm::last_id()));
+ 			running += !thread->stop_flag_removal_protection;
+diff --git a/rpcs3/Emu/Cell/lv2/sys_sync.h b/rpcs3/Emu/Cell/lv2/sys_sync.h
+index 6d55f4b1f..986b9e37a 100644
+--- a/rpcs3/Emu/Cell/lv2/sys_sync.h
++++ b/rpcs3/Emu/Cell/lv2/sys_sync.h
+@@ -274,7 +274,7 @@ public:
+ 	static inline void awake_all()
+ 	{
+ 		awake({});
+-		g_to_awake.clear();
++		CHIMERA_TLS(g_to_awake).clear();
+ 	}
+ 
+ 	static void make_scheduler_ready();
+@@ -283,7 +283,7 @@ public:
+ 
+ 	static inline void append(cpu_thread* const thread)
+ 	{
+-		g_to_awake.emplace_back(thread);
++		CHIMERA_TLS(g_to_awake).emplace_back(thread);
+ 	}
+ 
+ 	// Serialization related
+@@ -459,14 +459,14 @@ public:
+ 	{
+ 		notify_all_t() noexcept
+ 		{
+-			g_postpone_notify_barrier = true;
++			CHIMERA_TLS(g_postpone_notify_barrier) = true;
+ 		}
+ 
+ 		notify_all_t(const notify_all_t&) = delete;
+ 
+ 		static void cleanup()
+ 		{
+-			for (auto& cpu : g_to_notify)
++			for (auto& cpu : CHIMERA_TLS(g_to_notify))
+ 			{
+ 				if (!cpu)
+ 				{
+@@ -476,18 +476,18 @@ public:
+ 				// While IDM mutex is still locked (this function assumes so) check if the notification is still needed
+ 				// Pending flag is meant for forced notification (if the CPU really has pending work it can restore the flag in theory)
+ 				// Disabled to allow reservation notifications from here
+-				if (false && cpu != &g_to_notify && static_cast<const decltype(cpu_thread::state)*>(cpu)->none_of(cpu_flag::signal + cpu_flag::pending))
++				if (false && cpu != &CHIMERA_TLS(g_to_notify) && static_cast<const decltype(cpu_thread::state)*>(cpu)->none_of(cpu_flag::signal + cpu_flag::pending))
+ 				{
+ 					// Omit it (this is a void pointer, it can hold anything)
+-					cpu = &g_to_notify;
++					cpu = &CHIMERA_TLS(g_to_notify);
+ 				}
+ 			}
+ 		}
+ 
+ 		static void enqueue_on_top(const void* waiter)
+ 		{
+-			g_to_notify[0] = waiter;
+-			g_to_notify[1] = nullptr;
++			CHIMERA_TLS(g_to_notify)[0] = waiter;
++			CHIMERA_TLS(g_to_notify)[1] = nullptr;
+ 		}
+ 
+ 		~notify_all_t() noexcept
+@@ -502,9 +502,20 @@ public:
+ 	// Proirity tags
+ 	static atomic_t<u64> g_priority_order_tag;
+ 
+-private:
++public:
++	// Per-thread slots (public so the slot resetter can reach them)
++
+ 	// Pending list of threads to run
+-	static thread_local std::vector<class cpu_thread*> g_to_awake;
++	CHIMERA_TLS_MEMBER_DECL(std::vector<class cpu_thread*>, g_to_awake);
++
++	// Pending list of threads to notify (cpu_thread::state ptr)
++	using g_to_notify_t = std::array<std::add_pointer_t<const void>, 4>;
++	CHIMERA_TLS_MEMBER_DECL(g_to_notify_t, g_to_notify);
++
++	// If a notify_all_t object exists locally, postpone notifications to the destructor of it (not recursive, notifies on the first destructor for safety)
++	CHIMERA_TLS_MEMBER_DECL(bool, g_postpone_notify_barrier);
++
++private:
+ 
+ 	// Scheduler queue for active PPU threads
+ 	static class ppu_thread* g_ppu;
+@@ -512,11 +523,9 @@ private:
+ 	// Waiting for the response from
+ 	static u32 g_pending;
+ 
+-	// Pending list of threads to notify (cpu_thread::state ptr)
+-	static thread_local std::add_pointer_t<const void> g_to_notify[4];
+-
+-	// If a notify_all_t object exists locally, postpone notifications to the destructor of it (not recursive, notifies on the first destructor for safety)
+-	static thread_local bool g_postpone_notify_barrier;
+-
+ 	static void schedule_all(u64 current_time = 0);
+ };
++
++#define g_to_awake CHIMERA_TLS(g_to_awake)
++#define g_to_notify CHIMERA_TLS(g_to_notify)
++#define g_postpone_notify_barrier CHIMERA_TLS(g_postpone_notify_barrier)
+diff --git a/rpcs3/Emu/Cell/lv2/sys_tty.cpp b/rpcs3/Emu/Cell/lv2/sys_tty.cpp
+index dcc142b81..f199a990d 100644
+--- a/rpcs3/Emu/Cell/lv2/sys_tty.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_tty.cpp
+@@ -8,6 +8,9 @@
+ #include <deque>
+ #include <mutex>
+ 
++// When this thread last wrote to the TTY (hoisted out of sys_tty_write)
++CHIMERA_TLS_DEFINE_STATIC(u64, s_tls_tty_last_write, 0);
++
+ LOG_CHANNEL(sys_tty);
+ 
+ extern fs::file g_tty;
+@@ -130,7 +133,7 @@ error_code sys_tty_write([[maybe_unused]] ppu_thread& ppu, s32 ch, vm::cptr<char
+ 
+ 	if (msg.size() >= 2u && [&]()
+ 	{
+-		static thread_local u64 last_write = 0;
++		auto& last_write = CHIMERA_TLS(s_tls_tty_last_write);
+ 
+ 		// Dump thread about every period which TTY was not being touched for about half a second
+ 		const u64 current = get_system_time();
+diff --git a/rpcs3/Emu/IdManager.cpp b/rpcs3/Emu/IdManager.cpp
+index 2a8f9ffee..704821fe1 100644
+--- a/rpcs3/Emu/IdManager.cpp
++++ b/rpcs3/Emu/IdManager.cpp
+@@ -5,7 +5,7 @@ shared_mutex id_manager::g_mutex;
+ 
+ namespace id_manager
+ {
+-	thread_local u32 g_id = 0;
++	CHIMERA_TLS_DEFINE(u32, g_tls_last_id, 0);
+ }
+ 
+ template <>
+@@ -47,7 +47,7 @@ id_manager::id_key* idm::allocate_id(std::span<id_manager::id_key> keys, u32& hi
+ 			return nullptr;
+ 		}
+ 
+-		id_manager::g_id = dst_id;
++		id_manager::g_tls_last_id = dst_id;
+ 		keys[index] = id_manager::id_key(dst_id, type_id);
+ 		return &keys[index];
+ 	}
+@@ -61,7 +61,7 @@ id_manager::id_key* idm::allocate_id(std::span<id_manager::id_key> keys, u32& hi
+ 	{
+ 		// Try to emplace back
+ 		const u32 _next = base + step * highest_index;
+-		id_manager::g_id = _next;
++		id_manager::g_tls_last_id = _next;
+ 		return &(keys[highest_index++] = (id_manager::id_key(_next, type_id)));
+ 	}
+ 
+@@ -75,7 +75,7 @@ id_manager::id_key* idm::allocate_id(std::span<id_manager::id_key> keys, u32& hi
+ 		{
+ 			// Incremenet ID invalidation counter
+ 			const u32 id = next | ((ptr->value() + (1u << invl_range.first)) & (invl_range.second ? (((1u << invl_range.second) - 1) << invl_range.first) : 0));
+-			id_manager::g_id = id;
++			id_manager::g_tls_last_id = id;
+ 			*ptr = id_manager::id_key(id, type_id);
+ 			return ptr;
+ 		}
+diff --git a/rpcs3/Emu/IdManager.h b/rpcs3/Emu/IdManager.h
+index a626995ce..87918b945 100644
+--- a/rpcs3/Emu/IdManager.h
++++ b/rpcs3/Emu/IdManager.h
+@@ -65,7 +65,8 @@ namespace id_manager
+ 	}
+ 
+ 	// Last allocated ID for constructors
+-	extern thread_local u32 g_id;
++	CHIMERA_TLS_DECLARE(u32, g_tls_last_id);
++#define g_tls_last_id CHIMERA_TLS(g_tls_last_id)
+ 
+ 	// ID traits
+ 	template <typename T>
+@@ -328,7 +329,7 @@ namespace id_manager
+ 				// Construct each object from information collected
+ 
+ 				// Simulate construction semantics (idm::last_id() value)
+-				g_id = id;
++				g_tls_last_id = id;
+ 
+ 				const u32 object_index = get_index(id, info->base, info->step, info->count, info->invl_range);
+ 				auto& obj = ::at32(vec_data, object_index);
+@@ -588,14 +589,14 @@ public:
+ 	// Get last ID (updated in create_id/allocate_id)
+ 	static inline u32 last_id()
+ 	{
+-		return id_manager::g_id;
++		return id_manager::g_tls_last_id;
+ 	}
+ 
+ 	// Get last ID with type validation
+ 	template <typename T>
+ 	static inline u32 last_id(std::source_location src = std::source_location::current())
+ 	{
+-		const u32 last = id_manager::g_id;
++		const u32 last = id_manager::g_tls_last_id;
+ 
+ 		if (get_index<T>(last) >= T::id_count)
+ 		{
+diff --git a/rpcs3/Emu/Memory/vm.cpp b/rpcs3/Emu/Memory/vm.cpp
+index a36c0c2c8..241d0e255 100644
+--- a/rpcs3/Emu/Memory/vm.cpp
++++ b/rpcs3/Emu/Memory/vm.cpp
+@@ -102,7 +102,8 @@ namespace vm
+ 	alignas(64) std::vector<std::shared_ptr<block_t>> g_locations;
+ 
+ 	// Memory mutex acknowledgement
+-	thread_local atomic_t<cpu_thread*>* g_tls_locked = nullptr;
++	using g_tls_locked_t = atomic_t<cpu_thread*>*;
++	CHIMERA_TLS_DEFINE(g_tls_locked_t, g_tls_locked, nullptr);
+ 
+ 	// Memory mutex: passive locks
+ 	std::array<atomic_t<cpu_thread*>, g_cfg.core.ppu_threads.max> g_locks{};
+diff --git a/rpcs3/Emu/Memory/vm_locking.h b/rpcs3/Emu/Memory/vm_locking.h
+index ac29a36d2..ebbede233 100644
+--- a/rpcs3/Emu/Memory/vm_locking.h
++++ b/rpcs3/Emu/Memory/vm_locking.h
+@@ -8,7 +8,8 @@ class shared_mutex;
+ 
+ namespace vm
+ {
+-	extern thread_local atomic_t<cpu_thread*>* g_tls_locked;
++	CHIMERA_TLS_DECLARE(atomic_t<cpu_thread*>*, g_tls_locked);
++#define g_tls_locked CHIMERA_TLS(g_tls_locked)
+ 
+ 	enum range_lock_flags : u64
+ 	{
+diff --git a/rpcs3/Emu/RSX/Overlays/overlay_fonts.cpp b/rpcs3/Emu/RSX/Overlays/overlay_fonts.cpp
+index 932000579..349d401c2 100644
+--- a/rpcs3/Emu/RSX/Overlays/overlay_fonts.cpp
++++ b/rpcs3/Emu/RSX/Overlays/overlay_fonts.cpp
+@@ -466,12 +466,15 @@ namespace rsx
+ 			render_text_ex(loc_x, loc_y, text, max_length, max_width, wrap);
+ 		}
+ 
++		// The glyph pages font::get_glyph_data returns (hoisted out of it)
++		CHIMERA_TLS_DEFINE_STATIC(std::vector<u8>, s_tls_font_glyph_bytes);
++
+ 		const std::vector<u8>& font::get_glyph_data() const
+ 		{
+ 			constexpr u32 page_size = codepage::bitmap_width * codepage::bitmap_height;
+ 			const auto size = page_size * m_glyph_map.size();
+ 
+-			static thread_local std::vector<u8> bytes;
++			auto& bytes = CHIMERA_TLS(s_tls_font_glyph_bytes);
+ 			bytes.resize(size);
+ 
+ 			u8* data = bytes.data();
+diff --git a/rpcs3/Emu/RSX/Overlays/overlays.cpp b/rpcs3/Emu/RSX/Overlays/overlays.cpp
+index 04be1158b..d263dbd6a 100644
+--- a/rpcs3/Emu/RSX/Overlays/overlays.cpp
++++ b/rpcs3/Emu/RSX/Overlays/overlays.cpp
+@@ -42,7 +42,7 @@ namespace rsx
+ 			Emu.GetCallbacks().play_sound(get_sound_filepath(sound), volume);
+ 		}
+ 
+-		thread_local DECLARE(user_interface::g_thread_bit) = 0;
++		CHIMERA_TLS_MEMBER(u32, user_interface, g_tls_thread_bit, 0);
+ 
+ 		u32 user_interface::alloc_thread_bit()
+ 		{
+@@ -489,7 +489,7 @@ namespace rsx
+ 
+ 			while (u32 b = thread_bits)
+ 			{
+-				if (b == g_thread_bit)
++				if (b == g_tls_thread_bit)
+ 				{
+ 					// Don't wait for its own bit
+ 					break;
+diff --git a/rpcs3/Emu/RSX/Overlays/overlays.h b/rpcs3/Emu/RSX/Overlays/overlays.h
+index d9f3986ae..6226672f5 100644
+--- a/rpcs3/Emu/RSX/Overlays/overlays.h
++++ b/rpcs3/Emu/RSX/Overlays/overlays.h
+@@ -67,6 +67,9 @@ namespace rsx
+ 		class user_interface : public overlay
+ 		{
+ 		public:
++			// The thread bit of the running input thread (per-thread slots; public so the slot resetter can reach them)
++			CHIMERA_TLS_MEMBER_DECL(u32, g_tls_thread_bit);
++
+ 			// Move this somewhere to avoid duplication
+ 			enum selection_code
+ 			{
+@@ -108,8 +111,6 @@ namespace rsx
+ 			bool m_keyboard_pad_handler_active = true; // Initialized as true to prevent keyboard input until proven otherwise.
+ 			bool m_allow_input_on_pause = false;
+ 
+-			static thread_local u32 g_thread_bit;
+-
+ 			u32 alloc_thread_bit();
+ 
+ 			std::function<void(s32 status)> on_close = nullptr;
+@@ -121,7 +122,7 @@ namespace rsx
+ 					: m_parent(parent)
+ 				{
+ 					m_thread_bit = m_parent->alloc_thread_bit();
+-					g_thread_bit = m_thread_bit;
++					CHIMERA_TLS(g_tls_thread_bit) = m_thread_bit;
+ 				}
+ 
+ 				~thread_bits_allocator()
+@@ -150,6 +151,8 @@ namespace rsx
+ 			s32 run_input_loop(std::function<bool()> check_state = nullptr);
+ 		};
+ 
++#define g_tls_thread_bit CHIMERA_TLS(g_tls_thread_bit)
++
+ 		struct text_guard_t
+ 		{
+ 			std::mutex mutex;
+diff --git a/rpcs3/Emu/RSX/RSXThread.cpp b/rpcs3/Emu/RSX/RSXThread.cpp
+index d5769a3da..ef9d61bd0 100644
+--- a/rpcs3/Emu/RSX/RSXThread.cpp
++++ b/rpcs3/Emu/RSX/RSXThread.cpp
+@@ -49,7 +49,9 @@ rsx::frame_trace_data frame_debug;
+ rsx::frame_capture_data frame_capture;
+ 
+ extern CellGcmOffsetTable offsetTable;
+-extern thread_local std::string(*g_tls_log_prefix)();
++using g_tls_log_prefix_t = std::string(*)();
++CHIMERA_TLS_DECLARE(g_tls_log_prefix_t, g_tls_log_prefix);
++#define g_tls_log_prefix CHIMERA_TLS(g_tls_log_prefix)
+ extern atomic_t<u32> g_lv2_preempts_taken;
+ 
+ LOG_CHANNEL(perf_log, "PERF");
+diff --git a/rpcs3/Emu/System.cpp b/rpcs3/Emu/System.cpp
+index 2b898ea8a..2748d32cb 100644
+--- a/rpcs3/Emu/System.cpp
++++ b/rpcs3/Emu/System.cpp
+@@ -102,9 +102,11 @@ fs::file g_tty;
+ atomic_t<s64> g_tty_size{0};
+ std::array<std::deque<std::string>, 16> g_tty_input;
+ std::mutex g_tty_mutex;
+-thread_local std::string_view g_tls_serialize_name;
++CHIMERA_TLS_DEFINE(std::string_view, g_tls_serialize_name);
+ 
+-extern thread_local std::string(*g_tls_log_prefix)();
++using g_tls_log_prefix_t = std::string(*)();
++CHIMERA_TLS_DECLARE(g_tls_log_prefix_t, g_tls_log_prefix);
++#define g_tls_log_prefix CHIMERA_TLS(g_tls_log_prefix)
+ 
+ extern f64 get_cpu_program_usage_percent(u64 hash);
+ 
+diff --git a/rpcs3/Emu/perf_meter.cpp b/rpcs3/Emu/perf_meter.cpp
+index adaed4cf4..16cd60a73 100644
+--- a/rpcs3/Emu/perf_meter.cpp
++++ b/rpcs3/Emu/perf_meter.cpp
+@@ -99,18 +99,19 @@ static std::map<std::string, perf_stat_base> s_perf_acc;
+ 
+ static std::multimap<std::string, u64*> s_perf_sources;
+ 
+-void perf_stat_base::add(u64 ns[66], const char* name) noexcept
++bool perf_stat_base::add(u64 ns[66], const char* name) noexcept
+ {
+ 	// Don't attempt to register some foreign/unnamed threads
+ 	if (!thread_ctrl::get_current())
+ 	{
+-		return;
++		return false;
+ 	}
+ 
+ 	std::lock_guard lock(s_perf_mutex);
+ 
+ 	s_perf_sources.emplace(name, ns);
+ 	s_perf_acc[name];
++	return true;
+ }
+ 
+ void perf_stat_base::remove(u64 ns[66], const char* name) noexcept
+diff --git a/rpcs3/Emu/perf_meter.hpp b/rpcs3/Emu/perf_meter.hpp
+index ac53185b0..0ae8e1b17 100644
+--- a/rpcs3/Emu/perf_meter.hpp
++++ b/rpcs3/Emu/perf_meter.hpp
+@@ -33,8 +33,8 @@ protected:
+ 	// Get end time; accumulate value to the TLS
+ 	static void push(u64 data[66], u64 start_time, const char* name) noexcept;
+ 
+-	// Register TLS storage for stats
+-	static void add(u64 ns[66], const char* name) noexcept;
++	// Register TLS storage for stats (false when the thread is unnamed and nothing was registered)
++	static bool add(u64 ns[66], const char* name) noexcept;
+ 
+ 	// Unregister TLS storage and drain its data
+ 	static void remove(u64 ns[66], const char* name) noexcept;
+@@ -56,32 +56,53 @@ public:
+ template <auto ShortName>
+ class perf_stat final : public perf_stat_base
+ {
+-	static inline thread_local struct perf_stat_local
++	struct perf_stat_local
+ 	{
+ 		// Local non-atomic values for increments
+ 		u64 m_log[66]{};
+ 
+-		perf_stat_local() noexcept
+-		{
+-			perf_stat_base::add(m_log, perf_name<ShortName>.data());
+-		}
++		// Registered with perf_stat_base on the first push (a slot has no thread to register when it is created)
++		bool m_registered = false;
+ 
+ 		~perf_stat_local()
+ 		{
+-			perf_stat_base::remove(m_log, perf_name<ShortName>.data());
++			if (m_registered)
++			{
++				perf_stat_base::remove(m_log, perf_name<ShortName>.data());
++			}
+ 		}
+-
+-	} g_tls_perf_stat;
++	};
+ 
+ public:
++	// Per-thread slots (public so the definition below can reach them)
++	CHIMERA_TLS_MEMBER_DECL(perf_stat_local, g_tls_perf_stat);
++
+ 	static FORCE_INLINE SAFE_BUFFERS(void) push([[maybe_unused]] u64 start_time) noexcept
+ 	{
+ #if !defined(_WIN32) || defined(_MSC_VER) // Windows clang LTO doesn't seem to like this template
+-		perf_stat_base::push(g_tls_perf_stat.m_log, start_time, perf_name<ShortName>.data());
++		auto& local = CHIMERA_TLS(g_tls_perf_stat);
++
++		if (!local.m_registered)
++		{
++			local.m_registered = perf_stat_base::add(local.m_log, perf_name<ShortName>.data());
++		}
++
++		perf_stat_base::push(local.m_log, start_time, perf_name<ShortName>.data());
+ #endif
+ 	}
+ };
+ 
++// A class template's static member needs its own template definition, which the kit's
++// one-per-variable registrar cannot spell; the slots never need resetting (a reused slot keeps
++// its registration and keeps counting, and report() drains every registered source).
++#ifdef CHIMERA_CORE
++template <auto ShortName>
++typename perf_stat<ShortName>::perf_stat_local perf_stat<ShortName>::g_tls_perf_stat_slots[VSCHED_SLOTS]{};
++#else
++template <auto ShortName>
++thread_local typename perf_stat<ShortName>::perf_stat_local perf_stat<ShortName>::g_tls_perf_stat;
++#endif
++
+ // Object that prints event length at the end
+ template <auto ShortName, auto... SubEvents>
+ class perf_meter
+diff --git a/rpcs3/Emu/savestate_utils.cpp b/rpcs3/Emu/savestate_utils.cpp
+index f26e80604..62a9bca12 100644
+--- a/rpcs3/Emu/savestate_utils.cpp
++++ b/rpcs3/Emu/savestate_utils.cpp
+@@ -574,12 +574,18 @@ bool load_and_check_reserved(utils::serial& ar, usz size)
+ 	return old_pos + size == ar.pos;
+ }
+ 
++// State of serial_breathe_and_tag between calls (hoisted out of it)
++CHIMERA_TLS_DEFINE_STATIC(std::string_view, s_tls_breathe_object_name, "none");
++CHIMERA_TLS_DEFINE_STATIC(u64, s_tls_breathe_call_count, 1);
++CHIMERA_TLS_DEFINE_STATIC(u64, s_tls_breathe_current_pos, 0);
++
+ namespace stx
+ {
+ 	extern u16 serial_breathe_and_tag(utils::serial& ar, std::string_view name, bool tag_bit)
+ 	{
+-		thread_local std::string_view s_tls_object_name = "none";
+-		thread_local u64 s_tls_call_count = 1, s_tls_current_pos = 0;
++		auto& s_tls_object_name = CHIMERA_TLS(s_tls_breathe_object_name);
++		auto& s_tls_call_count = CHIMERA_TLS(s_tls_breathe_call_count);
++		auto& s_tls_current_pos = CHIMERA_TLS(s_tls_breathe_current_pos);
+ 
+ 		if (s_tls_current_pos >= ar.pos)
+ 		{
+diff --git a/rpcs3/Loader/ISO.cpp b/rpcs3/Loader/ISO.cpp
+index 94d5fdcb8..cf531da58 100644
+--- a/rpcs3/Loader/ISO.cpp
++++ b/rpcs3/Loader/ISO.cpp
+@@ -28,13 +28,34 @@ struct iso_sector
+ 	u64 size_aligned;
+ };
+ 
+-static void* get_aligned_buf()
++// The sector buffer of get_aligned_buf, one per thread, allocated on first use (hoisted out of it)
++struct iso_aligned_buf
+ {
+-	static thread_local struct aligned_buf
++	void* buf = nullptr;
++
++	iso_aligned_buf() noexcept = default;
++
++	iso_aligned_buf(const iso_aligned_buf&) = delete;
++
++	// Assigning a fresh one hands the old buffer to the temporary, whose destructor frees it
++	iso_aligned_buf& operator =(iso_aligned_buf&& r) noexcept
+ 	{
+-		void* buf;
++		std::swap(buf, r.buf);
++		return *this;
++	}
++
++	~iso_aligned_buf() noexcept
++	{
++#if defined(_WIN32)
++		_aligned_free(buf);
++#else
++		std::free(buf);
++#endif
++	}
+ 
+-		aligned_buf() noexcept
++	void* get() noexcept
++	{
++		if (!buf)
+ 		{
+ 			// IMPORTANT NOTE: it must be aligned on the sector size of the volume to support a raw device, otherwise any read from
+ 			// file will fail (an optical medium always uses ISO_SECTOR_SIZE, so allocating a sector aligned on itself is enough)
+@@ -45,17 +66,15 @@ static void* get_aligned_buf()
+ #endif
+ 		}
+ 
+-		~aligned_buf() noexcept
+-		{
+-#if defined(_WIN32)
+-			_aligned_free(buf);
+-#else
+-			std::free(buf);
+-#endif
+-		}
+-	} s_aligned_buf {};
++		return buf;
++	}
++};
++
++CHIMERA_TLS_DEFINE_STATIC(iso_aligned_buf, s_tls_iso_aligned_buf);
+ 
+-	return ensure(s_aligned_buf.buf);
++static void* get_aligned_buf()
++{
++	return ensure(CHIMERA_TLS(s_tls_iso_aligned_buf).get());
+ }
+ 
+ static bool is_iso_file(iso_file& file, u64* size = nullptr)
+diff --git a/rpcs3/util/atomic.cpp b/rpcs3/util/atomic.cpp
+index e87ed2d7c..e4f01abfc 100644
+--- a/rpcs3/util/atomic.cpp
++++ b/rpcs3/util/atomic.cpp
+@@ -76,10 +76,14 @@ static constexpr uptr s_ref_mask = 0xffff'ffff;
+ static bool s_null_wait_cb(const void*, u64, u64){ return true; };
+ 
+ // Callback for wait() function, returns false if wait should return
+-static thread_local bool(*s_tls_wait_cb)(const void* data, u64 attempts, u64 stamp0) = s_null_wait_cb;
++using s_tls_wait_cb_t = bool(*)(const void* data, u64 attempts, u64 stamp0);
++CHIMERA_TLS_DEFINE_STATIC(s_tls_wait_cb_t, s_tls_wait_cb, s_null_wait_cb);
++#define s_tls_wait_cb CHIMERA_TLS(s_tls_wait_cb)
+ 
+ // Callback for wait() function for a second custon condition, commonly passed with timeout
+-static thread_local bool(*s_tls_one_time_wait_cb)(u64 attempts) = nullptr;
++using s_tls_one_time_wait_cb_t = bool(*)(u64 attempts);
++CHIMERA_TLS_DEFINE_STATIC(s_tls_one_time_wait_cb_t, s_tls_one_time_wait_cb, nullptr);
++#define s_tls_one_time_wait_cb CHIMERA_TLS(s_tls_one_time_wait_cb)
+ 
+ // Compare data in memory with old value, and return true if they are equal
+ static NEVER_INLINE bool ptr_cmp(const void* data, u32 old, atomic_wait::info* ext = nullptr)
+@@ -391,6 +395,15 @@ namespace
+ 
+ 		constexpr tls_cond_handler() noexcept = default;
+ 
++		tls_cond_handler(const tls_cond_handler&) = delete;
++
++		// Assigning a fresh handler hands the old semaphores to the temporary, whose destructor frees them
++		tls_cond_handler& operator =(tls_cond_handler&& r) noexcept
++		{
++			std::swap(cond, r.cond);
++			return *this;
++		}
++
+ 		~tls_cond_handler()
+ 		{
+ 			for (u32 cond_id : cond)
+@@ -407,7 +420,19 @@ namespace
+ }
+ 
+ // TLS storage for few allocaded "semaphores" to allow skipping initialization
+-static thread_local tls_cond_handler s_tls_conds{};
++CHIMERA_TLS_DEFINE_STATIC(tls_cond_handler, s_tls_conds);
++#define s_tls_conds CHIMERA_TLS(s_tls_conds)
++
++#ifdef CHIMERA_CORE
++// What the thread_local destructor did: release the cached semaphores of the exiting thread
++static struct s_tls_conds_exit_registrar_t
++{
++	s_tls_conds_exit_registrar_t()
++	{
++		vsched_register_thread_exit([](int slot) { s_tls_conds_slots[slot] = tls_cond_handler(); });
++	}
++} s_tls_conds_exit_registrar;
++#endif
+ 
+ static u32 cond_alloc(uptr iptr, u32 tls_slot = -1)
+ {
+diff --git a/rpcs3/util/fixed_typemap.hpp b/rpcs3/util/fixed_typemap.hpp
+index bcb5f36ba..f0343beab 100644
+--- a/rpcs3/util/fixed_typemap.hpp
++++ b/rpcs3/util/fixed_typemap.hpp
+@@ -11,7 +11,8 @@
+ 
+ enum class thread_state : u32;
+ 
+-extern thread_local std::string_view g_tls_serialize_name;
++CHIMERA_TLS_DECLARE(std::string_view, g_tls_serialize_name);
++#define g_tls_serialize_name CHIMERA_TLS(g_tls_serialize_name)
+ 
+ namespace utils
+ {
+diff --git a/rpcs3/util/logs.cpp b/rpcs3/util/logs.cpp
+index a761fc154..d6c795474 100644
+--- a/rpcs3/util/logs.cpp
++++ b/rpcs3/util/logs.cpp
+@@ -38,10 +38,18 @@ static std::string default_string()
+ }
+ 
+ // Thread-specific log prefix provider
+-thread_local std::string(*g_tls_log_prefix)() = &default_string;
++using g_tls_log_prefix_t = std::string(*)();
++CHIMERA_TLS_DEFINE(g_tls_log_prefix_t, g_tls_log_prefix, &default_string);
++#define g_tls_log_prefix CHIMERA_TLS(g_tls_log_prefix)
+ 
+ // Another thread-specific callback
+-thread_local void(*g_tls_log_control)(const char* fmt, u64 progress) = [](const char*, u64){};
++using g_tls_log_control_t = void(*)(const char* fmt, u64 progress);
++CHIMERA_TLS_DEFINE(g_tls_log_control_t, g_tls_log_control, [](const char*, u64){});
++#define g_tls_log_control CHIMERA_TLS(g_tls_log_control)
++
++// Scratch text and arguments of logs::message::broadcast (hoisted out of it)
++CHIMERA_TLS_DEFINE_STATIC(std::string, s_tls_broadcast_text);
++CHIMERA_TLS_DEFINE_STATIC(std::vector<u64>, s_tls_broadcast_args);
+ 
+ template<>
+ void fmt_class_string<logs::level>::format(std::string& out, u64 arg)
+@@ -404,8 +412,8 @@ void logs::message::broadcast(const char* fmt, const fmt_type_info* sup, ...) co
+ 	g_tls_log_control(fmt, 0);
+ 
+ 	// Get text, extract va_args
+-	thread_local std::string text;
+-	thread_local std::vector<u64> args;
++	auto& text = CHIMERA_TLS(s_tls_broadcast_text);
++	auto& args = CHIMERA_TLS(s_tls_broadcast_args);
+ 
+ 	static constexpr fmt_type_info empty_sup{};
+ 
+diff --git a/rpcs3/util/simd.hpp b/rpcs3/util/simd.hpp
+index e5de73dc8..e76a2e7ce 100644
+--- a/rpcs3/util/simd.hpp
++++ b/rpcs3/util/simd.hpp
+@@ -38,7 +38,9 @@ namespace asmjit
+ 	struct vec_builder;
+ }
+ 
+-inline thread_local asmjit::vec_builder* g_vc = nullptr;
++using g_vc_t = asmjit::vec_builder*;
++CHIMERA_TLS_DEFINE_INLINE(g_vc_t, g_vc, nullptr);
++#define g_vc CHIMERA_TLS(g_vc)
+ 
+ namespace asmjit
+ {
+diff --git a/rpcs3/util/types.hpp b/rpcs3/util/types.hpp
+index 43cdbcf7c..43ca88225 100644
+--- a/rpcs3/util/types.hpp
++++ b/rpcs3/util/types.hpp
+@@ -26,6 +26,21 @@
+ #include <source_location>
+ #include <new>
+ 
++// Chimera: a per-thread variable is a slot array indexed by the running
++// vsched thread (the sandbox has no ELF TLS); without the core the kit is
++// plain thread_local again. See chimera_tls.h.
++#ifdef CHIMERA_CORE
++#include "chimera_tls.h"
++#else
++#define CHIMERA_TLS(name) name
++#define CHIMERA_TLS_DEFINE(type, name, ...) thread_local type name = type(__VA_ARGS__)
++#define CHIMERA_TLS_DEFINE_STATIC(type, name, ...) static thread_local type name = type(__VA_ARGS__)
++#define CHIMERA_TLS_DEFINE_INLINE(type, name, ...) inline thread_local type name = type(__VA_ARGS__)
++#define CHIMERA_TLS_DECLARE(type, name) extern thread_local type name
++#define CHIMERA_TLS_MEMBER_DECL(type, name) static thread_local type name
++#define CHIMERA_TLS_MEMBER(type, cls, name, ...) thread_local type cls::name = type(__VA_ARGS__)
++#endif
++
+ #if defined(__SSE2__) || defined(_M_X64) || defined(_M_AMD64) || defined(__x86_64__) || defined(__amd64__)
+ #define ARCH_X64 1
+ #elif defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64)
