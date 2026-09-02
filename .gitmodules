@@ -1,0 +1,3 @@
+[submodule "extern/rpcs3"]
+	path = extern/rpcs3
+	url = https://github.com/RPCS3/rpcs3
