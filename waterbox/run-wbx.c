@@ -3,7 +3,7 @@
  * digests in run-native's exact format, so the sandboxed build can be
  * diffed against the native reference.
  *
- * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--frames N] [--report N] [--tty-out F]
+ * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--frames N] [--report N] [--tty-out F]
  *        [--rewind] [--rerecord] <game.elf>
  *
  * The game is mounted under its own basename (extension drives type
@@ -14,6 +14,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef CHIMERA_GL_BRIDGE
+#include "gl-bridge.h"
+int chimera_gl_host_init(char *err, int errlen);
+const char *chimera_gl_host_description(void);
+uintptr_t chimera_gl_host_dispatch(uintptr_t op, uintptr_t a, uintptr_t b, uintptr_t c, uintptr_t d, uintptr_t e);
+#endif
 
 static uint64_t fnv(uint64_t h, const void *p, size_t n)
 {
@@ -47,6 +53,7 @@ static intptr_t mem_read(uintptr_t ud, uint8_t *d, uintptr_t n)
 }
 
 typedef int (MB_GUEST_ABI *intfn)(void);
+typedef void (MB_GUEST_ABI *setfn_v)(uint64_t);
 typedef void (MB_GUEST_ABI *framefn)(uint64_t);
 typedef uintptr_t (MB_GUEST_ABI *ptrfn)(void);
 typedef uint64_t (MB_GUEST_ABI *u64fn)(void);
@@ -65,7 +72,7 @@ static uintptr_t proc(mb_host *h, const char *n)
 
 int main(int argc, char **argv)
 {
-	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL, *ramOut = NULL, *dkey = NULL;
+	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL, *ramOut = NULL, *dkey = NULL, *settingsJson = NULL;
 	long frames = 60, report = 10;
 	int rewind = 0, rerecord = 0;
 	struct { long first, count; int index; } press[32];
@@ -76,6 +83,7 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--tty-out") && i + 1 < argc) ttyOut = argv[++i];
 		else if (!strcmp(argv[i], "--firmware") && i + 1 < argc) firmware = argv[++i];
 		else if (!strcmp(argv[i], "--dkey") && i + 1 < argc) dkey = argv[++i];
+		else if (!strcmp(argv[i], "--settings") && i + 1 < argc) settingsJson = argv[++i];
 		else if (!strcmp(argv[i], "--ram-out") && i + 1 < argc) ramOut = argv[++i];
 		else if (!strcmp(argv[i], "--press") && i + 1 < argc && presses < 32) {
 			long a, b; int c;
@@ -89,7 +97,7 @@ int main(int argc, char **argv)
 		else game = argv[i];
 	}
 	if (!core || !game) {
-		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] <game.elf>\n");
+		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] <game.elf>\n");
 		return 2;
 	}
 
@@ -118,6 +126,13 @@ int main(int argc, char **argv)
 	wbx_mount_file(h, "rom.name", mem_reader, (uintptr_t)&nr, false, &r);
 	if (r.error_message[0]) { fprintf(stderr, "mount rom.name: %s\n", r.error_message); return 1; }
 
+	/* the settings channel, exactly as the frontend mounts it */
+	if (settingsJson) {
+		memreader sr = { (const uint8_t *)settingsJson, strlen(settingsJson), 0 };
+		wbx_mount_file(h, "settings", mem_reader, (uintptr_t)&sr, false, &r);
+		if (r.error_message[0]) { fprintf(stderr, "mount settings: %s\n", r.error_message); return 1; }
+	}
+
 	/* the disc key slot, under the frontend's canonical name */
 	if (dkey) {
 		wbx_mount_file_path(h, "dkey", dkey, &r);
@@ -131,6 +146,32 @@ int main(int argc, char **argv)
 	}
 
 	wbx_activate_host(h, &r);
+
+	/* The GPU bridge (see waterbox/gl-shim.cpp). Off unless CHIMERA_GPU=1
+	 * asks, and a machine with no usable driver keeps the null renderer.
+	 * Handed over BEFORE Init, where the renderer is chosen. */
+#ifdef CHIMERA_GL_BRIDGE
+	{
+		const char *want = getenv("CHIMERA_GPU");
+		if (want && strcmp(want, "0") != 0) {
+			char glerr[256] = "";
+			if (chimera_gl_host_init(glerr, sizeof glerr) != 0) {
+				fprintf(stderr, "gpu bridge: no context (%s); the null renderer stays\n", glerr);
+			} else {
+				mb_return gr;
+				wbx_get_proc_addr(h, "SetGpuBridge", &gr);
+				setfn_v set_bridge = (setfn_v)gr.data;
+				wbx_get_callback_addr(h, (mb_external_callback)chimera_gl_host_dispatch, 0, &gr);
+				if (!gr.data || !set_bridge) {
+					fprintf(stderr, "gpu bridge: could not register the callback\n");
+				} else {
+					fprintf(stderr, "gpu bridge: %s\n", chimera_gl_host_description());
+					set_bridge((uint64_t)gr.data);
+				}
+			}
+		}
+	}
+#endif
 
 	intfn Init = (intfn)proc(h, "Init");
 	if (Init() != 1) {

@@ -15,6 +15,14 @@
 #include <unistd.h>
 #include <csignal>
 
+#ifdef CHIMERA_GL_BRIDGE
+// the host half of the GPU bridge, in this same binary (waterbox/gl-host.c)
+extern "C" int chimera_gl_host_init(char* err, int errlen);
+extern "C" const char* chimera_gl_host_description(void);
+extern "C" uintptr_t chimera_gl_host_dispatch(uintptr_t op, uintptr_t a, uintptr_t b, uintptr_t c, uintptr_t d, uintptr_t e);
+extern "C" void chimera_rpcs3_install_gpu_bridge(uint64_t addr);
+#endif
+
 static void on_alarm(int)
 {
   chimera_rpcs3_debug_ppu();
@@ -41,6 +49,7 @@ int main(int argc, char** argv)
   const char* tty_out = nullptr;
   const char* firmware = nullptr;
   const char* dkey = nullptr;
+  const char* videoOut = nullptr;
   struct { long first, count; int index; } press[32];
   int presses = 0;
   for (int i = 1; i < argc; i++)
@@ -57,6 +66,29 @@ int main(int argc, char** argv)
       firmware = argv[++i];
     else if (!strcmp(argv[i], "--dkey") && i + 1 < argc)
       dkey = argv[++i];
+    else if (!strcmp(argv[i], "--video-out") && i + 1 < argc)
+      videoOut = argv[++i];
+    else if (!strcmp(argv[i], "--renderer") && i + 1 < argc)
+    {
+      const char* r = argv[++i];
+      chimera_rpcs3_set_renderer(r);
+#ifdef CHIMERA_GL_BRIDGE
+      if (!strcmp(r, "opengl-hw") || !strcmp(r, "opengl"))
+      {
+        // Install BEFORE the host context loads its entry points: in this
+        // single binary the guest install writes wrappers into the shared
+        // glad table, and gladLoadGL afterwards puts the REAL driver
+        // functions back - the host dispatch must call those, or every call
+        // recurses through its own wrapper forever.
+        chimera_rpcs3_install_gpu_bridge((uint64_t)(uintptr_t)&chimera_gl_host_dispatch);
+        char glerr[256] = "";
+        if (chimera_gl_host_init(glerr, sizeof glerr) != 0)
+          fprintf(stderr, "gpu bridge: no context (%s)\n", glerr);
+        else
+          fprintf(stderr, "gpu bridge: %s\n", chimera_gl_host_description());
+      }
+#endif
+    }
     else if (!strcmp(argv[i], "--ports") && i + 1 < argc)
     {
       const char* mask = argv[++i];  // e.g. "1010000": ports 1 and 3
@@ -80,7 +112,7 @@ int main(int argc, char** argv)
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--frames N] [--report N] [--tty-out F] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--video-out F] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -125,6 +157,22 @@ int main(int argc, char** argv)
   }
   if (getenv("CHIMERA_DEBUG"))
     chimera_rpcs3_debug_ppu();
+  if (videoOut)
+  {
+    // the last frame's picture: two little-endian u32 (width, height), then
+    // BGRA rows top-down, for a script to look at
+    int vw = 0, vh = 0;
+    const uint32_t* px = chimera_rpcs3_video(&vw, &vh);
+    FILE* f = fopen(videoOut, "wb");
+    if (f)
+    {
+      uint32_t hdr[2] = {(uint32_t)vw, (uint32_t)vh};
+      fwrite(hdr, 4, 2, f);
+      if (px && vw > 0 && vh > 0)
+        fwrite(px, 4, (size_t)vw * vh, f);
+      fclose(f);
+    }
+  }
   if (tty_out)
   {
     int64_t tn;

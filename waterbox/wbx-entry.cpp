@@ -18,6 +18,8 @@
 
 static char g_loadError[512];
 
+extern "C" void chimera_rpcs3_install_gpu_bridge(uint64_t addr);
+
 extern "C" {
 
 ECL_EXPORT const char* GetLoadError(void)
@@ -78,12 +80,30 @@ ECL_EXPORT int Init(void)
       dkey = "dkey";
     }
   }
+  // which renderer the project asked for; "opengl-hw" only draws when the
+  // host also handed over a GPU bridge (SetGpuBridge, before Init)
+  char renderer[32] = "null";
+  wbx_setting_str("renderer", renderer, sizeof renderer);
+  chimera_rpcs3_set_renderer(renderer);
+
   if (!chimera_rpcs3_init(nullptr, romName, firmware, dkey))
   {
     snprintf(g_loadError, sizeof g_loadError, "%s", chimera_rpcs3_error());
     return 0;
   }
   return 1;
+}
+
+// The GPU bridge: the host's dispatcher, handed over before Init when the
+// frontend has a real GL context to offer (see waterbox/gl-shim.cpp)
+ECL_EXPORT void SetGpuBridge(uint64_t addr)
+{
+  chimera_rpcs3_install_gpu_bridge(addr);
+}
+
+ECL_EXPORT int IsGpuActive(void)
+{
+  return chimera_rpcs3_gpu_active();
 }
 
 ECL_EXPORT void FrameAdvance(uint64_t /*input*/)

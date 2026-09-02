@@ -52,6 +52,12 @@ int chimera_rpcs3_is_running(void);
 const char* chimera_rpcs3_firmware_version(void);
 void chimera_rpcs3_debug_ppu(void);
 
+// The renderer the project asked for ("null" or "opengl-hw"), before init;
+// opengl-hw draws only when a GPU bridge was installed (waterbox/gl-shim.cpp)
+void chimera_rpcs3_set_renderer(const char* name);
+// 1 when the GL renderer is drawing through the bridge
+int chimera_rpcs3_gpu_active(void);
+
 #ifdef __cplusplus
 }
 #endif

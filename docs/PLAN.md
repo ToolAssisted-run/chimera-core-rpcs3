@@ -274,6 +274,39 @@ optimisation. No user interface, no networking, no real audio or input devices.
   silently on the first mixed block). The driver pins the stereo layout and
   takes CHIMERA_LOG_TRACE=chan,chan for trace-level logs.
 
+- **M5 DONE on Linux (2026-09-02): the GL renderer in the box, through the GPU
+  bridge.** RPCS3's own OpenGL renderer runs inside the guest; every GL entry
+  point is a glad pointer filled from the bridge lookup (patch 0015: the GL
+  sources under CHIMERA_HEADLESS when CHIMERA_GL, `OpenGL.h` includes glad
+  instead of GLEW, `gl::init()` is `gladLoadGLUserPtr(bridge lookup)`, no swap
+  interval, no glDrawPixels, headless may pick opengl, and `rsx::mm_protect` /
+  the ZCULL protects are no-ops: the renderer's caches watch guest pages by
+  protecting them and catching the fault, and this build has no fault handler -
+  a texture the CPU rewrites in place is served stale until the cache drops
+  it). The picture leaves through RPCS3's own frame consumer: `g_recording_mode
+  = rpcs3` makes `GLPresent` read the flipped image back and hand it to
+  `present_frame`, so no present patch. The overlay icons (23 PNGs from
+  extern/rpcs3/bin/Icons/ui, `gen-assets.py`) travel inside the core. Host
+  half: Dolphin's `gl-host.c` (EGL surfaceless + pbuffer) in run-wbx and
+  run-native; libchimera's for the frontend. The master list grew by 40 names
+  (glProgramUniform*, glGetIntegeri_v and siblings, EXT DSA, bindless).
+  **The native reference is one binary with one glad table**: natively the
+  renderer resolves the real driver (eglGetProcAddress) and the wrappers stay
+  unused, or the dispatcher recurses into them; the host context is bound on
+  the RSX thread (`chimera_gl_host_bind_current` from `set_current`). Any
+  unbridged name a renderer reaches lands in a generated trap that says which
+  (`gen-traps.py`). Results on llvmpipe: the flip program's GL pictures are
+  pixel-identical to the VRAM copies; GTA San Andreas draws its legal screen
+  at 47 fps native (1800 frames in 38 s), main memory identical to the null
+  renderer's run at every report, native == sandbox. Gate legs `gpu:flip`,
+  `gpu:disc`; frontend leg `gpu:frontend` keeps a screenshot. Setting
+  `renderer` = null | opengl-hw (default opengl-hw; without a bridge the core
+  falls back to null).
+- **Still open after M5**: CPU-write detection for the GL caches (a miniBox
+  guest-fault forwarding feature: on a fault inside the block call a guest
+  handler, the way RPCS3's own signal handler drives `on_access_violation`),
+  Windows end to end, real hardware, LLVM recompilers, RawSPU.
+
 ## Risks, ranked
 
 1. **vsched completeness**: any wait outside the engine (a `std::mutex` contended

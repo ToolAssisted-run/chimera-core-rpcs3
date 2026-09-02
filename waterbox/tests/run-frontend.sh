@@ -145,7 +145,7 @@ if [ -z "$disc" ] || [ ! -f "$pup" ]; then
 	report "disc:frontend" SKIP "needs a decrypted .iso and PS3UPDAT.PUP in tests/roms-local"
 else
 	firmware_json="$(python3 -c "import json,sys; print(json.dumps({'PS3UPDAT.PUP': sys.argv[1]}))" "$pup")"
-	settings_config "$work/config.disc.ini" '{}' "$firmware_json"
+	settings_config "$work/config.disc.ini" '{"renderer": "null"}' "$firmware_json"
 	if ! env -u LD_LIBRARY_PATH timeout 900 "$runwbx" "$wbx" --firmware "$pup" \
 		--frames "$dframes" --report "$dframes" --ram-out "$work/ref.disc.ram.full" \
 		"$disc" > "$work/ref.disc.log" 2>&1; then
@@ -158,6 +158,28 @@ else
 		report "disc:frontend" FAIL "main memory differs from the sandbox reference"
 	else
 		report "disc:frontend" PASS "$dframes frames of $(basename "$disc" | cut -c1-30), main memory identical to the sandbox reference"
+	fi
+fi
+
+# --- 3. the disc on the GL renderer through the frontend --------------------
+# The frontend offers its own GL context (the GPU bridge) when the renderer
+# setting ends in -hw. The machine must not notice: main memory after the same
+# frames equals the null-renderer reference. The screenshot is the proof that
+# the picture came from the GPU (tests/work/gpu.png).
+if [ -z "$disc" ] || [ ! -f "$pup" ]; then
+	report "gpu:frontend" SKIP "needs the disc and the firmware"
+else
+	settings_config "$work/config.gpu.ini" '{"renderer": "opengl-hw"}' "$firmware_json"
+	if ! run_frontend "gpu" "$work/config.gpu.ini" "$dframes" "$work/gpu.png" "$disc"; then
+		report "gpu:frontend" FAIL "no OK meta (see tests/work/gpu.log)"
+	elif ! cmp -s "$work/ref.disc.ram.bin" "$work/gpu.ram.bin"; then
+		report "gpu:frontend" FAIL "main memory differs from the null-renderer reference"
+	elif ! grep -q "renderer opengl-hw through the GPU bridge" "$work/gpu.log"; then
+		report "gpu:frontend" FAIL "the core did not get a GPU bridge from the frontend ($(grep -a 'chimera rpcs3: renderer' "$work/gpu.log" | head -1))"
+	elif [ ! -s "$work/gpu.png" ]; then
+		report "gpu:frontend" FAIL "no screenshot"
+	else
+		report "gpu:frontend" PASS "$dframes frames on the GL renderer, main memory identical to the null-renderer reference, screenshot in tests/work/gpu.png"
 	fi
 fi
 

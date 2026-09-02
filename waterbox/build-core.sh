@@ -40,6 +40,12 @@ sr="$mbuild/guest-sysroot"
 	exit 1
 }
 
+# the guest half of the GPU bridge, generated from miniBox's master list in
+# full: rpcs3 reaches GL through glad, which asks for every name it knows
+mkdir -p "$here/generated-gl"
+python3 "$mb/source/gl/gen-gl-bridge.py" "$here/glad/include/glad/gl.h" \
+	"$mb/source/gl/gl-entry-points.txt" "$here/generated-gl"
+
 make -f "$here/guest.mk" -C "$here" -j"$jobs" MB="$mb"
 
 mkdir -p "$out"
@@ -57,6 +63,7 @@ g++ -specs "$sr/lib/musl-gcc.specs" -mcmodel=large -fno-pic -fno-pie \
 	"$here"/obj-guest/upstream/Input/pad_thread.o "$here"/obj-guest/upstream/Input/product_info.o \
 	"$here"/obj-guest/upstream/Input/ps_move_tracker.o "$here"/obj-guest/upstream/Input/ps_move_config.o \
 	"$here"/obj-guest/upstream/rpcs3_version.o \
+	"$here"/obj-guest/gl-shim.o "$here"/obj-guest/gl-bridge-guest.o "$here"/obj-guest/gl-traps.o "$here"/obj-guest/glad-gl.o "$here"/obj-guest/generated-assets.o \
 	"$mbuild/source/guest/cxxglue.c.o" "$mbuild/source/guest/emulibc.c.o" \
 	-Wl,--start-group $libs -Wl,--end-group \
 	-L"$sr/lib" -lstdc++ -lgcc -lgcc_eh -lc
@@ -68,7 +75,8 @@ echo "built $out/core.wbx"
 # needs a host at spec v2, the multi-region block)
 mbhost="${MINIBOX_HOST_DIR:-$mb/build/meson-linux/source/host}"
 [ -f "$mbhost/libminiboxhost.so" ] || mbhost="$mbuild/source/host"
-gcc -O2 -Wall -I"$mb/source/host" \
-	-o "$out/run-wbx" "$here/run-wbx.c" \
-	"$mbhost/libminiboxhost.so" -Wl,-rpath,"$mbhost"
+gcc -O2 -Wall -DCHIMERA_GL_BRIDGE -I"$mb/source/host" -I"$mb/source/gl" \
+	-I"$here/glad/include" -I"$here/generated-gl" \
+	-o "$out/run-wbx" "$here/run-wbx.c" "$here/gl-host.c" "$here/glad/src/gl.c" \
+	"$mbhost/libminiboxhost.so" -Wl,-rpath,"$mbhost" -lEGL
 echo "built $out/run-wbx"

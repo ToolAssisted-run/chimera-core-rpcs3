@@ -21,6 +21,15 @@
 #   disc:boot              a decrypted disc image in tests/roms-local (the
 #                          user's, never committed) boots: memory changes
 #                          every frame, native == sandbox
+#   gpu:flip               the GL renderer through the GPU bridge (a host EGL
+#                          context, llvmpipe will do): the flip program's
+#                          pictures are the machine's own pixels, the same
+#                          digests the null renderer copies out of VRAM, and
+#                          the sandbox's GL run prints the native GL run's
+#                          lines; SKIP when the host offers no context
+#   gpu:disc               the disc on the GL renderer: memory identical to
+#                          the null renderer's run (the GPU changes the
+#                          picture, not the machine), native == sandbox
 # Run from anywhere; artifacts land in waterbox/work/gate.
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -62,6 +71,16 @@ run_both() {
 	"$native" --work "$work/$name" --firmware "$pup" --frames "$n" --report "$rep" --tty-out "$work/tty-$name-native.txt" "$@" "$game" 2>"$work/$name-native.err" | grep '^frame\|^booted' > "$work/$name-native.txt"
 	[ "$have_wbx" = 1 ] || return 0
 	"$wbx" "$core" --firmware "$pup" --frames "$n" --report "$rep" --tty-out "$work/tty-$name-wbx.txt" "$@" "$game" 2>"$work/$name-wbx.err" | grep '^frame\|^booted' > "$work/$name-wbx.txt"
+}
+
+# run_both_gpu NAME FRAMES REPORT ROM: the same on the GL renderer, natively
+# with the bridge's host half in the binary, in the sandbox with CHIMERA_GPU=1
+# and the renderer setting the frontend would send
+run_both_gpu() {
+	name="$1"; n="$2"; rep="$3"; game="$4"; shift 4
+	"$native" --work "$work/$name" --firmware "$pup" --renderer opengl-hw --frames "$n" --report "$rep" --tty-out "$work/tty-$name-native.txt" "$@" "$game" 2>"$work/$name-native.err" | grep '^frame\|^booted' > "$work/$name-native.txt"
+	[ "$have_wbx" = 1 ] || return 0
+	CHIMERA_GPU=1 "$wbx" "$core" --firmware "$pup" --settings '{"renderer":"opengl-hw"}' --frames "$n" --report "$rep" --tty-out "$work/tty-$name-wbx.txt" "$@" "$game" 2>"$work/$name-wbx.err" | grep '^frame\|^booted' > "$work/$name-wbx.txt"
 }
 
 # same_both NAME: the sandbox printed the native lines and TTY (true when
@@ -211,6 +230,46 @@ else
 		fi
 	else
 		failed "disc:boot - expected 6 different memory digests, got $rams ($(tail -1 "$work/disc-native.err"))"
+	fi
+fi
+
+# ---- gpu:flip and gpu:disc (the GL renderer through the bridge) ----------
+if [ ! -f "$fliprom" ]; then
+	skip "gpu:flip - no tests/roms/flip.elf"
+else
+	run_both_gpu gflip 60 10 "$fliprom"
+	if grep -q "gpu bridge: no context" "$work/gflip-native.err"; then
+		skip "gpu:flip - the host offers no GL context ($(grep 'no context' "$work/gflip-native.err" | head -1))"
+	else
+		grep '^frame' "$work/flip-native.txt" | head -6 | awk '{print $2, $7}' > "$work/gflip-want.txt"
+		grep '^frame' "$work/gflip-native.txt" | awk '{print $2, $7}' > "$work/gflip-got.txt"
+		if [ -s "$work/gflip-got.txt" ] && cmp -s "$work/gflip-want.txt" "$work/gflip-got.txt"; then
+			if same_both gflip; then
+				pass "gpu:flip - $(grep 'gpu bridge: [0-9]' "$work/gflip-native.err" | head -1 | sed 's/gpu bridge: //' | cut -c1-60): 6 pictures identical to the machine's own pixels, native == sandbox"
+			else
+				failed "gpu:flip - the sandbox's GL run differs from the native GL run (diff $work/gflip-native.txt $work/gflip-wbx.txt)"
+			fi
+		else
+			failed "gpu:flip - the GL pictures are not the VRAM pictures (diff $work/gflip-want.txt $work/gflip-got.txt; $(tail -1 "$work/gflip-native.err"))"
+		fi
+	fi
+	if [ -z "$disc" ]; then
+		skip "gpu:disc - no disc"
+	elif grep -q "gpu bridge: no context" "$work/gflip-native.err"; then
+		skip "gpu:disc - the host offers no GL context"
+	else
+		run_both_gpu gdisc 120 20 "$disc"
+		grep '^frame' "$work/disc-native.txt" | awk '{print $2, $4}' > "$work/gdisc-want.txt"
+		grep '^frame' "$work/gdisc-native.txt" | awk '{print $2, $4}' > "$work/gdisc-got.txt"
+		if [ -s "$work/gdisc-got.txt" ] && cmp -s "$work/gdisc-want.txt" "$work/gdisc-got.txt"; then
+			if same_both gdisc; then
+				pass "gpu:disc - 120 frames on the GL renderer, memory identical to the null renderer's run, native == sandbox"
+			else
+				failed "gpu:disc - the sandbox's GL run differs from the native GL run (diff $work/gdisc-native.txt $work/gdisc-wbx.txt)"
+			fi
+		else
+			failed "gpu:disc - the GL run's memory differs from the null renderer's (diff $work/gdisc-want.txt $work/gdisc-got.txt; $(tail -1 "$work/gdisc-native.err"))"
+		fi
 	fi
 fi
 

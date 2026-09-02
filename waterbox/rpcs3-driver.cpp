@@ -17,6 +17,11 @@
 #include "Emu/RSX/GSFrameBase.h"
 #include "Emu/Audio/AudioBackend.h"
 #include "Emu/Audio/Null/NullAudioBackend.h"
+#ifdef CHIMERA_GL_BRIDGE
+#include "Emu/RSX/GL/GLGSRender.h"
+#endif
+#include "util/video_provider.h"
+extern atomic_t<recording_mode> g_recording_mode;
 #include "Emu/Audio/Null/null_enumerator.h"
 #include "Emu/Io/Null/NullKeyboardHandler.h"
 #include "Emu/Io/Null/NullMouseHandler.h"
@@ -49,6 +54,7 @@
 
 #include "memfs.h"
 #include "rpcs3-driver.h"
+#include "chimera-assets.h"
 #include "vsched.h"
 
 // the directory roots the emulator library reads (patch 0003 routes
@@ -196,6 +202,15 @@ namespace
   std::vector<u32> g_video;
   int g_video_w = 0, g_video_h = 0;
 
+  // the renderer: what the project asked for, and whether a GPU answers
+  bool s_renderer_opengl = false;
+  bool s_gpu = false;
+  extern "C" int chimera_rpcs3_gpu_bridge_present(void) __attribute__((weak));
+  // the native reference's renderer calls the driver directly and must bind
+  // the host context on its own thread; the guest resolves this to null (the
+  // host dispatcher binds for it)
+  extern "C" int chimera_gl_host_bind_current(void) __attribute__((weak));
+
   // The window the RSX backend presents to: there is none. The null backend
   // never draws, and the bridged GL backend arrives with its milestone.
   class headless_frame final : public GSFrameBase
@@ -209,12 +224,20 @@ namespace
     void toggle_fullscreen() override {}
     void delete_context(draw_context_t) override {}
     draw_context_t make_context() override { return nullptr; }
-    void set_current(draw_context_t) override {}
+    void set_current(draw_context_t) override
+    {
+      if (s_gpu && chimera_gl_host_bind_current)
+        chimera_gl_host_bind_current();
+    }
     // A flip: the machine's current display buffer (in guest VRAM) becomes
     // the picture. With the null backend that buffer holds whatever the
     // program wrote; the bridged GL backend fills it later.
     void flip(draw_context_t, bool) override
     {
+      // the GL renderer hands its picture over through present_frame just
+      // before this; nothing to fetch from VRAM
+      if (s_gpu)
+        return;
       auto* r = rsx::get_current_renderer();
       if (!r)
         return;
@@ -233,7 +256,9 @@ namespace
           continue;
         const be_t<u32>* src = vm::_ptr<be_t<u32>>(row);
         for (u32 x = 0; x < w; x++)
-          g_video[static_cast<size_t>(y) * w + x] = src[x];  // X8R8G8B8 big-endian word == BGRA little-endian
+          // X8R8G8B8 big-endian word == BGRA little-endian; the X byte is
+          // whatever the program left there, and the picture is opaque
+          g_video[static_cast<size_t>(y) * w + x] = src[x] | 0xff000000u;
       }
       g_video_w = static_cast<int>(w);
       g_video_h = static_cast<int>(h);
@@ -245,8 +270,30 @@ namespace
     // the handle type is a variant of window-system handles and headless has
     // none: the null backend never asks
     display_handle_t handle() const override { fmt::throw_exception("chimera: no display handle"); }
-    bool can_consume_frame() const override { return false; }
-    void present_frame(std::vector<u8>&&, u32, u32, u32, bool) const override {}
+    // The GL renderer reads its flipped image back for a frame consumer (the
+    // path RPCS3 records video through): with the bridge that consumer is
+    // the frontend, and the image is the machine's picture for this frame.
+    bool can_consume_frame() const override { return s_gpu; }
+    void present_frame(std::vector<u8>&& data, u32 pitch, u32 width, u32 height, bool is_bgra) const override
+    {
+      if (!width || !height || width > 4096 || height > 4096 || data.size() < static_cast<size_t>(pitch) * height)
+        return;
+      g_video.assign(static_cast<size_t>(width) * height, 0);
+      for (u32 y = 0; y < height; y++)
+      {
+        const u8* row = data.data() + static_cast<size_t>(y) * pitch;
+        u32* dst = g_video.data() + static_cast<size_t>(y) * width;
+        for (u32 x = 0; x < width; x++)
+        {
+          const u8* px = row + x * 4;
+          // the frontend wants BGRA little-endian words
+          dst[x] = is_bgra ? (u32{px[0]} | u32{px[1]} << 8 | u32{px[2]} << 16 | 0xff000000u)
+                           : (u32{px[2]} | u32{px[1]} << 8 | u32{px[0]} << 16 | 0xff000000u);
+        }
+      }
+      g_video_w = static_cast<int>(width);
+      g_video_h = static_cast<int>(height);
+    }
     void take_screenshot(std::vector<u8>&&, u32, u32, bool) override {}
     void update_title(double) override {}
   };
@@ -284,6 +331,11 @@ namespace
       case video_renderer::null:
         g_fxo->init<rsx::thread, named_thread<NullGSRender>>(ar);
         break;
+#ifdef CHIMERA_GL_BRIDGE
+      case video_renderer::opengl:
+        g_fxo->init<rsx::thread, named_thread<GLGSRender>>(ar);
+        break;
+#endif
       default:
         fmt::throw_exception("chimera: renderer %s is not wired yet", g_cfg.video.renderer.get());
       }
@@ -367,7 +419,19 @@ namespace
     g_cfg.core.clocks_scale.set(100);
     g_cfg.core.max_cpu_preempt_count_per_frame.set(0);
     g_cfg.core.thread_scheduler.set(thread_scheduler_mode::os);
-    g_cfg.video.renderer.set(video_renderer::null);
+    // the GL renderer only when asked for AND a GPU bridge was installed;
+    // otherwise the null renderer, and the frontend is told (IsGpuActive)
+    s_gpu = s_renderer_opengl && chimera_rpcs3_gpu_bridge_present && chimera_rpcs3_gpu_bridge_present();
+    g_cfg.video.renderer.set(s_gpu ? video_renderer::opengl : video_renderer::null);
+    if (s_gpu)
+    {
+      // one real context: shaders compile inline on the RSX thread, no
+      // worker contexts, no async interpreter fallback
+      g_cfg.video.shader_compiler_threads_count.set(0);
+      g_cfg.video.shadermode.set(shader_mode::recompiler);
+      // the flipped image is read back for the frame consumer every frame
+      g_recording_mode = recording_mode::rpcs3;
+    }
     g_cfg.video.frame_limit.set(frame_limit_type::_auto);
     g_cfg.video.vblank_rate.set(60);
     g_cfg.video.vblank_ntsc.set(false);
@@ -513,6 +577,10 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   g_android_cache_dir = root + "cache/";
   chimera::memfs_mkdirs("config");
   chimera::memfs_mkdirs("cache");
+  // the renderer's overlay icons (dialogs, the trophy notice), from the core
+  chimera::memfs_mkdirs("config/Icons/ui");
+  for (size_t i = 0; i < chimera_asset_count; i++)
+    chimera::memfs_put(std::string("config/") + chimera_assets[i].path, reinterpret_cast<const char*>(chimera_assets[i].data), chimera_assets[i].size);
   const bool have_firmware = firmware_path && *firmware_path;
   if (!have_firmware)
   {
@@ -558,7 +626,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
 
   Emu.SetHasGui(false);
   Emu.SetHeadless(true);
-  Emu.SetSupportedRenderers({video_renderer::null});
+  Emu.SetSupportedRenderers({video_renderer::null, video_renderer::opengl});
   Emu.SetDefaultRenderer(video_renderer::null);
   Emu.SetCallbacks(make_callbacks());
   Emu.SetUsr("00000001");
@@ -600,6 +668,11 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
       start = comma + 1;
     }
   }
+  // one line for whoever runs the core, never machine state: which renderer
+  // the machine got and why
+  fprintf(stderr, "chimera rpcs3: renderer %s%s\n", s_gpu ? "opengl-hw through the GPU bridge" : "null",
+          (!s_gpu && s_renderer_opengl) ? " (opengl-hw asked for, no GPU bridge offered)" : "");
+
   const game_boot_result r = Emu.BootGame(game, "", true, cfg_mode::custom);
   run_main_queue();
   if (r != game_boot_result::no_errors)
@@ -816,3 +889,13 @@ void chimera_rpcs3_debug_ppu(void)
 }
 
 }  // extern "C"
+
+extern "C" void chimera_rpcs3_set_renderer(const char* name)
+{
+  s_renderer_opengl = name && (strcmp(name, "opengl-hw") == 0 || strcmp(name, "opengl") == 0);
+}
+
+extern "C" int chimera_rpcs3_gpu_active(void)
+{
+  return s_gpu ? 1 : 0;
+}
