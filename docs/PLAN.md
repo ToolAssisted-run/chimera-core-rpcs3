@@ -250,6 +250,30 @@ optimisation. No user interface, no networking, no real audio or input devices.
   20 GiB commit will not fit most machines - SEC_RESERVE with commit-on-allocate
   is the fix (miniBox pal_win.c). Also open: the disc-key slot (M4).
 
+- **M4 DONE (2026-09-02): a real disc boots.** GTA San Andreas (decrypted
+  Redump ISO, the user's) mounts, links its modules, runs 300 frames at 33 fps
+  native, memory different every frame, native == sandbox (gate leg
+  `disc:boot`). Three patches the game found: 0011 cross-thread spins yield
+  (rsx pause handshake, timestamp wait, SPU exit wait, vm cpu-flag wait,
+  overlay join: a host spin never lets the other thread run under vsched),
+  0012 an unmapped page is cleared before it loses access (sudo view == base
+  view), 0013 copy_file within the memory filesystem (the trophy installer).
+  The dkey slot rides as `game/<stem>.dkey` for encrypted discs. Encrypted
+  discs need their Redump key; nothing else is missing.
+- **Audio and video proven (2026-09-02)**: PSL1GHT toolchain built in
+  `~/ps3dev` (ps3toolchain, GCC 7.2; `make_self` needs OpenSSL and is left
+  out, ELFs are what rpcs3 loads; an UNSTRIPPED PSL1GHT ELF crashes at a
+  descriptor read, so `tests/ps3/build.sh` strips and sprxlinks). Two
+  programs of our own in `tests/ps3`: `flip` (CPU-drawn pattern, RSX flip,
+  TTY per frame) and `tone` (cellAudio square wave). Gate legs `video:flip`
+  (12 different images in 12 reports, native == sandbox) and `audio:tone`
+  (the audio cycles with the wave's period, native == sandbox). Patch 0014:
+  the audio ring marks its backend active (only a backend callback ever did,
+  and the null backend has none) and the null backend resolves "automatic" to
+  stereo (the downmixer throws on automatic; the cellAudio thread died
+  silently on the first mixed block). The driver pins the stereo layout and
+  takes CHIMERA_LOG_TRACE=chan,chan for trace-level logs.
+
 ## Risks, ranked
 
 1. **vsched completeness**: any wait outside the engine (a `std::mutex` contended

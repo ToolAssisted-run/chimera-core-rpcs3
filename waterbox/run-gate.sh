@@ -11,6 +11,16 @@
 #   input:press            padtest.elf (cellPad through the firmware) reports a
 #                          scripted Cross exactly on the pressed frames, in both
 #                          flavors alike; a program that never polls is all lag
+#   video:flip             flip.elf (PSL1GHT, tests/ps3) draws with the CPU and
+#                          flips with the RSX: a new image every frame, the
+#                          program's own account of its flips on the TTY, and
+#                          the sandbox's images are the native ones
+#   audio:tone             tone.elf plays a square wave through cellAudio: the
+#                          audio changes every frame, cycles with the wave, and
+#                          the sandbox's samples are the native ones
+#   disc:boot              a decrypted disc image in tests/roms-local (the
+#                          user's, never committed) boots: memory changes
+#                          every frame, native == sandbox
 # Run from anywhere; artifacts land in waterbox/work/gate.
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -19,6 +29,9 @@ work="$here/work/gate"
 rom="$root/tests/roms/lv2test.elf"
 frames="${FRAMES:-600}"
 native="$here/obj-native/run-native"
+wbx="$here/bin/run-wbx"
+core="$here/bin/core.wbx"
+pup="$root/tests/roms-local/PS3UPDAT.PUP"
 fail=0
 
 pass() { echo "PASS: $*"; }
@@ -35,6 +48,35 @@ fi
 if [ ! -f "$rom" ]; then
 	python3 "$root/tests/asm/ppc.py" "$root/tests/asm/lv2test.s" "$rom" >/dev/null || failed "lv2test.elf does not assemble"
 fi
+have_wbx=1
+if [ ! -x "$wbx" ] || [ ! -f "$core" ]; then
+	have_wbx=0
+	skip "sandbox legs: build-core.sh has not produced bin/core.wbx + bin/run-wbx"
+fi
+
+# run_both NAME FRAMES REPORT ROM [extra runner flags]: native then (if built)
+# sandbox, frame lines in work/NAME-native.txt / NAME-wbx.txt, TTY in
+# work/tty-NAME-*.txt, the firmware mounted in both
+run_both() {
+	name="$1"; n="$2"; rep="$3"; game="$4"; shift 4
+	"$native" --work "$work/$name" --firmware "$pup" --frames "$n" --report "$rep" --tty-out "$work/tty-$name-native.txt" "$@" "$game" 2>"$work/$name-native.err" | grep '^frame\|^booted' > "$work/$name-native.txt"
+	[ "$have_wbx" = 1 ] || return 0
+	"$wbx" "$core" --firmware "$pup" --frames "$n" --report "$rep" --tty-out "$work/tty-$name-wbx.txt" "$@" "$game" 2>"$work/$name-wbx.err" | grep '^frame\|^booted' > "$work/$name-wbx.txt"
+}
+
+# same_both NAME: the sandbox printed the native lines and TTY (true when
+# there is no sandbox, so a native-only leg still passes on its own merits)
+same_both() {
+	[ "$have_wbx" = 1 ] || return 0
+	grep '^frame' "$work/$1-native.txt" > "$work/$1-native-frames.txt"
+	grep '^frame' "$work/$1-wbx.txt" > "$work/$1-wbx-frames.txt"
+	[ -s "$work/$1-native-frames.txt" ] && cmp -s "$work/$1-native-frames.txt" "$work/$1-wbx-frames.txt" && cmp -s "$work/tty-$1-native.txt" "$work/tty-$1-wbx.txt"
+}
+
+# distinct FILE FIELD OFFSET: how many different values a frame-line field
+# takes; the digest sits OFFSET words after the field's name (ram 1, vid and
+# aud 2, a size sits between)
+distinct() { grep '^frame' "$1" | awk -v f="$2" -v o="$3" '{for (i = 1; i <= NF; i++) if ($i == f) print $(i + o)}' | sort -u | wc -l; }
 
 # ---- native:deterministic ---------------------------------------------
 for r in a b; do
@@ -49,119 +91,126 @@ else
 fi
 
 # ---- the sandbox legs -------------------------------------------------
-wbx="$here/bin/run-wbx"
-core="$here/bin/core.wbx"
-if [ ! -x "$wbx" ] || [ ! -f "$core" ]; then
-	skip "sandbox legs: build-core.sh has not produced bin/core.wbx + bin/run-wbx"
-	# ---- firmware:lle (needs the user's PS3UPDAT.PUP) -----------------------
-pup="$root/tests/roms-local/PS3UPDAT.PUP"
+if [ "$have_wbx" = 1 ]; then
+	"$wbx" "$core" --frames "$frames" --report 50 --tty-out "$work/tty-wbx.txt" "$rom" 2>"$work/wbx.err" | grep '^frame' > "$work/run-wbx.txt"
+	if [ ! -s "$work/run-wbx.txt" ]; then
+		failed "sandbox run produced no frames ($(tail -1 "$work/wbx.err"))"
+	elif cmp -s "$work/run-a.txt" "$work/run-wbx.txt" && cmp -s "$work/tty-a.txt" "$work/tty-wbx.txt"; then
+		pass "native == sandbox at $frames frames (RAM + TTY digests)"
+	else
+		failed "sandbox differs from native (diff $work/run-a.txt $work/run-wbx.txt)"
+	fi
+
+	if "$wbx" "$core" --frames "$frames" --rewind "$rom" > "$work/rewind.txt" 2>"$work/rewind.err"; then
+		pass "rewind leg - $(grep '^rewind' "$work/rewind.txt")"
+	else
+		failed "rewind leg - $(grep '^rewind' "$work/rewind.txt" || tail -1 "$work/rewind.err")"
+	fi
+
+	"$wbx" "$core" --frames "$((frames / 3))" --report 50 --rerecord "$rom" 2>"$work/rerecord.err" | grep '^frame' > "$work/rerecord.txt"
+	"$wbx" "$core" --frames "$((frames / 3))" --report 50 "$rom" 2>/dev/null | grep '^frame' > "$work/plain.txt"
+	if [ -s "$work/rerecord.txt" ] && cmp -s "$work/rerecord.txt" "$work/plain.txt"; then
+		pass "rerecord leg - save+load around every frame changes nothing ($((frames / 3)) frames)"
+	else
+		failed "rerecord leg - $(tail -1 "$work/rerecord.err")"
+	fi
+fi
+
+# ---- everything below needs the user's PS3UPDAT.PUP ---------------------
 if [ ! -f "$pup" ]; then
 	skip "firmware:lle - no tests/roms-local/PS3UPDAT.PUP (would prove: the PUP installs in the box and liblv2 runs LLE)"
-else
-	"$native" --work "$work/fw" --firmware "$pup" --frames "$((frames / 3))" --report 50 --tty-out "$work/tty-fw-native.txt" "$rom" 2>"$work/fw-native.err" | grep '^frame\|^booted' > "$work/fw-native.txt"
-	"$wbx" "$core" --firmware "$pup" --frames "$((frames / 3))" --report 50 --tty-out "$work/tty-fw-wbx.txt" "$rom" 2>"$work/fw-wbx.err" | grep '^frame\|^booted' > "$work/fw-wbx.txt"
-	if ! grep -q "firmware 4" "$work/fw-native.txt"; then
-		failed "firmware:lle - the firmware did not install natively ($(tail -1 "$work/fw-native.err"))"
-	elif grep '^frame' "$work/fw-native.txt" > "$work/fw-native-frames.txt" && grep '^frame' "$work/fw-wbx.txt" > "$work/fw-wbx-frames.txt" && cmp -s "$work/fw-native-frames.txt" "$work/fw-wbx-frames.txt" && cmp -s "$work/tty-fw-native.txt" "$work/tty-fw-wbx.txt"; then
-		pass "firmware:lle - $(grep '^booted' "$work/fw-native.txt" | sed 's/booted; //'), liblv2 LLE, native == sandbox at $((frames / 3)) frames"
-	else
-		failed "firmware:lle - sandbox differs from native with firmware (diff $work/fw-native.txt $work/fw-wbx.txt)"
-	fi
+	skip "input:press, video:flip, audio:tone, disc:boot - the same firmware"
+	exit $fail
 fi
 
-# ---- input:press (needs the firmware too: cellPad is libio) --------------
+# ---- firmware:lle -------------------------------------------------------
+run_both fw "$((frames / 3))" 50 "$rom"
+if ! grep -q "firmware 4" "$work/fw-native.txt"; then
+	failed "firmware:lle - the firmware did not install natively ($(tail -1 "$work/fw-native.err"))"
+elif same_both fw; then
+	pass "firmware:lle - $(grep '^booted' "$work/fw-native.txt" | sed 's/booted; //'), liblv2 LLE, native == sandbox at $((frames / 3)) frames"
+else
+	failed "firmware:lle - sandbox differs from native with firmware (diff $work/fw-native.txt $work/fw-wbx.txt)"
+fi
+
+# ---- input:press (cellPad is libio, in the firmware) --------------------
 padrom="$root/tests/roms/padtest.elf"
 [ -f "$padrom" ] || python3 "$root/tests/asm/ppc.py" "$root/tests/asm/padtest.s" "$padrom" >/dev/null
-if [ ! -f "$pup" ]; then
-	skip "input:press - no firmware (would prove: a scripted press reaches cellPadGetData on the right frames)"
+run_both pad 40 40 "$padrom" --press 10:5:10
+pressed="$(grep -c ' 00000040 ' "$work/tty-pad-native.txt")"
+first="$(grep -n ' 00000040 ' "$work/tty-pad-native.txt" | head -1 | cut -d: -f1)"
+if [ "$pressed" = 5 ] && [ "$first" = 11 ] && grep -q ' lag 0 ' "$work/pad-native.txt"; then
+	if same_both pad; then
+		pass "input:press - Cross seen on exactly the 5 pressed frames (first at line $first), lag 0, native == sandbox"
+	else
+		failed "input:press - the sandbox's pad trace differs from native (diff $work/tty-pad-native.txt $work/tty-pad-wbx.txt)"
+	fi
 else
-	"$native" --work "$work/pad" --firmware "$pup" --frames 40 --report 40 --press 10:5:10 --tty-out "$work/pad-native.txt" "$padrom" 2>"$work/pad-native.err" | grep '^frame' > "$work/pad-native-frame.txt"
-	"$wbx" "$core" --firmware "$pup" --frames 40 --report 40 --press 10:5:10 --tty-out "$work/pad-wbx.txt" "$padrom" 2>"$work/pad-wbx.err" | grep '^frame' > "$work/pad-wbx-frame.txt"
-	pressed="$(grep -c ' 00000040 ' "$work/pad-native.txt")"
-	first="$(grep -n ' 00000040 ' "$work/pad-native.txt" | head -1 | cut -d: -f1)"
-	if [ "$pressed" = 5 ] && [ "$first" = 11 ] && grep -q ' lag 0 ' "$work/pad-native-frame.txt"; then
-		if cmp -s "$work/pad-native.txt" "$work/pad-wbx.txt" && cmp -s "$work/pad-native-frame.txt" "$work/pad-wbx-frame.txt"; then
-			pass "input:press - Cross seen on exactly the 5 pressed frames (first at line $first), lag 0, native == sandbox"
+	failed "input:press - expected 5 pressed lines starting at line 11 with lag 0, got $pressed from line ${first:-none} ($(tail -1 "$work/pad-native.txt"))"
+fi
+# a program that never polls the pad is lag on every frame
+if grep -q " lag $((frames / 3)) " "$work/fw-native.txt"; then
+	pass "input:lag - a program that never polls counts every frame as lag"
+else
+	failed "input:lag - lv2test should be all lag ($(tail -1 "$work/fw-native.txt"))"
+fi
+
+# ---- video:flip ----------------------------------------------------------
+fliprom="$root/tests/roms/flip.elf"
+if [ ! -f "$fliprom" ]; then
+	skip "video:flip - no tests/roms/flip.elf (tests/ps3/build.sh, needs the PSL1GHT toolchain)"
+else
+	run_both flip 120 10 "$fliprom"
+	images="$(distinct "$work/flip-native.txt" vid 2)"
+	flips="$(grep -c '^frame [0-9]* buffer' "$work/tty-flip-native.txt")"
+	if [ "$images" = 12 ] && [ "$flips" -ge 100 ]; then
+		if same_both flip; then
+			pass "video:flip - 12 reports, 12 different 1280x720 images, $flips flips reported by the program, native == sandbox"
 		else
-			failed "input:press - the sandbox's pad trace differs from native (diff $work/pad-native.txt $work/pad-wbx.txt)"
+			failed "video:flip - the sandbox's images differ from native (diff $work/flip-native.txt $work/flip-wbx.txt)"
 		fi
 	else
-		failed "input:press - expected 5 pressed lines starting at line 11 with lag 0, got $pressed from line ${first:-none} ($(tail -1 "$work/pad-native-frame.txt"))"
-	fi
-	# a program that never polls the pad is lag on every frame
-	if grep -q ' lag 200 ' "$work/fw-native-frames.txt" 2>/dev/null || grep -q " lag $((frames / 3)) " "$work/fw-native.txt"; then
-		pass "input:lag - a program that never polls counts every frame as lag"
-	else
-		failed "input:lag - lv2test should be all lag ($(tail -1 "$work/fw-native.txt"))"
+		failed "video:flip - expected 12 different images and 100+ flips, got $images and $flips ($(tail -1 "$work/flip-native.err"))"
 	fi
 fi
 
-exit $fail
-fi
-
-"$wbx" "$core" --frames "$frames" --report 50 --tty-out "$work/tty-wbx.txt" "$rom" 2>"$work/wbx.err" | grep '^frame' > "$work/run-wbx.txt"
-if [ ! -s "$work/run-wbx.txt" ]; then
-	failed "sandbox run produced no frames ($(tail -1 "$work/wbx.err"))"
-elif cmp -s "$work/run-a.txt" "$work/run-wbx.txt" && cmp -s "$work/tty-a.txt" "$work/tty-wbx.txt"; then
-	pass "native == sandbox at $frames frames (RAM + TTY digests)"
+# ---- audio:tone ----------------------------------------------------------
+tonerom="$root/tests/roms/tone.elf"
+if [ ! -f "$tonerom" ]; then
+	skip "audio:tone - no tests/roms/tone.elf (tests/ps3/build.sh)"
 else
-	failed "sandbox differs from native (diff $work/run-a.txt $work/run-wbx.txt)"
-fi
-
-if "$wbx" "$core" --frames "$frames" --rewind "$rom" > "$work/rewind.txt" 2>"$work/rewind.err"; then
-	pass "rewind leg - $(grep '^rewind' "$work/rewind.txt")"
-else
-	failed "rewind leg - $(grep '^rewind' "$work/rewind.txt" || tail -1 "$work/rewind.err")"
-fi
-
-"$wbx" "$core" --frames "$((frames / 3))" --report 50 --rerecord "$rom" 2>"$work/rerecord.err" | grep '^frame' > "$work/rerecord.txt"
-"$wbx" "$core" --frames "$((frames / 3))" --report 50 "$rom" 2>/dev/null | grep '^frame' > "$work/plain.txt"
-if [ -s "$work/rerecord.txt" ] && cmp -s "$work/rerecord.txt" "$work/plain.txt"; then
-	pass "rerecord leg - save+load around every frame changes nothing ($((frames / 3)) frames)"
-else
-	failed "rerecord leg - $(tail -1 "$work/rerecord.err")"
-fi
-
-# ---- firmware:lle (needs the user's PS3UPDAT.PUP) -----------------------
-pup="$root/tests/roms-local/PS3UPDAT.PUP"
-if [ ! -f "$pup" ]; then
-	skip "firmware:lle - no tests/roms-local/PS3UPDAT.PUP (would prove: the PUP installs in the box and liblv2 runs LLE)"
-else
-	"$native" --work "$work/fw" --firmware "$pup" --frames "$((frames / 3))" --report 50 --tty-out "$work/tty-fw-native.txt" "$rom" 2>"$work/fw-native.err" | grep '^frame\|^booted' > "$work/fw-native.txt"
-	"$wbx" "$core" --firmware "$pup" --frames "$((frames / 3))" --report 50 --tty-out "$work/tty-fw-wbx.txt" "$rom" 2>"$work/fw-wbx.err" | grep '^frame\|^booted' > "$work/fw-wbx.txt"
-	if ! grep -q "firmware 4" "$work/fw-native.txt"; then
-		failed "firmware:lle - the firmware did not install natively ($(tail -1 "$work/fw-native.err"))"
-	elif grep '^frame' "$work/fw-native.txt" > "$work/fw-native-frames.txt" && grep '^frame' "$work/fw-wbx.txt" > "$work/fw-wbx-frames.txt" && cmp -s "$work/fw-native-frames.txt" "$work/fw-wbx-frames.txt" && cmp -s "$work/tty-fw-native.txt" "$work/tty-fw-wbx.txt"; then
-		pass "firmware:lle - $(grep '^booted' "$work/fw-native.txt" | sed 's/booted; //'), liblv2 LLE, native == sandbox at $((frames / 3)) frames"
-	else
-		failed "firmware:lle - sandbox differs from native with firmware (diff $work/fw-native.txt $work/fw-wbx.txt)"
-	fi
-fi
-
-# ---- input:press (needs the firmware too: cellPad is libio) --------------
-padrom="$root/tests/roms/padtest.elf"
-[ -f "$padrom" ] || python3 "$root/tests/asm/ppc.py" "$root/tests/asm/padtest.s" "$padrom" >/dev/null
-if [ ! -f "$pup" ]; then
-	skip "input:press - no firmware (would prove: a scripted press reaches cellPadGetData on the right frames)"
-else
-	"$native" --work "$work/pad" --firmware "$pup" --frames 40 --report 40 --press 10:5:10 --tty-out "$work/pad-native.txt" "$padrom" 2>"$work/pad-native.err" | grep '^frame' > "$work/pad-native-frame.txt"
-	"$wbx" "$core" --firmware "$pup" --frames 40 --report 40 --press 10:5:10 --tty-out "$work/pad-wbx.txt" "$padrom" 2>"$work/pad-wbx.err" | grep '^frame' > "$work/pad-wbx-frame.txt"
-	pressed="$(grep -c ' 00000040 ' "$work/pad-native.txt")"
-	first="$(grep -n ' 00000040 ' "$work/pad-native.txt" | head -1 | cut -d: -f1)"
-	if [ "$pressed" = 5 ] && [ "$first" = 11 ] && grep -q ' lag 0 ' "$work/pad-native-frame.txt"; then
-		if cmp -s "$work/pad-native.txt" "$work/pad-wbx.txt" && cmp -s "$work/pad-native-frame.txt" "$work/pad-wbx-frame.txt"; then
-			pass "input:press - Cross seen on exactly the 5 pressed frames (first at line $first), lag 0, native == sandbox"
+	run_both tone 60 10 "$tonerom"
+	sounds="$(distinct "$work/tone-native.txt" aud 2)"
+	blocks="$(grep -c '^block' "$work/tty-tone-native.txt")"
+	if [ "$sounds" -ge 3 ] && [ "$blocks" -ge 8 ]; then
+		if same_both tone; then
+			pass "audio:tone - 6 reports, $sounds different 800-sample blocks (the wave's period), $blocks block reports, native == sandbox"
 		else
-			failed "input:press - the sandbox's pad trace differs from native (diff $work/pad-native.txt $work/pad-wbx.txt)"
+			failed "audio:tone - the sandbox's audio differs from native (diff $work/tone-native.txt $work/tone-wbx.txt)"
 		fi
 	else
-		failed "input:press - expected 5 pressed lines starting at line 11 with lag 0, got $pressed from line ${first:-none} ($(tail -1 "$work/pad-native-frame.txt"))"
+		failed "audio:tone - expected 3+ different audio blocks and 8+ block reports, got $sounds and $blocks ($(tail -1 "$work/tone-native.err"))"
 	fi
-	# a program that never polls the pad is lag on every frame
-	if grep -q ' lag 200 ' "$work/fw-native-frames.txt" 2>/dev/null || grep -q " lag $((frames / 3)) " "$work/fw-native.txt"; then
-		pass "input:lag - a program that never polls counts every frame as lag"
+fi
+
+# ---- disc:boot -----------------------------------------------------------
+disc=""
+for f in "$root"/tests/roms-local/*.iso; do
+	[ -f "$f" ] && { disc="$f"; break; }
+done
+if [ -z "$disc" ]; then
+	skip "disc:boot - no decrypted .iso in tests/roms-local (would prove: a disc mounts, its modules link, memory changes every frame, native == sandbox)"
+else
+	run_both disc 120 20 "$disc"
+	rams="$(distinct "$work/disc-native.txt" ram 1)"
+	if [ "$rams" = 6 ]; then
+		if same_both disc; then
+			pass "disc:boot - $(basename "$disc" | cut -c1-40): 120 frames, memory different at every report, native == sandbox"
+		else
+			failed "disc:boot - the sandbox differs from native on the disc (diff $work/disc-native.txt $work/disc-wbx.txt)"
+		fi
 	else
-		failed "input:lag - lv2test should be all lag ($(tail -1 "$work/fw-native.txt"))"
+		failed "disc:boot - expected 6 different memory digests, got $rams ($(tail -1 "$work/disc-native.err"))"
 	fi
 fi
 

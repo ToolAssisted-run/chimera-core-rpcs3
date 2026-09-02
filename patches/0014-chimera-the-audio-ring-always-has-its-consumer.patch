@@ -1,0 +1,38 @@
+diff --git a/rpcs3/Emu/Cell/Modules/cellAudio.cpp b/rpcs3/Emu/Cell/Modules/cellAudio.cpp
+index e314ff953..07ddf7301 100644
+--- a/rpcs3/Emu/Cell/Modules/cellAudio.cpp
++++ b/rpcs3/Emu/Cell/Modules/cellAudio.cpp
+@@ -255,6 +255,12 @@ void audio_ringbuffer::enqueue(bool enqueue_silence, bool force)
+ 		cur_pos = (cur_pos + 1) % cfg.num_allocated_buffers;
+ 	}
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: the frontend is the consumer, and it is always ready; no
++	// backend callback will ever say so
++	if (!backend_active.observe()) backend_active = true;
++#endif
++
+ 	if (!backend_active.observe() && !force)
+ 	{
+ 		// backend is not ready yet
+diff --git a/rpcs3/Emu/Audio/Null/NullAudioBackend.h b/rpcs3/Emu/Audio/Null/NullAudioBackend.h
+index abb78ff46..e4feb6f0b 100644
+--- a/rpcs3/Emu/Audio/Null/NullAudioBackend.h
++++ b/rpcs3/Emu/Audio/Null/NullAudioBackend.h
+@@ -10,9 +10,15 @@ public:
+ 
+ 	std::string_view GetName() const override { return "Null"sv; }
+ 
+-	bool Open(std::string_view /* dev_id */, AudioFreq /* freq */, AudioSampleSize /* sample_size */, AudioChannelCnt /* ch_cnt */, audio_channel_layout /*layout*/) override
++	bool Open(std::string_view /* dev_id */, AudioFreq /* freq */, AudioSampleSize /* sample_size */, AudioChannelCnt /* ch_cnt */, audio_channel_layout layout) override
+ 	{
+ 		Close();
++#ifdef CHIMERA_CORE
++		// Chimera: the mixed blocks reach the frontend through this backend, and
++		// the downmixer needs a resolved layout: two channels unless told otherwise
++		m_layout = layout == audio_channel_layout::automatic ? audio_channel_layout::stereo : layout;
++		m_channels = default_layout_channel_count(m_layout);
++#endif
+ 		return true;
+ 	}
+ 	void Close() override { m_playing = false; }

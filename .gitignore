@@ -9,3 +9,6 @@ waterbox/work/
 build-*.log
 waterbox/bin/
 submodules.log
+tests/ps3/*/build/
+tests/ps3/*/*.elf
+tests/ps3/*/*.map

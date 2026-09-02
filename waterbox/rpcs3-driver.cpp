@@ -373,6 +373,9 @@ namespace
     g_cfg.video.vblank_ntsc.set(false);
     g_cfg.video.multithreaded_rsx.set(false);
     g_cfg.audio.renderer.set(audio_renderer::null);
+    // the null backend resolves no layout of its own, and the downmixer
+    // refuses "automatic": two channels, the frontend's shape
+    g_cfg.audio.channel_layout.set(audio_channel_layout::stereo);
     g_cfg.audio.enable_buffering.set(false);
     g_cfg.audio.enable_time_stretching.set(false);
     g_cfg.io.keyboard.set(keyboard_handler::null);
@@ -581,6 +584,22 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
 
   g_tty_path = g_android_cache_dir + "TTY.log";
 
+  // CHIMERA_LOG_TRACE=chan,chan: those log channels at trace level, for
+  // chasing a machine that goes quiet (the log is never machine state)
+  if (const char* trace = getenv("CHIMERA_LOG_TRACE"))
+  {
+    std::string list = trace;
+    size_t start = 0;
+    while (start <= list.size())
+    {
+      size_t comma = list.find(',', start);
+      if (comma == std::string::npos)
+        comma = list.size();
+      if (comma > start)
+        logs::set_level(list.substr(start, comma - start), logs::level::trace);
+      start = comma + 1;
+    }
+  }
   const game_boot_result r = Emu.BootGame(game, "", true, cfg_mode::custom);
   run_main_queue();
   if (r != game_boot_result::no_errors)
