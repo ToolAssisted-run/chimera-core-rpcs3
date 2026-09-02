@@ -39,6 +39,7 @@ int main(int argc, char** argv)
   long frames = 60;
   long report = 10;
   const char* tty_out = nullptr;
+  const char* firmware = nullptr;
   for (int i = 1; i < argc; i++)
   {
     if (!strcmp(argv[i], "--frames") && i + 1 < argc)
@@ -49,12 +50,14 @@ int main(int argc, char** argv)
       work = argv[++i];
     else if (!strcmp(argv[i], "--tty-out") && i + 1 < argc)
       tty_out = argv[++i];
+    else if (!strcmp(argv[i], "--firmware") && i + 1 < argc)
+      firmware = argv[++i];
     else
       game = argv[i];
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--frames N] [--report N] [--tty-out F] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--frames N] [--report N] [--tty-out F] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -64,12 +67,12 @@ int main(int argc, char** argv)
     signal(SIGALRM, on_alarm);
     alarm(atoi(getenv("CHIMERA_ALARM")));
   }
-  if (!chimera_rpcs3_init(work, game))
+  if (!chimera_rpcs3_init(work, game, firmware))
   {
     fprintf(stderr, "init failed: %s\n", chimera_rpcs3_error());
     return 1;
   }
-  printf("booted; threads %d\n", chimera_rpcs3_thread_count());
+  printf("booted; threads %d firmware %s\n", chimera_rpcs3_thread_count(), chimera_rpcs3_firmware_version()[0] ? chimera_rpcs3_firmware_version() : "none");
   fflush(stdout);
 
   for (long f = 1; f <= frames; f++)

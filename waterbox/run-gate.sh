@@ -5,6 +5,9 @@
 #   sandbox:equivalent     core.wbx under miniBox prints the native run's lines
 #   sandbox:rewind         save mid-run, finish, load, finish again: equal
 #   sandbox:rerecord       save+load around every frame changes nothing
+#   firmware:lle           with Sony's PUP (tests/roms-local, never committed):
+#                          the firmware installs in the box, liblv2 is LLE, and
+#                          native == sandbox still holds
 # Run from anywhere; artifacts land in waterbox/work/gate.
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -47,7 +50,23 @@ wbx="$here/bin/run-wbx"
 core="$here/bin/core.wbx"
 if [ ! -x "$wbx" ] || [ ! -f "$core" ]; then
 	skip "sandbox legs: build-core.sh has not produced bin/core.wbx + bin/run-wbx"
-	exit $fail
+	# ---- firmware:lle (needs the user's PS3UPDAT.PUP) -----------------------
+pup="$root/tests/roms-local/PS3UPDAT.PUP"
+if [ ! -f "$pup" ]; then
+	skip "firmware:lle - no tests/roms-local/PS3UPDAT.PUP (would prove: the PUP installs in the box and liblv2 runs LLE)"
+else
+	"$native" --work "$work/fw" --firmware "$pup" --frames "$((frames / 3))" --report 50 --tty-out "$work/tty-fw-native.txt" "$rom" 2>"$work/fw-native.err" | grep '^frame\|^booted' > "$work/fw-native.txt"
+	"$wbx" "$core" --firmware "$pup" --frames "$((frames / 3))" --report 50 --tty-out "$work/tty-fw-wbx.txt" "$rom" 2>"$work/fw-wbx.err" | grep '^frame\|^booted' > "$work/fw-wbx.txt"
+	if ! grep -q "firmware 4" "$work/fw-native.txt"; then
+		failed "firmware:lle - the firmware did not install natively ($(tail -1 "$work/fw-native.err"))"
+	elif grep '^frame' "$work/fw-native.txt" > "$work/fw-native-frames.txt" && grep '^frame' "$work/fw-wbx.txt" > "$work/fw-wbx-frames.txt" && cmp -s "$work/fw-native-frames.txt" "$work/fw-wbx-frames.txt" && cmp -s "$work/tty-fw-native.txt" "$work/tty-fw-wbx.txt"; then
+		pass "firmware:lle - $(grep '^booted' "$work/fw-native.txt" | sed 's/booted; //'), liblv2 LLE, native == sandbox at $((frames / 3)) frames"
+	else
+		failed "firmware:lle - sandbox differs from native with firmware (diff $work/fw-native.txt $work/fw-wbx.txt)"
+	fi
+fi
+
+exit $fail
 fi
 
 "$wbx" "$core" --frames "$frames" --report 50 --tty-out "$work/tty-wbx.txt" "$rom" 2>"$work/wbx.err" | grep '^frame' > "$work/run-wbx.txt"
@@ -71,6 +90,22 @@ if [ -s "$work/rerecord.txt" ] && cmp -s "$work/rerecord.txt" "$work/plain.txt";
 	pass "rerecord leg - save+load around every frame changes nothing ($((frames / 3)) frames)"
 else
 	failed "rerecord leg - $(tail -1 "$work/rerecord.err")"
+fi
+
+# ---- firmware:lle (needs the user's PS3UPDAT.PUP) -----------------------
+pup="$root/tests/roms-local/PS3UPDAT.PUP"
+if [ ! -f "$pup" ]; then
+	skip "firmware:lle - no tests/roms-local/PS3UPDAT.PUP (would prove: the PUP installs in the box and liblv2 runs LLE)"
+else
+	"$native" --work "$work/fw" --firmware "$pup" --frames "$((frames / 3))" --report 50 --tty-out "$work/tty-fw-native.txt" "$rom" 2>"$work/fw-native.err" | grep '^frame\|^booted' > "$work/fw-native.txt"
+	"$wbx" "$core" --firmware "$pup" --frames "$((frames / 3))" --report 50 --tty-out "$work/tty-fw-wbx.txt" "$rom" 2>"$work/fw-wbx.err" | grep '^frame\|^booted' > "$work/fw-wbx.txt"
+	if ! grep -q "firmware 4" "$work/fw-native.txt"; then
+		failed "firmware:lle - the firmware did not install natively ($(tail -1 "$work/fw-native.err"))"
+	elif grep '^frame' "$work/fw-native.txt" > "$work/fw-native-frames.txt" && grep '^frame' "$work/fw-wbx.txt" > "$work/fw-wbx-frames.txt" && cmp -s "$work/fw-native-frames.txt" "$work/fw-wbx-frames.txt" && cmp -s "$work/tty-fw-native.txt" "$work/tty-fw-wbx.txt"; then
+		pass "firmware:lle - $(grep '^booted' "$work/fw-native.txt" | sed 's/booted; //'), liblv2 LLE, native == sandbox at $((frames / 3)) frames"
+	else
+		failed "firmware:lle - sandbox differs from native with firmware (diff $work/fw-native.txt $work/fw-wbx.txt)"
+	fi
 fi
 
 exit $fail

@@ -29,6 +29,11 @@
 #include "Emu/Cell/Modules/cellSaveData.h"
 #include "Emu/Cell/Modules/sceNpTrophy.h"
 #include "Input/pad_thread.h"
+#include "Loader/PUP.h"
+#include "Loader/TAR.h"
+#include "Crypto/unself.h"
+#include "Crypto/key_vault.h"
+#include "util/sysinfo.hpp"
 #include "Utilities/File.h"
 #include "Utilities/Thread.h"
 #include "util/video_source.h"
@@ -60,6 +65,7 @@ namespace
   u64 g_frame_index = 0;
   u64 g_frame_base_ns = 0;
   bool g_booted = false;
+  std::string g_firmware_version;
 
   // "call from main thread": the driver thread is vsched thread 0 and runs
   // this queue whenever it holds the machine.
@@ -260,6 +266,81 @@ namespace
     g_cfg.core.libraries_control.set_set({"liblv2.sprx:hle", "libsysmodule.sprx:hle"});
   }
 
+
+  // The PS3 firmware, from Sony's PS3UPDAT.PUP, decrypted into /dev_flash of
+  // the memory filesystem: rpcs3's own pipeline (pup_object -> the packages
+  // TAR -> per package SCEDecrypter -> TAR extract through the VFS), which
+  // upstream keeps behind a Qt dialog. Runs before the seal, so the firmware
+  // is baseline, not savestate. Returns the version string, empty on failure.
+  std::string install_firmware(const std::string& pup_path)
+  {
+    fs::file pup_f(pup_path);
+    if (!pup_f)
+    {
+      fail("cannot open the firmware file " + pup_path);
+      return {};
+    }
+    pup_object pup(std::move(pup_f));
+    if (pup.operator pup_error() != pup_error::ok)
+    {
+      fail("the firmware file is not a valid PUP: " + pup.get_formatted_error());
+      return {};
+    }
+    fs::file update_files_f = pup.get_file(0x300);
+    if (!update_files_f || !update_files_f.size())
+    {
+      fail("the firmware file has no installation packages");
+      return {};
+    }
+    std::string version;
+    if (fs::file v = pup.get_file(0x100))
+    {
+      version = v.to_string();
+      if (const usz nl = version.find('\n'); nl != umax)
+        version.erase(nl);
+    }
+    tar_object update_files(update_files_f);
+    auto names = update_files.get_filenames();
+    std::erase_if(names, [](const std::string& n) { return n.find("dev_flash_") == umax; });
+    if (names.empty())
+    {
+      fail("the firmware file has no dev_flash packages");
+      return {};
+    }
+    // tar_object::extract writes through the VFS: /dev_flash must point at ours
+    vfs::mount("/dev_flash", g_cfg_vfs.get_dev_flash());
+    for (const auto& name : names)
+    {
+      auto stream = update_files.get_file(name);
+      if (!stream)
+      {
+        fail("firmware package missing: " + name);
+        return {};
+      }
+      if (stream->m_file_handler)
+      {
+        stream->m_file_handler->handle_file_op(*stream, 0, stream->get_size(umax), nullptr);
+      }
+      fs::file update_file = fs::make_stream(std::move(stream->data));
+      SCEDecrypter self_dec(update_file);
+      self_dec.LoadHeaders();
+      self_dec.LoadMetadata(SCEPKG_ERK, SCEPKG_RIV);
+      self_dec.DecryptData();
+      auto dev_flash_tar_f = self_dec.MakeFile();
+      if (dev_flash_tar_f.size() < 3)
+      {
+        fail("firmware package could not be decrypted: " + name);
+        return {};
+      }
+      tar_object dev_flash_tar(dev_flash_tar_f[2]);
+      if (!dev_flash_tar.extract())
+      {
+        fail("firmware package could not be extracted: " + name);
+        return {};
+      }
+    }
+    return version;
+  }
 }  // namespace
 
 extern "C" {
@@ -269,7 +350,7 @@ const char* chimera_rpcs3_error(void)
   return g_error.c_str();
 }
 
-int chimera_rpcs3_init(const char* work_dir, const char* game_path)
+int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* firmware_path)
 {
   g_error.clear();
   // Everything the emulator reads or writes on its own lives in the memory
@@ -283,9 +364,13 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path)
   g_android_cache_dir = root + "cache/";
   chimera::memfs_mkdirs("config");
   chimera::memfs_mkdirs("cache");
-  // the firmware gate looks for this one file on the host path; an empty
-  // file satisfies it, and the startup libraries are HLE so it is never read
-  chimera::memfs_put("config/dev_flash/sys/external/liblv2.sprx", "", 0);
+  const bool have_firmware = firmware_path && *firmware_path;
+  if (!have_firmware)
+  {
+    // no firmware: the gate looks for this one file on the host path; an empty
+    // file satisfies it, and the startup libraries are HLE so it is never read
+    chimera::memfs_put("config/dev_flash/sys/external/liblv2.sprx", "", 0);
+  }
   std::string game = game_path;
   {
     const char* base = strrchr(game_path, '/');
@@ -317,6 +402,21 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path)
   Emu.Init();
 
   pin_configuration();
+  if (have_firmware)
+  {
+    // LLE the firmware's libraries the way a PS3 does
+    g_cfg.core.libraries_control.set_set({});
+    const std::string pup_rel = "firmware/" + std::string(strrchr(firmware_path, '/') ? strrchr(firmware_path, '/') + 1 : firmware_path);
+    if (!chimera::memfs_graft(pup_rel, firmware_path))
+    {
+      fail(std::string("cannot open the firmware: ") + firmware_path);
+      return 0;
+    }
+    g_firmware_version = install_firmware(root + pup_rel);
+    if (g_firmware_version.empty())
+      return 0;
+    chimera_log.notice("firmware %s installed into the machine (%zu bytes of memory files)", g_firmware_version, chimera::memfs_bytes());
+  }
   Emulator::SaveSettings(g_cfg.to_string(), "");
 
   g_tty_path = g_android_cache_dir + "TTY.log";
@@ -455,6 +555,11 @@ uint64_t chimera_rpcs3_machine_time_ns(void)
 int chimera_rpcs3_thread_count(void)
 {
   return vsched_thread_count();
+}
+
+const char* chimera_rpcs3_firmware_version(void)
+{
+  return g_firmware_version.c_str();
 }
 
 int chimera_rpcs3_is_running(void)

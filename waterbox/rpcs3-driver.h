@@ -11,7 +11,9 @@ extern "C" {
 const char* chimera_rpcs3_error(void);
 // work_dir holds the emulator's config/cache/dev_* trees (host directories
 // natively, the virtual devices in the box); game_path is what to boot.
-int chimera_rpcs3_init(const char* work_dir, const char* game_path);
+// firmware_path (optional): Sony's PS3UPDAT.PUP, decrypted into the machine
+// before it boots; without it only HLE-only executables run.
+int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* firmware_path);
 // One vblank period of machine time.
 void chimera_rpcs3_frame(void);
 void chimera_rpcs3_shutdown(void);
@@ -29,6 +31,8 @@ int chimera_rpcs3_vsync_denominator(void);
 uint64_t chimera_rpcs3_machine_time_ns(void);
 int chimera_rpcs3_thread_count(void);
 int chimera_rpcs3_is_running(void);
+// The installed firmware's version ("4.82"), empty without firmware.
+const char* chimera_rpcs3_firmware_version(void);
 void chimera_rpcs3_debug_ppu(void);
 
 #ifdef __cplusplus

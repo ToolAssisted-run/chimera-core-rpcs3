@@ -3,7 +3,7 @@
  * digests in run-native's exact format, so the sandboxed build can be
  * diffed against the native reference.
  *
- * usage: run-wbx <core.wbx> [--frames N] [--report N] [--tty-out F]
+ * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--frames N] [--report N] [--tty-out F]
  *        [--rewind] [--rerecord] <game.elf>
  *
  * The game is mounted under its own basename (extension drives type
@@ -62,20 +62,21 @@ static uintptr_t proc(mb_host *h, const char *n)
 
 int main(int argc, char **argv)
 {
-	const char *core = NULL, *game = NULL, *ttyOut = NULL;
+	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL;
 	long frames = 60, report = 10;
 	int rewind = 0, rerecord = 0;
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--report") && i + 1 < argc) report = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--tty-out") && i + 1 < argc) ttyOut = argv[++i];
+		else if (!strcmp(argv[i], "--firmware") && i + 1 < argc) firmware = argv[++i];
 		else if (!strcmp(argv[i], "--rewind")) rewind = 1;
 		else if (!strcmp(argv[i], "--rerecord")) rerecord = 1;
 		else if (!core) core = argv[i];
 		else game = argv[i];
 	}
 	if (!core || !game) {
-		fprintf(stderr, "usage: run-wbx <core.wbx> [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] <game.elf>\n");
+		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] <game.elf>\n");
 		return 2;
 	}
 
@@ -103,6 +104,12 @@ int main(int argc, char **argv)
 	memreader nr = { (const uint8_t *)vfsname, strlen(vfsname), 0 };
 	wbx_mount_file(h, "rom.name", mem_reader, (uintptr_t)&nr, false, &r);
 	if (r.error_message[0]) { fprintf(stderr, "mount rom.name: %s\n", r.error_message); return 1; }
+
+	/* the firmware channel: Sony's PUP under its declared id, read lazily */
+	if (firmware) {
+		wbx_mount_file_path(h, "PS3UPDAT.PUP", firmware, &r);
+		if (r.error_message[0]) { fprintf(stderr, "mount firmware: %s\n", r.error_message); return 1; }
+	}
 
 	wbx_activate_host(h, &r);
 

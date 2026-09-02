@@ -58,7 +58,15 @@ ECL_EXPORT int Init(void)
     }
   }
 
-  if (!chimera_rpcs3_init(nullptr, romName))
+  // the firmware channel mounts the PUP under its declared id
+  const char* firmware = nullptr;
+  FILE* fw = fopen("PS3UPDAT.PUP", "rb");
+  if (fw)
+  {
+    fclose(fw);
+    firmware = "PS3UPDAT.PUP";
+  }
+  if (!chimera_rpcs3_init(nullptr, romName, firmware))
   {
     snprintf(g_loadError, sizeof g_loadError, "%s", chimera_rpcs3_error());
     return 0;
