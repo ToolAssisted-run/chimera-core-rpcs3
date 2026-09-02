@@ -209,6 +209,7 @@ namespace
   bool s_renderer_opengl = false;
   bool s_gpu = false;
   char s_spu_decoder[16] = "asmjit";
+  char s_ppu_decoder[16] = "interpreter";
   extern "C" int chimera_rpcs3_gpu_bridge_present(void) __attribute__((weak));
   // the native reference's renderer calls the driver directly and must bind
   // the host context on its own thread; the guest resolves this to null (the
@@ -424,8 +425,17 @@ namespace
     if (!spu)
       spu = s_spu_decoder;
     g_cfg.core.spu_decoder.set(!strcmp(spu, "asmjit") ? spu_decoder_type::asmjit : spu_decoder_type::_static);
-    if (const char* d = getenv("CHIMERA_PPU_DECODER"))
-      g_cfg.core.ppu_decoder.set(!strcmp(d, "llvm") ? ppu_decoder_type::llvm : ppu_decoder_type::_static);
+    const char* ppu = getenv("CHIMERA_PPU_DECODER");
+    if (!ppu)
+      ppu = s_ppu_decoder;
+    g_cfg.core.ppu_decoder.set(!strcmp(ppu, "llvm") ? ppu_decoder_type::llvm : ppu_decoder_type::_static);
+    // the LLVM recompilers, when built in: one compile thread (the machine's
+    // scheduler is the only scheduler, and one order is one machine), a
+    // fixed target CPU so the generated code is the same on every machine
+    // that can run it, and no precompilation of every module at boot
+    g_cfg.core.llvm_threads.set(1);
+    g_cfg.core.llvm_cpu.from_string("x86-64-v3");
+    g_cfg.core.llvm_precompilation.set(false);
     g_cfg.core.spu_cache.set(false);
     g_cfg.core.llvm_precompilation.set(false);
     g_cfg.core.spu_loop_detection.set(false);
@@ -636,6 +646,20 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   if (!g_work.empty())
     fs::create_path(g_work);
   static std::unique_ptr<logs::listener> s_log = logs::make_file_listener((g_work.empty() ? root + "cache/" : g_work) + "RPCS3.log", 64 * 1024 * 1024);
+  // fatal messages also reach the host's stderr: in the sandbox the log file
+  // lives in memory nobody outside can read, and a thread that died is the
+  // one thing worth hearing about (never machine state)
+  struct fatal_to_stderr final : logs::listener
+  {
+    void log(u64, const logs::message& msg, std::string_view prefix, std::string_view text) override
+    {
+      if (static_cast<logs::level>(msg) == logs::level::fatal)
+        fprintf(stderr, "rpcs3 fatal: %.*s %.*s\n", static_cast<int>(prefix.size()), prefix.data(), static_cast<int>(text.size()), text.data());
+    }
+  };
+  static fatal_to_stderr s_fatal;
+  static bool s_fatal_added = (logs::listener::add(&s_fatal), true);
+  (void)s_fatal_added;
 
   vsched_init();
 
@@ -951,4 +975,9 @@ extern "C" int chimera_rpcs3_on_fault(uint64_t addr, int is_write)
 extern "C" void chimera_rpcs3_set_spu_decoder(const char* name)
 {
   snprintf(s_spu_decoder, sizeof s_spu_decoder, "%s", name && !strcmp(name, "interpreter") ? "interpreter" : "asmjit");
+}
+
+extern "C" void chimera_rpcs3_set_ppu_decoder(const char* name)
+{
+  snprintf(s_ppu_decoder, sizeof s_ppu_decoder, "%s", name && !strcmp(name, "llvm") ? "llvm" : "interpreter");
 }

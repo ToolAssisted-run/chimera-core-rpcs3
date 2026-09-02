@@ -15,7 +15,7 @@ CXXFLAGS := -O2 -g1 $(TUFLAGS) -msse -msse2 -mcx16 -fno-exceptions -DCHIMERA_GL_
 CFLAGS := -O2 -g1 -I.
 
 # the CMake archives plus the source-built ffmpeg (never the prebuilt zip)
-LIBS := $(shell find $(B) -name '*.a' | grep -v /3rdparty/ffmpeg/) $(shell find $(ROOT)/build/ffmpeg-native/lib -name '*.a')
+LIBS := $(shell find $(B) -name '*.a' | grep -v /3rdparty/ffmpeg/) $(shell find $(ROOT)/build/ffmpeg-native/lib -name '*.a') $(shell find $(ROOT)/build/llvm-native/lib -name 'libLLVM*.a' 2>/dev/null)
 
 # upstream sources that live in rpcs3's user-interface library but are not
 # user interface: the pad thread and the version strings

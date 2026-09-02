@@ -237,6 +237,22 @@ else
 	fi
 fi
 
+# ---- ppu:llvm --------------------------------------------------------------
+# lv2test on the LLVM PPU recompiler: liblv2 and the program compile inside
+# each flavor when they load, and the machine that runs afterwards is the
+# same one in both
+CHIMERA_PPU_DECODER=llvm "$native" --work "$work/ppu-llvm" --firmware "$pup" --frames 200 --report 50 --tty-out "$work/tty-ppu-llvm-native.txt" "$rom" 2>"$work/ppu-llvm-native.err" | grep '^frame\|^booted' > "$work/ppu-llvm-native.txt"
+if [ "$have_wbx" = 1 ]; then
+	"$wbx" "$core" --firmware "$pup" --settings '{"ppu_decoder":"llvm"}' --frames 200 --report 50 --tty-out "$work/tty-ppu-llvm-wbx.txt" "$rom" 2>"$work/ppu-llvm-wbx.err" | grep '^frame\|^booted' > "$work/ppu-llvm-wbx.txt"
+fi
+if ! grep -q '^frame   200' "$work/ppu-llvm-native.txt"; then
+	failed "ppu:llvm - the native run did not reach frame 200 ($(tail -1 "$work/ppu-llvm-native.err"))"
+elif ! same_both ppu-llvm; then
+	failed "ppu:llvm - the sandbox differs from native (diff $work/ppu-llvm-native.txt $work/ppu-llvm-wbx.txt)"
+else
+	pass "ppu:llvm - 200 frames of lv2test on the LLVM recompiler, $(wc -c < "$work/tty-ppu-llvm-native.txt") TTY bytes, native == sandbox"
+fi
+
 # ---- spu:interpreter and spu:asmjit ------------------------------------
 # sputest.elf keeps one SPU thread busy and reports its checksums; the
 # interpreter and the recompiler must produce the same lines (the machine's

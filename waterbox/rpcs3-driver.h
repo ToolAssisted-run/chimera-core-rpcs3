@@ -57,6 +57,8 @@ void chimera_rpcs3_debug_ppu(void);
 void chimera_rpcs3_set_renderer(const char* name);
 // "interpreter" or "asmjit" (the default), before init: part of the machine
 void chimera_rpcs3_set_spu_decoder(const char* name);
+// "interpreter" (the default) or "llvm", before init: part of the machine
+void chimera_rpcs3_set_ppu_decoder(const char* name);
 // 1 when the GL renderer is drawing through the bridge
 int chimera_rpcs3_gpu_active(void);
 // a fault on a guest page (address, write?): 1 when the renderer handled it

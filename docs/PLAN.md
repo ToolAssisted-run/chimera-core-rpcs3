@@ -337,6 +337,36 @@ optimisation. No user interface, no networking, no real audio or input devices.
   first minute runs no SPU code at all, so it proved nothing here.
   The PPU has only the interpreter and LLVM: LLVM in the box remains the big
   one (M7b).
+- **M7b: the LLVM PPU recompiler in the box (2026-09-02, both flavors, gate leg
+  ppu:llvm native == sandbox)**. In the guest three more things: musl's static
+  `dlopen` answers "Dynamic loading not supported" and LLVM's JIT takes that
+  as fatal when it loads the process's own symbols, so the guest defines
+  dlopen/dlsym/dlclose/dlerror itself (guest-syscalls.cpp: the process is the
+  library, and dlsym resolves memcpy and the libm names generated code may
+  call); a `[[gnu::target]]` attribute resets the stack-protector guard to
+  %fs:0x28, so GNUC_X64_TARGET adds no_stack_protector; and the memory layout
+  grew to 1 GiB of heap and a 26 GiB arena (LLVM's 768 MiB code space did not
+  fit beside the view, the execution table and the JIT arena; the failed
+  reservation's null became an EINVAL commit at 0x10000000). The core is 129
+  MB with LLVM inside. Fatal log lines now also reach the host's stderr,
+  the only way to read a sandboxed death. LLVM 22 from RPCS3's submodule (`waterbox/build-llvm.sh`:
+  X86 only, no threads, static, no tools; the guest flavor needs the native
+  flavor's llvm-tblgen and links its own executables against the guest C++
+  runtime through CMAKE_CXX_STANDARD_LIBRARIES). Patch 0017: a per-thread
+  budget in ppu_thread, the translator counts every instruction it emits and
+  charges the budget at every point control may leave the straight line
+  (CallFunction, UseCondition, TestAborted), calling `__chimera_budget` when it
+  runs dry; and no boot-time sweep of the firmware's libraries (that alone was
+  three minutes of host time per session). Pins: one compile thread, target
+  CPU x86-64-v3, no precompilation. lv2test on LLVM: deterministic natively,
+  liblv2 + the program compile in about ten seconds. GTA: 80 modules compile
+  in 464 s, then 94 fps against the interpreter's 47 in the same phase.
+  **The cache is the problem**: compiled objects live in memfs and die with
+  the session, so every boot pays the compile. The default stays the
+  interpreter (`ppu_decoder` = interpreter | llvm) until compiled modules can
+  persist between sessions: the persistent-data ABI is explicit and
+  bundle-driven by design, so a compile cache wants its own host-managed
+  channel (never machine state: the same source compiles to the same code).
 - **Still open after M5**: Windows end to end (the lazy 20 GiB block, the
   bridge and the VEH fault path are all cross-compiled only), real hardware,
   LLVM recompilers, RawSPU.

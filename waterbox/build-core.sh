@@ -51,7 +51,7 @@ make -f "$here/guest.mk" -C "$here" -j"$jobs" MB="$mb"
 mkdir -p "$out"
 
 # Library order: one big group; the CMake archives cross-reference freely.
-libs="$(find "$root/build/guest" -name '*.a' | sort | tr '\n' ' ') $(find "$root/build/ffmpeg-guest/lib" -name '*.a' | sort | tr '\n' ' ')"
+libs="$(find "$root/build/guest" -name '*.a' | sort | tr '\n' ' ') $(find "$root/build/ffmpeg-guest/lib" -name '*.a' | sort | tr '\n' ' ') $(find "$root/build/llvm-guest/lib" -name 'libLLVM*.a' 2>/dev/null | sort | tr '\n' ' ')"
 
 g++ -specs "$sr/lib/musl-gcc.specs" -mcmodel=large -fno-pic -fno-pie \
 	-static -no-pie -Wl,--eh-frame-hdr,-O2,--no-relax,-z,stack-size=8388608 -T "$mb/source/guest/linkscript.T" \

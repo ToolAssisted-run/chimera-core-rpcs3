@@ -1,0 +1,168 @@
+diff --git a/rpcs3/Emu/Cell/PPUThread.h b/rpcs3/Emu/Cell/PPUThread.h
+index 9a135c00c..0aae8bf49 100644
+--- a/rpcs3/Emu/Cell/PPUThread.h
++++ b/rpcs3/Emu/Cell/PPUThread.h
+@@ -230,6 +230,13 @@ public:
+ 	u32 vrsave{0xffffffff}; // VR Save Register
+ 	u32 cia{}; // Current Instruction Address
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: instructions this thread may still run before the scheduler
++	// takes the clock forward; LLVM-compiled code charges it per basic block
++	// (PPUTranslator.cpp), the interpreter charges its own per instruction
++	s64 chimera_budget = 0;
++#endif
++
+ 	// Fixed-Point Exception Register (abstract representation)
+ 	struct
+ 	{
+diff --git a/rpcs3/Emu/Cell/PPUThread.cpp b/rpcs3/Emu/Cell/PPUThread.cpp
+index f63adc580..844f3e3bf 100644
+--- a/rpcs3/Emu/Cell/PPUThread.cpp
++++ b/rpcs3/Emu/Cell/PPUThread.cpp
+@@ -3415,6 +3415,16 @@ static void ppu_error(ppu_thread& ppu, u64 addr, u32 /*op*/)
+ 	ppu_recompiler_fallback(ppu);
+ }
+ 
++#ifdef CHIMERA_CORE
++// Chimera: the budget ran out in compiled code; the scheduler charges the
++// machine's clock for a slice of PPU instructions and may run other threads
++static void ppu_chimera_budget(ppu_thread& ppu)
++{
++	ppu.chimera_budget += vsched_budget_slice();
++	vsched_budget_expired(VSCHED_PPU);
++}
++#endif
++
+ static void ppu_check(ppu_thread& ppu, u64 addr)
+ {
+ 	ppu.cia = ::narrow<u32>(addr);
+@@ -4842,6 +4852,13 @@ extern void ppu_initialize()
+ 
+ 	bool dev_flash_located = !Emu.GetCat().ends_with('P') && Emu.IsPathInsideDir(Emu.GetBoot(), mount_point) && g_cfg.core.llvm_precompilation;
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: no sweep of the firmware's libraries at boot (minutes of host
++	// time for modules the game may never load, and the cache is one session
++	// long); a module compiles when it is loaded
++	compile_fw = false;
++	dev_flash_located = false;
++#endif
+ 	if (compile_fw || dev_flash_located)
+ 	{
+ 		if (dev_flash_located)
+@@ -4961,6 +4978,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
+ 			{ "__trap", reinterpret_cast<u64>(&ppu_trap) },
+ 			{ "__error", reinterpret_cast<u64>(&ppu_error) },
+ 			{ "__check", reinterpret_cast<u64>(&ppu_check) },
++#ifdef CHIMERA_CORE
++			{ "__chimera_budget", reinterpret_cast<u64>(&ppu_chimera_budget) },
++#endif
+ 			{ "__trace", reinterpret_cast<u64>(&ppu_trace) },
+ 			{ "__syscall", reinterpret_cast<u64>(ppu_execute_syscall) },
+ 			{ "__get_tb", reinterpret_cast<u64>(get_timebased_time) },
+diff --git a/rpcs3/Emu/Cell/PPUTranslator.h b/rpcs3/Emu/Cell/PPUTranslator.h
+index 1d99b27f8..f35ac5b84 100644
+--- a/rpcs3/Emu/Cell/PPUTranslator.h
++++ b/rpcs3/Emu/Cell/PPUTranslator.h
+@@ -33,6 +33,15 @@ class PPUTranslator final : public cpu_translator
+ 	// Current position-independent address
+ 	u64 m_addr = 0;
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: instructions translated since the last charge of the
++	// scheduler's budget; charged at every point control may leave the
++	// straight line, so compiled code keeps the machine's clock exactly the
++	// way the interpreter's per-instruction charge does
++	u32 m_chimera_pending = 0;
++	void ChimeraCharge();
++#endif
++
+ 	// Function attributes
+ 	bs_t<ppu_attr> m_attr{};
+ 
+diff --git a/rpcs3/Emu/Cell/PPUTranslator.cpp b/rpcs3/Emu/Cell/PPUTranslator.cpp
+index 864eb63d6..4771064ac 100644
+--- a/rpcs3/Emu/Cell/PPUTranslator.cpp
++++ b/rpcs3/Emu/Cell/PPUTranslator.cpp
+@@ -300,6 +300,9 @@ Function* PPUTranslator::Translate(const ppu_function& info)
+ 
+ 			const u32 op = *ensure(m_info.get_ptr<u32>(::narrow<u32>(m_addr + base)));
+ 
++#ifdef CHIMERA_CORE
++			m_chimera_pending++;
++#endif
+ 			(this->*(s_ppu_decoder.decode(op)))({op});
+ 
+ 			if (m_rel)
+@@ -541,8 +544,30 @@ Value* PPUTranslator::RotateLeft(Value* arg, Value* n)
+ 	return m_ir->CreateOr(m_ir->CreateShl(arg, m_ir->CreateAnd(n, mask)), m_ir->CreateLShr(arg, m_ir->CreateAnd(m_ir->CreateNeg(n), mask)));
+ }
+ 
++#ifdef CHIMERA_CORE
++void PPUTranslator::ChimeraCharge()
++{
++	if (!m_chimera_pending)
++		return;
++	const u32 n = std::exchange(m_chimera_pending, 0);
++	const auto ptr = m_ir->CreatePtrAdd(m_thread, m_ir->getInt64(::offset32(&ppu_thread::chimera_budget)));
++	const auto left = m_ir->CreateSub(m_ir->CreateLoad(GetType<s64>(), ptr), m_ir->getInt64(n));
++	m_ir->CreateStore(left, ptr);
++	const auto go = BasicBlock::Create(m_context, fmt::format("__budget_ok_0x%x", m_addr), m_function);
++	const auto dry = BasicBlock::Create(m_context, fmt::format("__budget_dry_0x%x", m_addr), m_function);
++	m_ir->CreateCondBr(m_ir->CreateICmpSGT(left, m_ir->getInt64(0)), go, dry, m_md_likely);
++	m_ir->SetInsertPoint(dry);
++	Call(GetType<void>(), "__chimera_budget", m_thread);
++	m_ir->CreateBr(go);
++	m_ir->SetInsertPoint(go);
++}
++#endif
++
+ void PPUTranslator::CallFunction(u64 target, Value* indirect)
+ {
++#ifdef CHIMERA_CORE
++	ChimeraCharge();
++#endif
+ 	const auto type = m_function->getFunctionType();
+ 	const auto block = m_ir->GetInsertBlock();
+ 
+@@ -834,6 +859,9 @@ Value* PPUTranslator::Trunc(Value* value, Type* type)
+ 
+ void PPUTranslator::UseCondition(MDNode* hint, Value* cond)
+ {
++#ifdef CHIMERA_CORE
++	ChimeraCharge();
++#endif
+ 	FlushRegisters();
+ 
+ 	if (cond)
+@@ -854,6 +882,9 @@ llvm::Value* PPUTranslator::GetMemory(llvm::Value* addr)
+ 
+ void PPUTranslator::TestAborted()
+ {
++#ifdef CHIMERA_CORE
++	ChimeraCharge();
++#endif
+ 	const auto body = BasicBlock::Create(m_context, fmt::format("__body_0x%x_%s", m_cia, m_ir->GetInsertBlock()->getName().str()), m_function);
+ 
+ 	// Check status register in the entry block
+diff --git a/rpcs3/Emu/CPU/CPUTranslator.h b/rpcs3/Emu/CPU/CPUTranslator.h
+index e11a27509..8df151333 100644
+--- a/rpcs3/Emu/CPU/CPUTranslator.h
++++ b/rpcs3/Emu/CPU/CPUTranslator.h
+@@ -51,8 +51,15 @@
+ #if defined(_MSC_VER) || !defined(ARCH_X64)
+ #define GNUC_X64_TARGET(x)
+ #else
++#ifdef CHIMERA_CORE
++// Chimera: a target attribute resets the target options, which drops the
++// global stack-protector guard the sandbox build relies on and puts the
++// canary back at %fs:0x28, a thread pointer the guest does not have
++#define GNUC_X64_TARGET(x) [[gnu::target(x), gnu::no_stack_protector]]
++#else
+ #define GNUC_X64_TARGET(x) [[gnu::target(x)]]
+ #endif
++#endif
+ 
+ #include <functional>
+ #include <unordered_map>
