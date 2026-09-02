@@ -60,6 +60,11 @@ static int g_count;
 
 int64_t vsched_budget = BUDGET_PER_SLICE;
 
+int64_t vsched_budget_slice(void)
+{
+  return BUDGET_PER_SLICE;
+}
+
 [[noreturn]] static void die(const char* what)
 {
   fprintf(stderr, "vsched: %s (now=%llu ns, threads=%d)\n", what, (unsigned long long)g_now, g_count);

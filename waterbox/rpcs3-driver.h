@@ -55,6 +55,8 @@ void chimera_rpcs3_debug_ppu(void);
 // The renderer the project asked for ("null" or "opengl-hw"), before init;
 // opengl-hw draws only when a GPU bridge was installed (waterbox/gl-shim.cpp)
 void chimera_rpcs3_set_renderer(const char* name);
+// "interpreter" or "asmjit" (the default), before init: part of the machine
+void chimera_rpcs3_set_spu_decoder(const char* name);
 // 1 when the GL renderer is drawing through the bridge
 int chimera_rpcs3_gpu_active(void);
 // a fault on a guest page (address, write?): 1 when the renderer handled it

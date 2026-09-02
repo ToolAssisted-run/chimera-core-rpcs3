@@ -85,6 +85,9 @@ ECL_EXPORT int Init(void)
   char renderer[32] = "null";
   wbx_setting_str("renderer", renderer, sizeof renderer);
   chimera_rpcs3_set_renderer(renderer);
+  char spuDecoder[16] = "asmjit";
+  wbx_setting_str("spu_decoder", spuDecoder, sizeof spuDecoder);
+  chimera_rpcs3_set_spu_decoder(spuDecoder);
 
   if (!chimera_rpcs3_init(nullptr, romName, firmware, dkey))
   {

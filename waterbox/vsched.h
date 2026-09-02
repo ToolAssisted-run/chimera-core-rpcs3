@@ -65,6 +65,8 @@ enum vsched_kind
 };
 extern int64_t vsched_budget;
 void vsched_budget_expired(int kind);
+// the size of one budget, for code that keeps its own counter (a recompiler)
+int64_t vsched_budget_slice(void);
 
 // The RSX thread charges one FIFO command per call and gives way every so
 // often; the emulator's own spin-and-yield sites pay a fixed yield cost.

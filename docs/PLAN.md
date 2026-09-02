@@ -320,6 +320,23 @@ optimisation. No user interface, no networking, no real audio or input devices.
   a load restores both together; the GL objects themselves stay in the host
   context and are only as current as the last draw, which is the accepted
   cost of a GPU outside the savestate.
+- **M7a: the ASMJIT SPU recompiler in the box (2026-09-02)**. Patch 0016: a
+  per-thread budget field in spu_thread; the emitter charges it at function
+  entry (the function's length) and at every local backward branch (the loop
+  body), calling the scheduler when it runs dry, so recompiled code keeps the
+  machine's clock the way the interpreter's per-instruction charge does (a
+  different but equally deterministic timing: the SPU decoder is a machine
+  setting, `spu_decoder` = asmjit | interpreter, default asmjit). TRAP: the
+  emitter's position is "none" (all ones) on fallthrough paths; charging
+  (none - target) cost a billion instructions per event and made each SPU
+  answer take 24 frames. Our tests/ps3/sputest (a PPU signalling one SPU
+  thread every frame, the SPU looping an LCG over local store and answering
+  with a checksum event) gives identical answers under both decoders, one per
+  frame, and runs in two thirds of the interpreter's host time. Gate legs
+  spu:interpreter, spu:asmjit (native == sandbox each), spu:agree. GTA's
+  first minute runs no SPU code at all, so it proved nothing here.
+  The PPU has only the interpreter and LLVM: LLVM in the box remains the big
+  one (M7b).
 - **Still open after M5**: Windows end to end (the lazy 20 GiB block, the
   bridge and the VEH fault path are all cross-compiled only), real hardware,
   LLVM recompilers, RawSPU.

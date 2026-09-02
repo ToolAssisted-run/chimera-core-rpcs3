@@ -7,7 +7,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 export PS3DEV="${PS3DEV:-$HOME/ps3dev}"
 export PSL1GHT="${PSL1GHT:-$PS3DEV}"
 export PATH="$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin:$PATH"
-for t in flip tone; do
+for t in flip tone sputest; do
 	make -C "$here/$t" --no-print-directory
 	powerpc64-ps3-elf-strip "$here/$t/$t.elf" -o "$here/../roms/$t.elf"
 	sprxlinker "$here/../roms/$t.elf"

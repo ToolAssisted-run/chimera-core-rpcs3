@@ -1,0 +1,105 @@
+diff --git a/rpcs3/Emu/Cell/SPUThread.h b/rpcs3/Emu/Cell/SPUThread.h
+index b1f701743..412699854 100644
+--- a/rpcs3/Emu/Cell/SPUThread.h
++++ b/rpcs3/Emu/Cell/SPUThread.h
+@@ -671,6 +671,13 @@ public:
+ 	// May be used internally by recompilers.
+ 	u32 base_pc = 0;
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: instructions this thread may still run before the scheduler
++	// takes the clock forward; recompiled code charges it per function entry
++	// and per backward branch (SPUASMJITRecompiler.cpp)
++	s64 chimera_budget = 0;
++#endif
++
+ 	// May be used by recompilers.
+ 	u8* memory_base_addr = vm::g_base_addr;
+ 	u8* memory_sudo_addr = vm::g_sudo_addr;
+diff --git a/rpcs3/Emu/Cell/SPUASMJITRecompiler.h b/rpcs3/Emu/Cell/SPUASMJITRecompiler.h
+index 36c238f23..82f768add 100644
+--- a/rpcs3/Emu/Cell/SPUASMJITRecompiler.h
++++ b/rpcs3/Emu/Cell/SPUASMJITRecompiler.h
+@@ -91,6 +91,9 @@ private:
+ 
+ 	asmjit::x86::Mem get_pc(u32 addr);
+ 	void branch_fixed(u32 target, bool absolute = false);
++#ifdef CHIMERA_CORE
++	void chimera_charge(u32 n);  // Chimera: charge the scheduler's budget by n instructions
++#endif
+ 	void branch_indirect(spu_opcode_t op, bool jt = false, bool ret = true);
+ 	void branch_set_link(u32 target);
+ 	void fall(spu_opcode_t op);
+diff --git a/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp b/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp
+index acf4b6131..7842fc1da 100644
+--- a/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp
++++ b/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp
+@@ -1,3 +1,6 @@
++#ifdef CHIMERA_CORE
++#include "vsched.h"
++#endif
+ #include "stdafx.h"
+ #include "SPUASMJITRecompiler.h"
+ 
+@@ -186,6 +189,11 @@ spu_function_t spu_recompiler::compile(spu_program&& _func)
+ 	c->cmp(SPU_OFF_32(state), 0);
+ 	c->jnz(label_stop);
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: a function entered is a function's worth of instructions
++	chimera_charge(m_size / 4);
++#endif
++
+ 	if ((g_cfg.core.spu_prof || g_cfg.core.spu_debug) && g_cfg.core.spu_verification)
+ 	{
+ 		c->mov(x86::rax, m_hash_start & -0xffff);
+@@ -987,6 +995,35 @@ static void check_state(spu_thread* _spu)
+ 	}
+ }
+ 
++#ifdef CHIMERA_CORE
++// Chimera: the budget ran out; the scheduler charges the machine's clock
++// for a slice of SPU instructions and may run other threads meanwhile
++static void chimera_spu_budget(spu_thread* _spu)
++{
++	static const bool trace = getenv("CHIMERA_SPU_TRACE") != nullptr;
++	if (trace)
++		fprintf(stderr, "[spu-budget] pc=%05x\n", _spu->pc);
++	_spu->chimera_budget += vsched_budget_slice();
++	vsched_budget_expired(VSCHED_SPU);
++}
++
++// Emit: charge the budget by n instructions and, when it runs dry, call the
++// scheduler. Only at points where the SPU state is in memory and the
++// callee-saved registers (cpu, pc0) are all the emitted code relies on.
++void spu_recompiler::chimera_charge(u32 n)
++{
++	using namespace asmjit;
++	if (!n)
++		return;
++	Label ok = c->newLabel();
++	c->sub(SPU_OFF_64(chimera_budget), n);
++	c->jg(ok);
++	c->mov(*arg0, *cpu);
++	c->call(&chimera_spu_budget);
++	c->bind(ok);
++}
++#endif
++
+ void spu_recompiler::branch_fixed(u32 target, bool absolute)
+ {
+ 	using namespace asmjit;
+@@ -1005,6 +1042,13 @@ void spu_recompiler::branch_fixed(u32 target, bool absolute)
+ 			c->jne(fail);
+ 		}
+ 
++#ifdef CHIMERA_CORE
++		// Chimera: a backward branch ran its loop body once more (m_pos is
++		// the branch's own address, or "none" on the fallthrough paths, which
++		// carry no loop)
++		if (m_pos != umax && target <= m_pos && m_pos - target < 0x40000)
++			chimera_charge((m_pos - target) / 4 + 1);
++#endif
+ 		c->cmp(SPU_OFF_32(state), 0);
+ 		c->jz(local->second);
+ 		c->lea(addr->r64(), get_pc(target));

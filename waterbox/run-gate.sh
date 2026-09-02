@@ -237,6 +237,42 @@ else
 	fi
 fi
 
+# ---- spu:interpreter and spu:asmjit ------------------------------------
+# sputest.elf keeps one SPU thread busy and reports its checksums; the
+# interpreter and the recompiler must produce the same lines (the machine's
+# answers), each deterministic across the flavors, and the recompiler at
+# least as fast in machine time (an answer per frame)
+spurom="$root/tests/roms/sputest.elf"
+if [ ! -f "$spurom" ]; then
+	skip "spu:interpreter, spu:asmjit - no tests/roms/sputest.elf (tests/ps3/build.sh)"
+else
+	for dec in interpreter asmjit; do
+		CHIMERA_SPU_DECODER="$dec" "$native" --work "$work/spu-$dec" --firmware "$pup" --frames 120 --report 40 --tty-out "$work/tty-spu-$dec-native.txt" "$spurom" 2>"$work/spu-$dec-native.err" | grep '^frame\|^booted' > "$work/spu-$dec-native.txt"
+		if [ "$have_wbx" = 1 ]; then
+			"$wbx" "$core" --firmware "$pup" --settings "{\"spu_decoder\":\"$dec\"}" --frames 120 --report 40 --tty-out "$work/tty-spu-$dec-wbx.txt" "$spurom" 2>"$work/spu-$dec-wbx.err" | grep '^frame\|^booted' > "$work/spu-$dec-wbx.txt"
+		fi
+		answers="$(grep -c '^spu [0-9]* sum' "$work/tty-spu-$dec-native.txt")"
+		if [ "$answers" -lt 100 ]; then
+			failed "spu:$dec - expected 100+ SPU answers in 120 frames, got $answers ($(tail -1 "$work/spu-$dec-native.err"))"
+		elif ! same_both "spu-$dec"; then
+			failed "spu:$dec - the sandbox differs from native (diff $work/spu-$dec-native.txt $work/spu-$dec-wbx.txt)"
+		else
+			pass "spu:$dec - $answers SPU answers in 120 frames, native == sandbox"
+		fi
+	done
+	# the same answers from both decoders, line for line, as far as both got
+	n="$(grep -c '^spu [0-9]* sum' "$work/tty-spu-interpreter-native.txt")"
+	m="$(grep -c '^spu [0-9]* sum' "$work/tty-spu-asmjit-native.txt")"
+	[ "$n" -lt "$m" ] || n="$m"
+	grep '^spu [0-9]* sum' "$work/tty-spu-interpreter-native.txt" | head -n "$n" > "$work/spu-agree-a.txt"
+	grep '^spu [0-9]* sum' "$work/tty-spu-asmjit-native.txt" | head -n "$n" > "$work/spu-agree-b.txt"
+	if [ "$n" -gt 0 ] && cmp -s "$work/spu-agree-a.txt" "$work/spu-agree-b.txt"; then
+		pass "spu:agree - the interpreter and the recompiler give the same $n answers"
+	else
+		failed "spu:agree - the decoders' answers differ (diff $work/tty-spu-interpreter-native.txt $work/tty-spu-asmjit-native.txt)"
+	fi
+fi
+
 # ---- gpu:flip and gpu:disc (the GL renderer through the bridge) ----------
 if [ ! -f "$fliprom" ]; then
 	skip "gpu:flip - no tests/roms/flip.elf"

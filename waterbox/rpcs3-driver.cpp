@@ -208,6 +208,7 @@ namespace
   // the renderer: what the project asked for, and whether a GPU answers
   bool s_renderer_opengl = false;
   bool s_gpu = false;
+  char s_spu_decoder[16] = "asmjit";
   extern "C" int chimera_rpcs3_gpu_bridge_present(void) __attribute__((weak));
   // the native reference's renderer calls the driver directly and must bind
   // the host context on its own thread; the guest resolves this to null (the
@@ -414,6 +415,17 @@ namespace
   {
     g_cfg.core.ppu_decoder.set(ppu_decoder_type::_static);
     g_cfg.core.spu_decoder.set(spu_decoder_type::_static);
+    // the SPU decoder is part of the machine: the recompiler charges the
+    // clock per function entry and per loop iteration (patch 0016) where the
+    // interpreter charges per instruction, so the two machines keep slightly
+    // different time. The setting decides; the runners may override it
+    // through CHIMERA_SPU_DECODER for experiments.
+    const char* spu = getenv("CHIMERA_SPU_DECODER");
+    if (!spu)
+      spu = s_spu_decoder;
+    g_cfg.core.spu_decoder.set(!strcmp(spu, "asmjit") ? spu_decoder_type::asmjit : spu_decoder_type::_static);
+    if (const char* d = getenv("CHIMERA_PPU_DECODER"))
+      g_cfg.core.ppu_decoder.set(!strcmp(d, "llvm") ? ppu_decoder_type::llvm : ppu_decoder_type::_static);
     g_cfg.core.spu_cache.set(false);
     g_cfg.core.llvm_precompilation.set(false);
     g_cfg.core.spu_loop_detection.set(false);
@@ -934,4 +946,9 @@ extern "C" int chimera_rpcs3_on_fault(uint64_t addr, int is_write)
   if (handled)
     g_faults_served++;
   return handled ? 1 : 0;
+}
+
+extern "C" void chimera_rpcs3_set_spu_decoder(const char* name)
+{
+  snprintf(s_spu_decoder, sizeof s_spu_decoder, "%s", name && !strcmp(name, "interpreter") ? "interpreter" : "asmjit");
 }
