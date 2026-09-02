@@ -3,7 +3,10 @@
 # native flavor here, and (after it, for its table generator) the guest.
 #   build-llvm.sh native
 # Options: X86 only, no threads (the machine's scheduler is the only
-# scheduler), static, no tools, no compression or terminfo libraries.
+# scheduler), static, no tools, no compression or terminfo libraries. The
+# native flavor is built WITHOUT CET: LLVM's X86 backend emits endbr64 into
+# JIT code whenever the compiler binary itself was built with it (__CET__),
+# and the objects both flavors compile must be byte-identical.
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
@@ -22,7 +25,7 @@ case "$flavor" in
 native)
 	# the native rpcs3 links -fno-pic objects? no: native rpcs3 is PIE; LLVM static libs need PIC for that
 	cmake -G Ninja -S "$src" -B "$out" $common -DLLVM_ENABLE_PIC=ON -DLLVM_INCLUDE_UTILS=ON -DLLVM_BUILD_UTILS=ON \
-		-DCMAKE_C_FLAGS="-msse -msse2 -mcx16" -DCMAKE_CXX_FLAGS="-msse -msse2 -mcx16"
+		-DCMAKE_C_FLAGS="-msse -msse2 -mcx16 -fcf-protection=none" -DCMAKE_CXX_FLAGS="-msse -msse2 -mcx16 -fcf-protection=none"
 	ninja -C "$out" llvm-tblgen
 	ninja -C "$out"
 	;;

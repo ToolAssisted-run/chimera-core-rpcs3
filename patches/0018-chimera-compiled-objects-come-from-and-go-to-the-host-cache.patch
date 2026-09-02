@@ -1,0 +1,26 @@
+diff --git a/Utilities/JITLLVM.cpp b/Utilities/JITLLVM.cpp
+index ff3bc340f..15a6e3219 100644
+--- a/Utilities/JITLLVM.cpp
++++ b/Utilities/JITLLVM.cpp
+@@ -495,10 +495,21 @@ public:
+ 		// Restore space that was overestimated
+ 		ensure(m_compiler->add_sub_disk_space(max_size - module_file.file.size()));
+ 		module_file.commit();
++#ifdef CHIMERA_CORE
++		// Chimera: and the host keeps it for the next session
++		extern void Chimera_CacheStore(const std::string& path);
++		Chimera_CacheStore(name);
++#endif
+ 	}
+ 
+ 	static std::unique_ptr<llvm::MemoryBuffer> load(const std::string& path)
+ 	{
++#ifdef CHIMERA_CORE
++		// Chimera: the host may keep this object from an earlier session (or
++		// a precompile); if it does, it lands in the cache directory first
++		extern void Chimera_CacheFetch(const std::string& path);
++		Chimera_CacheFetch(path + ".gz");
++#endif
+ 		if (fs::file cached{path + ".gz", fs::read})
+ 		{
+ 			const std::vector<u8> cached_data = cached.to_vector<u8>();

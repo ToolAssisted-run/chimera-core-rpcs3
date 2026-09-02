@@ -17,6 +17,11 @@
 #include <cstring>
 #include <ucontext.h>
 
+// the host half of the compile cache, in this same binary (waterbox/cache-host.c)
+extern "C" int chimera_cache_host_init(const char* dir);
+extern "C" const char* chimera_cache_host_description(void);
+extern "C" uintptr_t chimera_cache_host_dispatch(uintptr_t op, uintptr_t a, uintptr_t b, uintptr_t c, uintptr_t d, uintptr_t e);
+
 #ifdef CHIMERA_GL_BRIDGE
 // the host half of the GPU bridge, in this same binary (waterbox/gl-host.c)
 extern "C" int chimera_gl_host_init(char* err, int errlen);
@@ -63,6 +68,7 @@ int main(int argc, char** argv)
   const char* firmware = nullptr;
   const char* dkey = nullptr;
   const char* videoOut = nullptr;
+  const char* cacheDir = nullptr;
   struct { long first, count; int index; } press[32];
   int presses = 0;
   for (int i = 1; i < argc; i++)
@@ -81,6 +87,14 @@ int main(int argc, char** argv)
       dkey = argv[++i];
     else if (!strcmp(argv[i], "--video-out") && i + 1 < argc)
       videoOut = argv[++i];
+    else if (!strcmp(argv[i], "--cache") && i + 1 < argc)
+    {
+      cacheDir = argv[++i];
+      if (chimera_cache_host_init(cacheDir) != 0)
+        fprintf(stderr, "compile cache: cannot use %s\n", cacheDir);
+      else
+        chimera_rpcs3_install_cache_bridge((uint64_t)(uintptr_t)&chimera_cache_host_dispatch);
+    }
     else if (!strcmp(argv[i], "--renderer") && i + 1 < argc)
     {
       const char* r = argv[++i];
@@ -125,7 +139,7 @@ int main(int argc, char** argv)
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--video-out F] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--video-out F] [--cache DIR] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -177,6 +191,8 @@ int main(int argc, char** argv)
   }
   if (getenv("CHIMERA_DEBUG"))
     chimera_rpcs3_debug_ppu();
+  if (cacheDir)
+    fprintf(stderr, "compile cache: %llu stored, %llu fetched (%s)\n", (unsigned long long)chimera_rpcs3_cache_stored(), (unsigned long long)chimera_rpcs3_cache_fetched(), chimera_cache_host_description());
   if (chimera_rpcs3_fault_count())
     fprintf(stderr, "page faults served by the renderer: %llu\n", (unsigned long long)chimera_rpcs3_fault_count());
   if (videoOut)

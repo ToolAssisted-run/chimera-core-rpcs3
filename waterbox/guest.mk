@@ -20,7 +20,7 @@ WBFLAGS := -fvisibility=hidden -mcmodel=large -mstack-protector-guard=global -fn
 SPECS   := -specs $(SR)/lib/musl-gcc.specs
 CXXINCS := -nostdinc++ -I$(SR)/include/c++/$(GCCVER) -I$(SR)/include/c++/$(GCCVER)/x86_64-linux-musl
 MBINCS  := -I$(MB)/extern/emulibc -I$(MB)/source/guest/include -I$(MB)/extern/jsmn
-GLINCS  := -I$(MB)/source/gl -Iglad/include -Igenerated-gl
+GLINCS  := -I$(MB)/source/gl -I$(MB)/source/cache -Iglad/include -Igenerated-gl
 
 CXXFLAGS := $(WBFLAGS) $(TUFLAGS) -DCHIMERA_GUEST -DCHIMERA_CORE -DCHIMERA_NO_TLS -DCHIMERA_GL_BRIDGE $(MBINCS) $(GLINCS) -I. -isystem guest-include $(CXXINCS)
 CFLAGS   := $(WBFLAGS) -DCHIMERA_GUEST -DCHIMERA_CORE

@@ -10,7 +10,7 @@ O    := obj-native
 
 TUFLAGS := $(shell python3 extract-tu-flags.py $(B)/compile_commands.json Emu/System.cpp)
 MB      ?= $(HOME)/chimera/extern/tools/chimera-common-minibox
-GLINCS  := -I$(MB)/source/gl -Iglad/include -Igenerated-gl
+GLINCS  := -I$(MB)/source/gl -I$(MB)/source/cache -Iglad/include -Igenerated-gl
 CXXFLAGS := -O2 -g1 $(TUFLAGS) -msse -msse2 -mcx16 -fno-exceptions -DCHIMERA_GL_BRIDGE $(GLINCS) -I.
 CFLAGS := -O2 -g1 -I.
 
@@ -50,6 +50,10 @@ $(O)/gl-host.o: gl-host.c
 	@mkdir -p $(O)
 	gcc -O2 -DCHIMERA_GL_BRIDGE $(GLINCS) -c -o $@ $<
 
+$(O)/cache-host.o: cache-host.c $(MB)/source/cache/cache-bridge.h
+	@mkdir -p $(O)
+	gcc -O2 -I. -I$(MB)/source/cache -c -o $@ $<
+
 $(O)/gl-shim.o: gl-shim.cpp
 	@mkdir -p $(O)
 	g++ -O2 -g1 $(GLINCS) -c -o $@ $<
@@ -68,7 +72,7 @@ $(O)/generated-assets.o: generated-assets.cpp chimera-assets.h
 	@mkdir -p $(O)
 	g++ -O1 -I. -c -o $@ $<
 
-$(O)/run-native: $(O)/run-native.o $(O)/rpcs3-driver.o $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/vsched.o $(O)/gl-shim.o $(O)/gl-bridge-guest.o $(O)/gl-traps.o $(O)/glad-gl.o $(O)/gl-host.o $(O)/generated-assets.o $(UPSTREAM_OBJS) $(LIBS)
+$(O)/run-native: $(O)/run-native.o $(O)/rpcs3-driver.o $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/vsched.o $(O)/gl-shim.o $(O)/gl-bridge-guest.o $(O)/gl-traps.o $(O)/glad-gl.o $(O)/gl-host.o $(O)/cache-host.o $(O)/generated-assets.o $(UPSTREAM_OBJS) $(LIBS)
 	g++ -o $@ $(filter %.o,$^) -Wl,--start-group $(LIBS) -Wl,--end-group -lpthread -lm -ldl -lrt -lasound -lEGL
 
 clean:

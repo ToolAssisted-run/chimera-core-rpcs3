@@ -241,9 +241,11 @@ fi
 # lv2test on the LLVM PPU recompiler: liblv2 and the program compile inside
 # each flavor when they load, and the machine that runs afterwards is the
 # same one in both
-CHIMERA_PPU_DECODER=llvm "$native" --work "$work/ppu-llvm" --firmware "$pup" --frames 200 --report 50 --tty-out "$work/tty-ppu-llvm-native.txt" "$rom" 2>"$work/ppu-llvm-native.err" | grep '^frame\|^booted' > "$work/ppu-llvm-native.txt"
+# (each flavor fills its own compile cache on the way: cache:objects compares them)
+rm -rf "$work/cache-native" "$work/cache-wbx"
+CHIMERA_PPU_DECODER=llvm "$native" --work "$work/ppu-llvm" --firmware "$pup" --cache "$work/cache-native" --frames 200 --report 50 --tty-out "$work/tty-ppu-llvm-native.txt" "$rom" 2>"$work/ppu-llvm-native.err" | grep '^frame\|^booted' > "$work/ppu-llvm-native.txt"
 if [ "$have_wbx" = 1 ]; then
-	"$wbx" "$core" --firmware "$pup" --settings '{"ppu_decoder":"llvm"}' --frames 200 --report 50 --tty-out "$work/tty-ppu-llvm-wbx.txt" "$rom" 2>"$work/ppu-llvm-wbx.err" | grep '^frame\|^booted' > "$work/ppu-llvm-wbx.txt"
+	"$wbx" "$core" --firmware "$pup" --settings '{"ppu_decoder":"llvm"}' --cache "$work/cache-wbx" --frames 200 --report 50 --tty-out "$work/tty-ppu-llvm-wbx.txt" "$rom" 2>"$work/ppu-llvm-wbx.err" | grep '^frame\|^booted' > "$work/ppu-llvm-wbx.txt"
 fi
 if ! grep -q '^frame   200' "$work/ppu-llvm-native.txt"; then
 	failed "ppu:llvm - the native run did not reach frame 200 ($(tail -1 "$work/ppu-llvm-native.err"))"
@@ -251,6 +253,30 @@ elif ! same_both ppu-llvm; then
 	failed "ppu:llvm - the sandbox differs from native (diff $work/ppu-llvm-native.txt $work/ppu-llvm-wbx.txt)"
 else
 	pass "ppu:llvm - 200 frames of lv2test on the LLVM recompiler, $(wc -c < "$work/tty-ppu-llvm-native.txt") TTY bytes, native == sandbox"
+fi
+
+# ---- cache:objects and cache:warm ---------------------------------------
+# The compiled objects each flavor stored are byte-identical (the same
+# compiler, the same inputs: what lets a host-compiled object stand in for
+# the guest's), and a second sandbox run loads them all and compiles nothing
+if [ "$have_wbx" = 1 ]; then
+	(cd "$work/cache-native" 2>/dev/null && find . -type f -exec sha1sum {} \; | sort) > "$work/cache-native.sha"
+	(cd "$work/cache-wbx" 2>/dev/null && find . -type f -exec sha1sum {} \; | sort) > "$work/cache-wbx.sha"
+	nobj="$(wc -l < "$work/cache-native.sha")"
+	if [ "$nobj" -lt 3 ]; then
+		failed "cache:objects - expected 3+ compiled objects stored natively, got $nobj ($(grep 'compile cache' "$work/ppu-llvm-native.err"))"
+	elif cmp -s "$work/cache-native.sha" "$work/cache-wbx.sha"; then
+		pass "cache:objects - $nobj compiled objects, byte-identical between the native and the sandbox compiler"
+	else
+		failed "cache:objects - the flavors' objects differ (diff $work/cache-native.sha $work/cache-wbx.sha)"
+	fi
+	"$wbx" "$core" --firmware "$pup" --settings '{"ppu_decoder":"llvm"}' --cache "$work/cache-wbx" --frames 200 --report 50 --tty-out "$work/tty-cache-warm.txt" "$rom" 2>"$work/cache-warm.err" | grep '^frame' > "$work/cache-warm.txt"
+	warm="$(sed -n 's/^compile cache: \([0-9]*\) stored, \([0-9]*\) fetched.*/\1 stored \2 fetched/p' "$work/cache-warm.err")"
+	if [ "$warm" = "0 stored $nobj fetched" ] && cmp -s "$work/cache-warm.txt" "$work/ppu-llvm-wbx-frames.txt" && cmp -s "$work/tty-cache-warm.txt" "$work/tty-ppu-llvm-wbx.txt"; then
+		pass "cache:warm - the second sandbox run fetched all $nobj objects, compiled nothing, and ran the same machine"
+	else
+		failed "cache:warm - $warm (want 0 stored $nobj fetched) or the machine differed ($(tail -1 "$work/cache-warm.err"))"
+	fi
 fi
 
 # ---- spu:interpreter and spu:asmjit ------------------------------------

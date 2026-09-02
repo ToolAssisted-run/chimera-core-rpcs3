@@ -120,6 +120,23 @@ ECL_EXPORT uint64_t GetFaultCount(void)
   return chimera_rpcs3_fault_count();
 }
 
+// The compile cache bridge: the host's dispatcher, handed over before Init
+// when the frontend keeps compiled objects for this core (cache-bridge.h)
+ECL_EXPORT void SetCacheBridge(uint64_t addr)
+{
+  chimera_rpcs3_install_cache_bridge(addr);
+}
+
+ECL_EXPORT uint64_t GetCacheFetched(void)
+{
+  return chimera_rpcs3_cache_fetched();
+}
+
+ECL_EXPORT uint64_t GetCacheStored(void)
+{
+  return chimera_rpcs3_cache_stored();
+}
+
 ECL_EXPORT int IsGpuActive(void)
 {
   return chimera_rpcs3_gpu_active();

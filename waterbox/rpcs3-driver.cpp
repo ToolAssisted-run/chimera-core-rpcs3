@@ -58,6 +58,7 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 #include "memfs.h"
 #include "rpcs3-driver.h"
 #include "chimera-assets.h"
+#include "cache-bridge.h"
 #include "vsched.h"
 
 // the directory roots the emulator library reads (patch 0003 routes
@@ -980,4 +981,79 @@ extern "C" void chimera_rpcs3_set_spu_decoder(const char* name)
 extern "C" void chimera_rpcs3_set_ppu_decoder(const char* name)
 {
   snprintf(s_ppu_decoder, sizeof s_ppu_decoder, "%s", name && !strcmp(name, "llvm") ? "llvm" : "interpreter");
+}
+
+// ---- the compile cache: the host keeps compiled objects between sessions ----
+// (cache-bridge.h). Never machine state: an object is a pure function of the
+// module, this package and the target CPU, so a warm run is a cold run minus
+// the compile.
+static chimera_cache_bridge_fn g_cache_bridge;
+static uint64_t g_cache_fetched, g_cache_stored;
+
+extern "C" void chimera_rpcs3_install_cache_bridge(uint64_t addr)
+{
+  g_cache_bridge = reinterpret_cast<chimera_cache_bridge_fn>(static_cast<uintptr_t>(addr));
+}
+
+extern "C" uint64_t chimera_rpcs3_cache_fetched(void)
+{
+  return g_cache_fetched;
+}
+
+extern "C" uint64_t chimera_rpcs3_cache_stored(void)
+{
+  return g_cache_stored;
+}
+
+// the name the host sees: the path under the emulator's cache directory
+static std::string cache_key(const std::string& path)
+{
+  const std::string prefix = chimera::memfs_root + "/cache/";
+  if (path.compare(0, prefix.size(), prefix) != 0)
+    return {};
+  return path.substr(prefix.size());
+}
+
+void Chimera_CacheFetch(const std::string& path)
+{
+  if (!g_cache_bridge)
+    return;
+  const std::string key = cache_key(path);
+  if (key.empty() || fs::is_file(path))
+    return;
+  CacheFetchArgs args{};
+  args.name = reinterpret_cast<uint64_t>(key.data());
+  args.name_len = key.size();
+  const uint64_t size = g_cache_bridge(CACHE_OP_FETCH, reinterpret_cast<uint64_t>(&args), 0, 0, 0, 0);
+  if (!size)
+    return;
+  std::vector<u8> data(size);
+  args.dst = reinterpret_cast<uint64_t>(data.data());
+  args.cap = size;
+  if (g_cache_bridge(CACHE_OP_FETCH, reinterpret_cast<uint64_t>(&args), 0, 0, 0, 0) != size)
+    return;
+  chimera::memfs_put(std::string("cache/") + key, data.data(), data.size());
+  g_cache_fetched++;
+}
+
+void Chimera_CacheStore(const std::string& path)
+{
+  if (!g_cache_bridge)
+    return;
+  const std::string key = cache_key(path);
+  if (key.empty())
+    return;
+  fs::file f(path, fs::read);
+  if (!f)
+    return;
+  const std::vector<u8> data = f.to_vector<u8>();
+  if (data.empty())
+    return;
+  CacheStoreArgs args{};
+  args.name = reinterpret_cast<uint64_t>(key.data());
+  args.name_len = key.size();
+  args.data = reinterpret_cast<uint64_t>(data.data());
+  args.size = data.size();
+  if (g_cache_bridge(CACHE_OP_STORE, reinterpret_cast<uint64_t>(&args), 0, 0, 0, 0))
+    g_cache_stored++;
 }

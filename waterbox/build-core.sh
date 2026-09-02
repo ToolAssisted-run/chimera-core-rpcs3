@@ -75,8 +75,8 @@ echo "built $out/core.wbx"
 # needs a host at spec v2, the multi-region block)
 mbhost="${MINIBOX_HOST_DIR:-$mb/build/meson-linux/source/host}"
 [ -f "$mbhost/libminiboxhost.so" ] || mbhost="$mbuild/source/host"
-gcc -O2 -Wall -DCHIMERA_GL_BRIDGE -I"$mb/source/host" -I"$mb/source/gl" \
+gcc -O2 -Wall -DCHIMERA_GL_BRIDGE -I"$here" -I"$mb/source/host" -I"$mb/source/gl" -I"$mb/source/cache" \
 	-I"$here/glad/include" -I"$here/generated-gl" \
-	-o "$out/run-wbx" "$here/run-wbx.c" "$here/gl-host.c" "$here/glad/src/gl.c" \
+	-o "$out/run-wbx" "$here/run-wbx.c" "$here/gl-host.c" "$here/cache-host.c" "$here/glad/src/gl.c" \
 	"$mbhost/libminiboxhost.so" -Wl,-rpath,"$mbhost" -lEGL
 echo "built $out/run-wbx"

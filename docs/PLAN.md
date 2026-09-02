@@ -367,6 +367,23 @@ optimisation. No user interface, no networking, no real audio or input devices.
   persist between sessions: the persistent-data ABI is explicit and
   bundle-driven by design, so a compile cache wants its own host-managed
   channel (never machine state: the same source compiles to the same code).
+- **The compile cache (2026-09-02, phase 1 of three)**: miniBox
+  `source/cache/cache-bridge.h` is the contract (SetCacheBridge before Init;
+  FETCH and STORE over the sandbox's callback; relative names only). Patch
+  0018 hooks RPCS3's ObjectCache: `load()` asks the host before opening,
+  `notifyObjectCompiled` hands the committed .obj.gz over. The driver keys
+  by the path under the emulator's cache directory (RPCS3's own naming:
+  module hash, version, CPU); the host owns the directory, keyed by package
+  identity. run-wbx and run-native take `--cache DIR` (waterbox/cache-host.c).
+  lv2test: a cold native run stores 5 objects in 16 s, a warm one fetches
+  them and boots in 1.5 s, the same machine. Gate legs cache:objects (the
+  flavors' objects byte-identical) and cache:warm. TRAP: LLVM's X86 backend
+  emits endbr64 into JIT code whenever the compiler binary itself was built
+  with CET (`#ifdef __CET__` in X86IndirectBranchTracking.cpp), which Ubuntu's
+  GCC does by default: the native LLVM is built with -fcf-protection=none so
+  both flavors emit the same bytes. Phase 2: the threaded precompile session
+  (miniBox syscall lock for concurrent guest threads, a compile-only entry
+  point). Phase 3: the frontend dialog.
 - **Still open after M5**: Windows end to end (the lazy 20 GiB block, the
   bridge and the VEH fault path are all cross-compiled only), real hardware,
   LLVM recompilers, RawSPU.
