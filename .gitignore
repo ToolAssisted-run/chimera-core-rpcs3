@@ -12,3 +12,5 @@ submodules.log
 tests/ps3/*/build/
 tests/ps3/*/*.elf
 tests/ps3/*/*.map
+waterbox/generated-gl/
+waterbox/generated-assets.cpp
