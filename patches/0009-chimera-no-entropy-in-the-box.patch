@@ -1,0 +1,93 @@
+diff --git a/rpcs3/Emu/Cell/Modules/cellMusicSelectionContext.cpp b/rpcs3/Emu/Cell/Modules/cellMusicSelectionContext.cpp
+index 1030dbc59..cbcb2a607 100644
+--- a/rpcs3/Emu/Cell/Modules/cellMusicSelectionContext.cpp
++++ b/rpcs3/Emu/Cell/Modules/cellMusicSelectionContext.cpp
+@@ -379,8 +379,12 @@ u32 music_selection_context::step_track(bool next)
+ 		{
+ 			// We reached the first or last track again. Let's shuffle!
+ 			cellMusicSelectionContext.notice("step_track: Shuffling playlist...");
++#ifdef CHIMERA_CORE
++			auto engine = std::default_random_engine{static_cast<u32>(playlist.size())};
++#else
+ 			std::random_device rd;
+ 			auto engine = std::default_random_engine{rd()};
++#endif
+ 			std::shuffle(std::begin(playlist), std::end(playlist), engine);
+ 
+ 			// Don't play the same track twice
+diff --git a/rpcs3/Emu/Cell/Modules/cellSearch.cpp b/rpcs3/Emu/Cell/Modules/cellSearch.cpp
+index f86584d7c..665a2eae7 100644
+--- a/rpcs3/Emu/Cell/Modules/cellSearch.cpp
++++ b/rpcs3/Emu/Cell/Modules/cellSearch.cpp
+@@ -1698,7 +1698,11 @@ error_code cellSearchGetMusicSelectionContext(CellSearchId searchId, vm::cptr<Ce
+ 		}
+ 
+ 		std::vector<content_id_type> result;
++#ifdef CHIMERA_CORE
++		std::sample(searchObject->content_ids.begin(), searchObject->content_ids.end(), std::back_inserter(result), 1, std::mt19937{static_cast<u32>(searchObject->content_ids.size())});
++#else
+ 		std::sample(searchObject->content_ids.begin(), searchObject->content_ids.end(), std::back_inserter(result), 1, std::mt19937{std::random_device{}()});
++#endif
+ 		ensure(result.size() == 1);
+ 		shared_ptr<search_content_t> content = ensure(result[0].second);
+ 		return content;
+diff --git a/rpcs3/Emu/system_config.cpp b/rpcs3/Emu/system_config.cpp
+index cac546162..67a0a25e7 100644
+--- a/rpcs3/Emu/system_config.cpp
++++ b/rpcs3/Emu/system_config.cpp
+@@ -10,12 +10,20 @@ cfg_root g_backup_cfg{};
+ 
+ std::string cfg_root::node_sys::get_random_system_name()
+ {
++#ifdef CHIMERA_CORE
++	// no entropy in the box: the console has one name
++	return "RPCS3-500";
++#endif
+ 	std::srand(static_cast<u32>(std::time(nullptr)));
+ 	return "RPCS3-" + std::to_string(100 + std::rand() % 899);
+ }
+ 
+ u128 cfg_root::node_sys::get_random_psid()
+ {
++#ifdef CHIMERA_CORE
++	// no entropy in the box: the console has one PSID
++	return u128{0x0102030405060708ull} << 64 | u128{0x090a0b0c0d0e0f10ull};
++#endif
+ 	// Generate seed for each 32-bits for maximum entropy using Standard Library
+ 	std::uniform_int_distribution<u32> uniform_dist;
+ 	std::mt19937 prng;
+diff --git a/rpcs3/util/media_utils.cpp b/rpcs3/util/media_utils.cpp
+index 2c3ac5c8a..7a60af998 100644
+--- a/rpcs3/util/media_utils.cpp
++++ b/rpcs3/util/media_utils.cpp
+@@ -763,8 +763,12 @@ namespace utils
+ 			{
+ 				// Shuffle once if necessary
+ 				media_log.notice("audio_decoder: shuffling initial playlist...");
++#ifdef CHIMERA_CORE
++				auto engine = std::default_random_engine{static_cast<u32>(m_context.playlist.size())};
++#else
+ 				std::random_device rd;
+ 				auto engine = std::default_random_engine{rd()};
++#endif
+ 				std::shuffle(std::begin(m_context.playlist), std::end(m_context.playlist), engine);
+ 			}
+ 
+@@ -889,7 +893,7 @@ namespace utils
+ 				// Let's assume this will finish in a timely manner
+ 				while (m_flush && m_running)
+ 				{
+-					std::this_thread::sleep_for(1us);
++					CHIMERA_SLEEP_FOR(1us);
+ 				}
+ 			}
+ 		}
+@@ -908,7 +912,7 @@ namespace utils
+ 				// Let's assume this will finish in a timely manner
+ 				while (m_flush && m_running)
+ 				{
+-					std::this_thread::sleep_for(1ms);
++					CHIMERA_SLEEP_FOR(1ms);
+ 				}
+ 			}
+ 

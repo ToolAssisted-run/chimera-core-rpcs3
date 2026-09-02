@@ -33,7 +33,7 @@ $(O)/vsched.o: vsched.cpp vsched.h
 	@mkdir -p $(O)
 	g++ -O2 -g1 -I. -c -o $@ $<
 
-$(O)/run-native: $(O)/run-native.o $(O)/rpcs3-driver.o $(O)/host-stubs.o $(O)/vsched.o $(UPSTREAM_OBJS) $(LIBS)
+$(O)/run-native: $(O)/run-native.o $(O)/rpcs3-driver.o $(O)/host-stubs.o $(O)/memfs.o $(O)/vsched.o $(UPSTREAM_OBJS) $(LIBS)
 	g++ -o $@ $(filter %.o,$^) -Wl,--start-group $(LIBS) -Wl,--end-group -lpthread -lm -ldl -lrt -lasound
 
 clean:

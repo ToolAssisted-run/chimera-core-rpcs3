@@ -37,6 +37,7 @@
 #include <deque>
 #include <string>
 
+#include "memfs.h"
 #include "rpcs3-driver.h"
 #include "vsched.h"
 
@@ -259,10 +260,6 @@ namespace
     g_cfg.core.libraries_control.set_set({"liblv2.sprx:hle", "libsysmodule.sprx:hle"});
   }
 
-  void ensure_dir(const std::string& p)
-  {
-    fs::create_path(p);
-  }
 }  // namespace
 
 extern "C" {
@@ -275,24 +272,39 @@ const char* chimera_rpcs3_error(void)
 int chimera_rpcs3_init(const char* work_dir, const char* game_path)
 {
   g_error.clear();
-  g_work = work_dir;
-  if (!g_work.empty() && g_work.back() != '/')
-    g_work += '/';
-  g_android_executable_dir = g_work;
-  g_android_config_dir = g_work + "config/";
-  g_android_cache_dir = g_work + "cache/";
-  ensure_dir(g_android_config_dir);
-  ensure_dir(g_android_cache_dir);
+  // Everything the emulator reads or writes on its own lives in the memory
+  // filesystem, identically in both flavors; the game is grafted into it
+  // read-only from wherever the host put it (a path natively, a name in the
+  // sandbox's file list). A work dir, when given, only receives the log.
+  chimera::memfs_install();
+  const std::string root = chimera::memfs_root + "/";
+  g_android_executable_dir = root;
+  g_android_config_dir = root + "config/";
+  g_android_cache_dir = root + "cache/";
+  chimera::memfs_mkdirs("config");
+  chimera::memfs_mkdirs("cache");
   // the firmware gate looks for this one file on the host path; an empty
   // file satisfies it, and the startup libraries are HLE so it is never read
-  ensure_dir(g_android_config_dir + "dev_flash/sys/external/");
-  if (!fs::is_file(g_android_config_dir + "dev_flash/sys/external/liblv2.sprx"))
+  chimera::memfs_put("config/dev_flash/sys/external/liblv2.sprx", "", 0);
+  std::string game = game_path;
   {
-    fs::file(g_android_config_dir + "dev_flash/sys/external/liblv2.sprx", fs::create + fs::write);
+    const char* base = strrchr(game_path, '/');
+    base = base ? base + 1 : game_path;
+    if (!chimera::memfs_graft(std::string("game/") + base, game_path))
+    {
+      fail(std::string("cannot open the game: ") + game_path);
+      return 0;
+    }
+    game = root + "game/" + base;
   }
 
-  // the emulator logs nowhere without a listener; the work dir gets one
-  static std::unique_ptr<logs::listener> s_log = logs::make_file_listener(g_work + "RPCS3.log", 64 * 1024 * 1024);
+  // the emulator logs nowhere without a listener
+  g_work = work_dir ? work_dir : "";
+  if (!g_work.empty() && g_work.back() != '/')
+    g_work += '/';
+  if (!g_work.empty())
+    fs::create_path(g_work);
+  static std::unique_ptr<logs::listener> s_log = logs::make_file_listener((g_work.empty() ? root + "cache/" : g_work) + "RPCS3.log", 64 * 1024 * 1024);
 
   vsched_init();
 
@@ -309,7 +321,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path)
 
   g_tty_path = g_android_cache_dir + "TTY.log";
 
-  const game_boot_result r = Emu.BootGame(game_path, "", true, cfg_mode::custom);
+  const game_boot_result r = Emu.BootGame(game, "", true, cfg_mode::custom);
   run_main_queue();
   if (r != game_boot_result::no_errors)
   {

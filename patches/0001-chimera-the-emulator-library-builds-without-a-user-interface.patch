@@ -1,8 +1,21 @@
 diff --git a/3rdparty/CMakeLists.txt b/3rdparty/CMakeLists.txt
-index b25afb883..eacfa4037 100644
+index b25afb883..97d207bc9 100644
 --- a/3rdparty/CMakeLists.txt
 +++ b/3rdparty/CMakeLists.txt
-@@ -97,7 +97,7 @@ add_subdirectory(yaml-cpp)
+@@ -86,7 +86,11 @@ endif()
+ 
+ 
+ # hidapi
+-add_subdirectory(hidapi)
++if(CHIMERA_HEADLESS)
++	add_library(3rdparty_hidapi INTERFACE) # no real controllers in a core
++else()
++	add_subdirectory(hidapi)
++endif()
+ 
+ # glslang
+ add_subdirectory(glslang EXCLUDE_FROM_ALL)
+@@ -97,7 +101,7 @@ add_subdirectory(yaml-cpp)
  
  # OpenGL
  
@@ -11,7 +24,7 @@ index b25afb883..eacfa4037 100644
  	find_package(OpenGL REQUIRED OPTIONAL_COMPONENTS EGL)
  
  	add_library(3rdparty_opengl INTERFACE)
-@@ -232,7 +232,7 @@ if(USE_SDL)
+@@ -232,7 +236,7 @@ if(USE_SDL)
  endif()
  
  # OpenAL
@@ -20,7 +33,7 @@ index b25afb883..eacfa4037 100644
  	add_subdirectory(OpenAL EXCLUDE_FROM_ALL)
  else()
  	add_library(3rdparty_openal INTERFACE)
-@@ -323,7 +323,7 @@ endif()
+@@ -323,7 +327,7 @@ endif()
  
  # GLEW
  add_library(3rdparty_glew INTERFACE)
