@@ -442,6 +442,10 @@ namespace
     if (!ppu)
       ppu = s_ppu_decoder;
     g_cfg.core.ppu_decoder.set(!strcmp(ppu, "llvm") ? ppu_decoder_type::llvm : ppu_decoder_type::_static);
+    // a precompile session compiles for the recompiler whatever the run's
+    // setting says: there is nothing else to precompile
+    if (s_precompile_count > 0)
+      g_cfg.core.ppu_decoder.set(ppu_decoder_type::llvm);
     // the LLVM recompilers, when built in: one compile thread (the machine's
     // scheduler is the only scheduler, and one order is one machine), a
     // fixed target CPU so the generated code is the same on every machine
@@ -991,12 +995,24 @@ extern "C" uint64_t chimera_rpcs3_fault_count(void)
 
 extern "C" int chimera_rpcs3_on_fault(uint64_t addr, int is_write)
 {
+  // A fault the renderer declines kills the machine, and the reason is the
+  // whole diagnosis. Say it, for the first few, whatever the log settings.
+  static int s_declines = 0;
+  const auto decline = [&](const char* why) -> int
+  {
+    if (s_declines++ < 8)
+      fprintf(stderr, "chimera fault: declined %#llx (%s): %s\n", (unsigned long long)addr, is_write ? "write" : "read", why);
+    return 0;
+  };
+
   const uint64_t base = reinterpret_cast<uint64_t>(vm::g_base_addr);
   if (addr < base || addr - base >= 0x1'0000'0000ull)
-    return 0;
+    return decline("outside the guest's 4 GiB view");
   const u32 vaddr = static_cast<u32>(addr - base);
-  if (!rsx::g_access_violation_handler || !vm::check_addr(vaddr))
-    return 0;
+  if (!rsx::g_access_violation_handler)
+    return decline("the renderer has installed no handler");
+  if (!vm::check_addr(vaddr))
+    return decline("the machine says that address is not mapped");
   const auto cpu = get_current_cpu_thread();
   bool state_changed = false;
   if (cpu)
@@ -1008,6 +1024,8 @@ extern "C" int chimera_rpcs3_on_fault(uint64_t addr, int is_write)
   }
   if (handled)
     g_faults_served++;
+  else
+    decline("the renderer's caches do not own that page");
   return handled ? 1 : 0;
 }
 

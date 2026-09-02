@@ -8,6 +8,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#define CACHE_MKDIR(p) _mkdir(p)
+#else
+#define CACHE_MKDIR(p) mkdir(p, 0777)
+#endif
 
 static char s_dir[4096];
 static uint64_t s_fetched, s_stored;
@@ -16,7 +22,11 @@ int chimera_cache_host_init(const char *dir)
 {
 	if (!dir || strlen(dir) >= sizeof s_dir - 1) return -1;
 	snprintf(s_dir, sizeof s_dir, "%s", dir);
-	mkdir(s_dir, 0777);
+	/* the whole chain */
+	for (char *p = s_dir + 1; *p; p++) {
+		if (*p == '/') { *p = 0; CACHE_MKDIR(s_dir); *p = '/'; }
+	}
+	CACHE_MKDIR(s_dir);
 	return 0;
 }
 
@@ -44,7 +54,7 @@ static char *safe_path(const char *name, uint64_t len)
 static void make_dirs(char *full)
 {
 	for (char *p = full + strlen(s_dir) + 1; *p; p++) {
-		if (*p == '/') { *p = 0; mkdir(full, 0777); *p = '/'; }
+		if (*p == '/') { *p = 0; CACHE_MKDIR(full); *p = '/'; }
 	}
 }
 

@@ -183,6 +183,35 @@ else
 	fi
 fi
 
+# --- 3b. precompile sessions through the frontend ---------------------------
+# The frontend runs itself twice as precompile sessions (what its orchestrator
+# does before a first boot), each compiling its share into the compile cache
+# under the Compile Cache path; a run on the LLVM recompiler afterwards
+# fetches every object and compiles none.
+cache_root="$chimera_root/build/Cache"
+if [ ! -f "$pup" ]; then
+	report "precompile:frontend" SKIP "needs the firmware"
+else
+	settings_config "$work/config.llvm.ini" '{"ppu_decoder": "llvm", "renderer": "null"}' "$firmware_json"
+	rm -rf "$cache_root"
+	( cd "$chimera_root" && timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=0/2/game" "$game" ) > "$work/precompile-0.log" 2>&1 &
+	( cd "$chimera_root" && timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=1/2/game" "$game" ) > "$work/precompile-1.log" 2>&1 &
+	wait
+	stored="$(sed -n 's/^precompile session [0-9]* of [0-9]*: \([0-9]*\) objects stored.*/\1/p' "$work/precompile-0.log" "$work/precompile-1.log" | awk '{s+=$1} END {print s+0}')"
+	nfiles="$(find "$cache_root" -name '*.obj.gz' 2>/dev/null | wc -l)"
+	if ! run_frontend "warm" "$work/config.llvm.ini" 100 "" "$game"; then
+		report "precompile:frontend" FAIL "the warm run gave no OK meta (see tests/work/warm.log)"
+	else
+		fetched="$(sed -n 's/^chimera cache: \([0-9]*\) stored, \([0-9]*\) fetched.*/\2/p' "$work/warm.log" | tail -1)"
+		wstored="$(sed -n 's/^chimera cache: \([0-9]*\) stored, \([0-9]*\) fetched.*/\1/p' "$work/warm.log" | tail -1)"
+		if [ "$stored" -ge 2 ] && [ "$nfiles" = "$stored" ] && [ "${fetched:-0}" = "$stored" ] && [ "${wstored:-1}" = 0 ]; then
+			report "precompile:frontend" PASS "two sessions stored $stored objects under Cache/, the warm run fetched all $fetched and compiled none"
+		else
+			report "precompile:frontend" FAIL "sessions stored $stored ($nfiles files), warm run stored ${wstored:-?} fetched ${fetched:-?} ($(grep -a 'rror\|xception' "$work/precompile-0.log" | head -1 | cut -c1-100))"
+		fi
+	fi
+fi
+
 # --- 4. the package's bindings became the frontend's defaults ---------------
 if out="$(python3 "$here/check-keybinds.py" "$config" "$wb/default_keybinds.json" "PlayStation 3 Controller" 2>&1)"; then
 	report "keybinds" PASS "$out"

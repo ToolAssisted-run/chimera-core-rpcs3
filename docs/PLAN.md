@@ -395,7 +395,21 @@ optimisation. No user interface, no networking, no real audio or input devices.
   GTA game scope: 4 workers 130 s wall against 434 s for one, 72 objects
   split 13/20/21/18, a warm boot fetches all 72; the firmware scope
   (default) also covers libraries a game loads later. Gate leg
-  cache:precompile. Phase 3: the frontend dialog and the child processes.
+  cache:precompile. Phase 3 DONE (2026-09-02): the engine takes a cache directory
+  (`ce_cache_dir`, named `<Compile Cache path>/<core>/<package version>/` by
+  the frontend) and a precompile request (`ce_precompile_request`) before a
+  session opens, hands SetCacheBridge and SetPrecompile to the core before
+  Init, and answers `ce_session_precompile_done/progress`; the frontend runs
+  itself as `--headless --precompile=INDEX/COUNT[/game]` child processes (a
+  package with `"precompile": true`, before a rom's first boot, up to eight,
+  a dialog reading "Precompiled D/T modules", a marker per rom SHA1), and the
+  core's menu offers Precompile This Game / Clear Compile Cache. Frontend gate
+  leg precompile:frontend. TRAPS: a mingw sysv-ABI function may carry no C++
+  unwind data (forward to a noinline worker); the cache directory chain must
+  be created whole; the frontend needs an X display and ALSOFT_DRIVERS=null
+  even headless; a worker leaves through the run loop (_exitRequestPending),
+  not Environment.Exit, or a control's finaliser turns the exit code to 255.
+  The design is docs/compile-cache.md in the chimera repository.
 - **Still open after M5**: Windows end to end (the lazy 20 GiB block, the
   bridge and the VEH fault path are all cross-compiled only), real hardware,
   LLVM recompilers, RawSPU.
