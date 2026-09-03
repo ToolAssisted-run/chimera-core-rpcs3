@@ -1,0 +1,38 @@
+diff --git a/Utilities/JITLLVM.cpp b/Utilities/JITLLVM.cpp
+index 15a6e3219..d8a978964 100644
+--- a/Utilities/JITLLVM.cpp
++++ b/Utilities/JITLLVM.cpp
+@@ -220,7 +220,16 @@ struct JITAnnouncer : llvm::JITEventListener
+ struct MemoryManager1 : llvm::RTDyldMemoryManager
+ {
+ 	// 256 MiB for code or data
++#ifdef CHIMERA_CORE
++	// Chimera: the region a compile may fill. Upstream reserves 256 MiB of a
++	// machine's address space per instance, three times over, which is free
++	// there and is most of a sandbox's arena here - and two compiles overlap.
++	// A PS3 module's generated code is a few megabytes; 64 MiB is a wide
++	// margin, and what is not written is never committed either way.
++	static constexpr u64 c_max_size = 0x400'0000;
++#else
+ 	static constexpr u64 c_max_size = 0x1000'0000;
++#endif
+ 
+ 	// Allocation unit (2M)
+ 	static constexpr u64 c_page_size = 2 * 1024 * 1024;
+@@ -255,6 +264,16 @@ struct MemoryManager1 : llvm::RTDyldMemoryManager
+ 
+ 	~MemoryManager1() override
+ 	{
++#ifdef CHIMERA_CORE
++		// Chimera: give the address space back. Upstream keeps it so that a
++		// later compile never reuses an address a profiler has seen; a
++		// sandboxed machine has an arena, not a machine's whole address space,
++		// and a precompile that walks a hundred modules exhausts it after
++		// thirty. Nothing here outlives its compiler: a module that is going to
++		// RUN is kept by ppu_initialize, and the per-part compiles write an
++		// object and are destroyed.
++		utils::memory_release(m_code_mems, c_max_size * 3);
++#endif
+ 		// Hack: don't release to prevent reuse of address space, see jit_announce
+ 		// constexpr auto how_much = [](u64 pos) { return utils::align(pos, pos < c_page_size ? c_page_size / 4 : c_page_size); };
+ 		// utils::memory_decommit(m_code_mems, how_much(code_ptr));

@@ -145,7 +145,7 @@ if [ -z "$disc" ] || [ ! -f "$pup" ]; then
 	report "disc:frontend" SKIP "needs a decrypted .iso and PS3UPDAT.PUP in tests/roms-local"
 else
 	firmware_json="$(python3 -c "import json,sys; print(json.dumps({'PS3UPDAT.PUP': sys.argv[1]}))" "$pup")"
-	settings_config "$work/config.disc.ini" '{"renderer": "null"}' "$firmware_json"
+	settings_config "$work/config.disc.ini" '{}' "$firmware_json"
 	if ! env -u LD_LIBRARY_PATH timeout 900 "$runwbx" "$wbx" --firmware "$pup" \
 		--frames "$dframes" --report "$dframes" --ram-out "$work/ref.disc.ram.full" \
 		"$disc" > "$work/ref.disc.log" 2>&1; then
@@ -164,22 +164,34 @@ fi
 # --- 3. the disc on the GL renderer through the frontend --------------------
 # The frontend offers its own GL context (the GPU bridge) when the renderer
 # setting ends in -hw. The machine must not notice: main memory after the same
-# frames equals the null-renderer reference. The screenshot is the proof that
-# the picture came from the GPU (tests/work/gpu.png).
+# frames equals the sandbox reference (which draws nothing: run-wbx is offered
+# no context). The screenshot is the proof that the picture came from the GPU.
 if [ -z "$disc" ] || [ ! -f "$pup" ]; then
 	report "gpu:frontend" SKIP "needs the disc and the firmware"
 else
-	settings_config "$work/config.gpu.ini" '{"renderer": "opengl-hw"}' "$firmware_json"
-	if ! run_frontend "gpu" "$work/config.gpu.ini" "$dframes" "$work/gpu.png" "$disc"; then
+	settings_config "$work/config.gpu.ini" '{}' "$firmware_json"
+	# Far enough in that the game has drawn: this disc's first picture is at
+	# frame 200 and nothing before it is anything but black, so a shorter run
+	# proves only that a file was written.
+	gframes=300
+	if ! run_frontend "gpu" "$work/config.gpu.ini" "$gframes" "$work/gpu.png" "$disc"; then
 		report "gpu:frontend" FAIL "no OK meta (see tests/work/gpu.log)"
-	elif ! cmp -s "$work/ref.disc.ram.bin" "$work/gpu.ram.bin"; then
-		report "gpu:frontend" FAIL "main memory differs from the null-renderer reference"
+	elif ! env -u LD_LIBRARY_PATH timeout 900 "$runwbx" "$wbx" --firmware "$pup" \
+		--frames "$gframes" --report "$gframes" --ram-out "$work/ref.gpu.ram.full" \
+		"$disc" > "$work/ref.gpu.log" 2>&1; then
+		report "gpu:frontend" FAIL "reference runner error (see tests/work/ref.gpu.log)"
+	elif ! head -c "$SLICE" "$work/ref.gpu.ram.full" > "$work/ref.gpu.ram.bin"; then
+		report "gpu:frontend" FAIL "no reference memory"
+	elif ! cmp -s "$work/ref.gpu.ram.bin" "$work/gpu.ram.bin"; then
+		report "gpu:frontend" FAIL "main memory differs from the sandbox reference"
 	elif ! grep -q "renderer opengl-hw through the GPU bridge" "$work/gpu.log"; then
 		report "gpu:frontend" FAIL "the core did not get a GPU bridge from the frontend ($(grep -a 'chimera rpcs3: renderer' "$work/gpu.log" | head -1))"
 	elif [ ! -s "$work/gpu.png" ]; then
 		report "gpu:frontend" FAIL "no screenshot"
+	elif ! lit="$(python3 "$here/lit-pixels.py" "$work/gpu.png" 10000)"; then
+		report "gpu:frontend" FAIL "the screenshot is (nearly) black: $lit - the picture never reached the frontend"
 	else
-		report "gpu:frontend" PASS "$dframes frames on the GL renderer, main memory identical to the null-renderer reference, screenshot in tests/work/gpu.png"
+		report "gpu:frontend" PASS "$gframes frames on the GL renderer, main memory identical to the sandbox reference, $lit"
 	fi
 fi
 
@@ -188,15 +200,19 @@ fi
 # does before a first boot), each compiling its share into the compile cache
 # under the Compile Cache path; a run on the LLVM recompiler afterwards
 # fetches every object and compiles none.
-cache_root="$chimera_root/build/Cache"
+cache_root="$chimera_root/build/CoreCache"
 if [ ! -f "$pup" ]; then
 	report "precompile:frontend" SKIP "needs the firmware"
 else
-	settings_config "$work/config.llvm.ini" '{"ppu_decoder": "llvm", "renderer": "null"}' "$firmware_json"
+	settings_config "$work/config.llvm.ini" '{"ppu_decoder": "llvm"}' "$firmware_json"
 	rm -rf "$cache_root"
 	( cd "$chimera_root" && timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=0/2/game" "$game" ) > "$work/precompile-0.log" 2>&1 &
+	pre0=$!
 	( cd "$chimera_root" && timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=1/2/game" "$game" ) > "$work/precompile-1.log" 2>&1 &
-	wait
+	pre1=$!
+	# by pid, not a bare "wait": this script may be running an Xvfb of its own
+	# in the background, and a bare wait never returns while it lives
+	wait "$pre0" "$pre1"
 	stored="$(sed -n 's/^precompile session [0-9]* of [0-9]*: \([0-9]*\) objects stored.*/\1/p' "$work/precompile-0.log" "$work/precompile-1.log" | awk '{s+=$1} END {print s+0}')"
 	nfiles="$(find "$cache_root" -name '*.obj.gz' 2>/dev/null | wc -l)"
 	if ! run_frontend "warm" "$work/config.llvm.ini" 100 "" "$game"; then
@@ -204,8 +220,14 @@ else
 	else
 		fetched="$(sed -n 's/^chimera cache: \([0-9]*\) stored, \([0-9]*\) fetched.*/\2/p' "$work/warm.log" | tail -1)"
 		wstored="$(sed -n 's/^chimera cache: \([0-9]*\) stored, \([0-9]*\) fetched.*/\1/p' "$work/warm.log" | tail -1)"
-		if [ "$stored" -ge 2 ] && [ "$nfiles" = "$stored" ] && [ "${fetched:-0}" = "$stored" ] && [ "${wstored:-1}" = 0 ]; then
-			report "precompile:frontend" PASS "two sessions stored $stored objects under Cache/, the warm run fetched all $fetched and compiled none"
+		# The warm run may still compile: a sweep sees the modules that are
+		# there to be seen, and a program loads more as it runs (the GL
+		# renderer alone pulls in libgcm_sys). What must never happen is
+		# recompiling what the sessions already did - and the core gate's
+		# cache:warm leg holds that a run which compiles and a run which
+		# fetches are the same machine.
+		if [ "$stored" -ge 2 ] && [ "$nfiles" = "$stored" ] && [ "${fetched:-0}" = "$stored" ]; then
+			report "precompile:frontend" PASS "two sessions stored $stored objects under CoreCache/, the warm run fetched all $fetched and compiled ${wstored:-0} more (modules the program loaded at runtime)"
 		else
 			report "precompile:frontend" FAIL "sessions stored $stored ($nfiles files), warm run stored ${wstored:-?} fetched ${fetched:-?} ($(grep -a 'rror\|xception' "$work/precompile-0.log" | head -1 | cut -c1-100))"
 		fi

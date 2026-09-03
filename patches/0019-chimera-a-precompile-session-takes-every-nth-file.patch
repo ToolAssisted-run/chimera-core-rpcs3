@@ -1,15 +1,23 @@
 diff --git a/rpcs3/Emu/Cell/PPUThread.cpp b/rpcs3/Emu/Cell/PPUThread.cpp
-index 844f3e3bf..c49f908a9 100644
+index 844f3e3bf..27da48cec 100644
 --- a/rpcs3/Emu/Cell/PPUThread.cpp
 +++ b/rpcs3/Emu/Cell/PPUThread.cpp
-@@ -4337,6 +4337,27 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+@@ -4337,6 +4337,30 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
  		}
  	}
  
 +#ifdef CHIMERA_CORE
 +	// Chimera: a precompile session may be one of several running side by
-+	// side, each taking every Nth file of the same deterministic queue
++	// side, each taking every Nth file of the same deterministic queue. The
++	// count of modules is taken HERE, before the split, so that every session
++	// reports the same total and the shares add up to it.
 +	extern u32 g_chimera_precompile_index, g_chimera_precompile_count;
++	{
++		extern u32 g_chimera_precompile_total;
++		extern void chimera_precompile_changed();
++		g_chimera_precompile_total += ::size32(file_queue);
++		chimera_precompile_changed();
++	}
 +	if (g_chimera_precompile_count > 1)
 +	{
 +		decltype(file_queue) mine;
@@ -21,29 +29,52 @@ index 844f3e3bf..c49f908a9 100644
 +		file_queue = std::move(mine);
 +	}
 +#endif
-+#ifdef CHIMERA_CORE
-+	{
-+		extern u32 g_chimera_precompile_total;
-+		g_chimera_precompile_total += ::size32(file_queue);
-+	}
-+#endif
++
  	g_progr_ftotal += ::size32(file_queue);
  
  	u64 total_files_size = 0;
-@@ -4632,6 +4653,12 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+@@ -4411,6 +4435,12 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+ 		}
+ 	}
+ 
++#ifdef CHIMERA_CORE
++	{
++		extern u32 g_chimera_precompile_in_sweep;
++		g_chimera_precompile_in_sweep = 1;
++	}
++#endif
+ 	named_thread_group workers("SPRX Worker ", std::min<u32>(software_thread_limit, cpu_thread_limit), [&]
+ 	{
+ 		jit_write_guard jit_guard;
+@@ -4422,6 +4452,14 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+ 
+ 		for (usz func_i = fnext++; func_i < file_queue.size(); func_i = fnext++, g_progr_fdone += std::exchange(inc_fdone, 1))
+ 		{
++#ifdef CHIMERA_CORE
++			{
++				extern u32 g_chimera_precompile_done;
++				extern void chimera_precompile_changed();
++				if (func_i) g_chimera_precompile_done++;
++				chimera_precompile_changed();
++			}
++#endif
+ 			if (Emu.IsStopped())
+ 			{
+ 				continue;
+@@ -4632,6 +4670,12 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
  
  	// Join every thread
  	workers.join();
 +#ifdef CHIMERA_CORE
 +	{
-+		extern u32 g_chimera_precompile_done;
-+		g_chimera_precompile_done += ::size32(file_queue);
++		extern u32 g_chimera_precompile_in_sweep;
++		g_chimera_precompile_in_sweep = 0;
 +	}
 +#endif
  
  	named_thread exec_worker("PPU Exec Worker", [&]
  	{
-@@ -4763,6 +4790,14 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+@@ -4763,6 +4807,14 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
  	exec_worker();
  }
  
@@ -58,7 +89,7 @@ index 844f3e3bf..c49f908a9 100644
  extern void ppu_initialize()
  {
  	if (!g_fxo->is_init<main_ppu_module<lv2_obj>>())
-@@ -4913,6 +4948,14 @@ extern void ppu_initialize()
+@@ -4913,6 +4965,14 @@ extern void ppu_initialize()
  
  bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_size)
  {
@@ -73,20 +104,22 @@ index 844f3e3bf..c49f908a9 100644
  	ppu_log.notice("Entering ppu_initialize(const ppu_module&..)");
  
  	struct log_guard
-@@ -5674,6 +5717,12 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
+@@ -5674,6 +5734,14 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
  		atomic_t<u64> work_done = 0;
  
  		// Update progress dialog
 +#ifdef CHIMERA_CORE
 +		{
 +			extern u32 g_chimera_precompile_parts_total;
++			extern void chimera_precompile_changed();
 +			g_chimera_precompile_parts_total += ::size32(workload);
++			chimera_precompile_changed();
 +		}
 +#endif
  		g_progr_ptotal += ::size32(workload);
  
  		*progress_dialog = get_localized_string(localized_string_id::PROGRESS_DIALOG_COMPILING_PPU_MODULES);
-@@ -5745,6 +5794,18 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
+@@ -5745,6 +5813,26 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
  					// Keep allocating workload
  					const auto& [obj_name, part] = std::as_const(workload)[i];
  
@@ -94,9 +127,17 @@ index 844f3e3bf..c49f908a9 100644
 +					// Chimera: a precompile session is one of several; the part's
 +					// name decides whose it is, whatever the others already stored
 +					{
-+						extern u32 g_chimera_precompile_index, g_chimera_precompile_count, g_chimera_precompile_parts_done;
++						extern u32 g_chimera_precompile_index, g_chimera_precompile_count, g_chimera_precompile_parts_done, g_chimera_precompile_in_sweep;
++						extern void chimera_precompile_changed();
 +						g_chimera_precompile_parts_done++;
-+						if (g_chimera_precompile_count > 1 && std::hash<std::string>{}(obj_name) % g_chimera_precompile_count != g_chimera_precompile_index)
++						chimera_precompile_changed();
++						// Only where every session sees the same module: the sweep
++						// already gave each of them different FILES, so a module
++						// found there is this session's alone and all of its parts
++						// are its own. Splitting those too would leave the parts
++						// that hash elsewhere compiled by nobody.
++						if (!g_chimera_precompile_in_sweep && g_chimera_precompile_count > 1
++							&& std::hash<std::string>{}(obj_name) % g_chimera_precompile_count != g_chimera_precompile_index)
 +						{
 +							continue;
 +						}
@@ -105,7 +146,7 @@ index 844f3e3bf..c49f908a9 100644
  					ppu_log.warning("LLVM: Compiling module %s%s", cache_path, obj_name);
  
  					{
-@@ -5807,6 +5868,18 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
+@@ -5807,6 +5895,18 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
  		
  		thread_ctrl::set_name(old_name);
  		g_watchdog_hold_ctr--;

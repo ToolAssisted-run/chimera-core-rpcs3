@@ -28,6 +28,8 @@
 #include "Utilities/Thread.h"
 extern atomic_t<recording_mode> g_recording_mode;
 u32 g_chimera_precompile_index = 0, g_chimera_precompile_count = 0, g_chimera_precompile_done = 0, g_chimera_precompile_total = 0, g_chimera_precompile_parts_done = 0, g_chimera_precompile_parts_total = 0;
+// the sweep gives each session different files; inside one, its parts are all its own
+u32 g_chimera_precompile_in_sweep = 0;
 void chimera_ppu_precompile(std::vector<std::string>& dir_queue);
 extern void ppu_initialize();
 namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_violation_handler; }
@@ -1128,11 +1130,33 @@ extern "C" int chimera_rpcs3_precompile_done(void)
 }
 
 // files of the sweep done and in total, for a progress line
+// Said from INSIDE the machine, as it happens: a compiling thread holds the
+// scheduler for a whole module, so a frontend polling between frames sees the
+// numbers jump at the end. Printed on change instead, this arrives live.
+void chimera_precompile_changed()
+{
+  if (s_precompile_count <= 0)
+    return;
+  // modules, not parts: the total is the game's, counted before the queue was
+  // split, and every session's done adds up to it
+  static u32 s_last_done = ~0u, s_last_total = ~0u;
+  if (g_chimera_precompile_done == s_last_done && g_chimera_precompile_total == s_last_total)
+    return;
+  s_last_done = g_chimera_precompile_done;
+  s_last_total = g_chimera_precompile_total;
+  // Through the cache bridge, which is the host's own code: a compiling thread
+  // holds the scheduler for a whole module, so nobody can ask meanwhile, and
+  // what this machine writes to its own streams is its own business.
+  if (g_cache_bridge)
+    g_cache_bridge(CACHE_OP_PROGRESS, s_last_done, s_last_total, 0, 0, 0);
+  else
+    fprintf(stderr, "Precompiled %u/%u modules\n", s_last_done, s_last_total);
+}
+
 extern "C" void chimera_rpcs3_precompile_progress(uint32_t* done, uint32_t* total)
 {
-  // the parts every module compiles as: what takes the time, whether the
-  // module was loaded by the executable or found by the sweep. A part left
-  // to another worker counts as done here, so every worker's bar fills.
-  *done = g_chimera_precompile_parts_done;
-  *total = g_chimera_precompile_parts_total;
+  // this session's finished modules, and the game's module count - the same
+  // total in every session, so the dones add up to it
+  *done = g_chimera_precompile_done;
+  *total = g_chimera_precompile_total;
 }

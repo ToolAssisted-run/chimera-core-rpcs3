@@ -117,7 +117,7 @@ int main(int argc, char **argv)
 	 * code space and the emulator's large allocations all come out of the
 	 * mmap arena; LLVM's compiles want a real heap. Windows backs the block
 	 * lazily (miniBox spec v2), so the size is a reservation. */
-	mb_memory_layout_template layout = { 1024u << 20, 16u << 20, 64u << 20, 256u << 20, (uintptr_t)26 << 30 };
+	mb_memory_layout_template layout = { 1024u << 20, 16u << 20, 64u << 20, 256u << 20, (uintptr_t)40 << 30 };
 	freader fr = { wf };
 	mb_return r;
 	wbx_create_host(&layout, "core.wbx", file_read, (uintptr_t)&fr, &r);
