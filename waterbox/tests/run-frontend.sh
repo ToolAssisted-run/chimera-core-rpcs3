@@ -234,6 +234,76 @@ else
 	fi
 fi
 
+# --- 3c. a PROJECT through the GUI proper ------------------------------------
+# Everything above hands the frontend a config that already maps the firmware
+# and drives a headless session. A user opens a PROJECT, in TAStudio, on a
+# machine whose config may remember nothing: the project pins the firmware by
+# hash and the Firmware folder must satisfy it. When that path failed it did
+# so in silence - the disc booted with no system software, a machine that ran,
+# polled nothing and drew nothing (2026-09-03, "black screen, every frame
+# red") - so this leg opens a project with a FRESH config, seeks in TAStudio
+# the way a user does, and requires the machine's memory to equal what the
+# headless session produced at the same frame.
+if [ -z "$disc" ] || [ ! -f "$pup" ]; then
+	report "project:frontend" SKIP "needs the disc and the firmware"
+else
+	pframes=120
+	mkdir -p "$chimera_root/build/Firmware"
+	cp -n "$pup" "$chimera_root/build/Firmware/PS3UPDAT.PUP" 2>/dev/null
+	python3 - "$package" "$disc" "$pup" "$work/gate.chimeraProject" <<'PYEOF'
+import hashlib, json, sys, zipfile
+def sha1(path, limit=None):
+    h = hashlib.sha1()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 24), b''):
+            h.update(chunk)
+    return h.hexdigest().upper()
+package, disc, pup, out = sys.argv[1:5]
+version = json.loads(zipfile.ZipFile(package).read('build.json'))['version']
+import os
+json.dump({
+    'title': 'gate', 'description': '',
+    'core': {'name': 'RPCS3', 'version': version, 'sha1': sha1(package)},
+    'rerecords': 0,
+    'files': [{'name': os.path.basename(disc), 'sha1': sha1(disc), 'slot': 'game'}],
+    'settings': {}, 'firmware': [{'id': 'PS3UPDAT.PUP', 'sha1': sha1(pup)}],
+    'input': '', 'markers': [], 'branches': [],
+    'headers': {'MovieVersion': 'Chimera Tasproj v1.1', 'Platform': 'PS3'},
+}, open(out, 'w'), indent=1)
+PYEOF
+	# the project resolves its disc beside itself; a fresh config remembers no firmware
+	ln -sf "$disc" "$work/$(basename "$disc")"
+	python3 -c "import json,sys; c=json.load(open(sys.argv[1])); c.pop('CoreFirmware', None); c.setdefault('DefaultCores', {})['PS3'] = 'RPCS3'; json.dump(c, open(sys.argv[2], 'w'), indent=2)" "$config" "$work/config.project.ini"
+	job="$work/job.project.txt"
+	printf 'frames=%s\nout=%s/project.ram.bin\nmeta=%s/project.meta.txt\nshot=%s/project.png\nbytes=%s\n' "$pframes" "$work" "$work" "$work" "$SLICE" > "$job"
+	rm -f "$work/project.ram.bin" "$work/project.meta.txt" "$work/project.png"
+	( cd "$chimera_root" && MINIHAWK_JOB="$job" timeout 900 mono "$emu_exe" \
+		"--config=$work/config.project.ini" "--project=$work/gate.chimeraProject" \
+		"--lua=$here/tastudio-run.lua" ) > "$work/project.log" 2>&1 &
+	gui=$!
+	# a paused GUI and a dead machine both sit still; a modal dialog sits
+	# still too, so a run whose clock stops is killed rather than waited for
+	last=0; quiet=0
+	while kill -0 $gui 2>/dev/null; do
+		sleep 5
+		pid=$(pgrep -f "^mono $emu_exe --config=$work/config.project.ini" | head -1)
+		[ -z "$pid" ] && continue
+		now=$(awk '{print $14 + $15}' "/proc/$pid/stat" 2>/dev/null || echo 0)
+		if [ "$((now - last))" -ge 10 ]; then last=$now; quiet=0; else quiet=$((quiet + 5)); fi
+		[ "$quiet" -ge 60 ] && { kill $pid; break; }
+	done
+	wait $gui 2>/dev/null
+	if [ ! -f "$work/project.meta.txt" ] || ! grep -q "^status=OK" "$work/project.meta.txt"; then
+		report "project:frontend" FAIL "the GUI run gave no OK meta - a dialog, a stall or a crash (see tests/work/project.log)"
+	elif [ "$(sed -n 's/^lag=//p' "$work/project.meta.txt")" -ge "$pframes" ]; then
+		report "project:frontend" FAIL "every frame was a lag frame: the machine never polled (no firmware?)"
+	elif ! cmp -s "$work/ref.disc.ram.bin" "$work/project.ram.bin"; then
+		report "project:frontend" FAIL "main memory differs from the sandbox reference after $pframes frames"
+	else
+		report "project:frontend" PASS "a project opened in TAStudio on a fresh config, seek to $pframes: lag $(sed -n 's/^lag=//p' "$work/project.meta.txt"), main memory identical to the sandbox reference"
+	fi
+fi
+
 # --- 4. the package's bindings became the frontend's defaults ---------------
 if out="$(python3 "$here/check-keybinds.py" "$config" "$wb/default_keybinds.json" "PlayStation 3 Controller" 2>&1)"; then
 	report "keybinds" PASS "$out"

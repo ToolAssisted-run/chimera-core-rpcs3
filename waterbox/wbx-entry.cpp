@@ -92,6 +92,20 @@ ECL_EXPORT int Init(void)
   wbx_setting_str("ppu_decoder", ppuDecoder, sizeof ppuDecoder);
   chimera_rpcs3_set_ppu_decoder(ppuDecoder);
 
+  // A disc is a retail game, and a retail game links against the system
+  // software: without the firmware it boots into nothing, a machine that runs
+  // and never polls or draws. Refusing here names the cause; the firmware
+  // declaration stays optional because homebrew ELFs boot without it.
+  if (!firmware)
+  {
+    const size_t n = strlen(romName);
+    if (n >= 4 && (strcmp(romName + n - 4, ".iso") == 0 || strcmp(romName + n - 4, ".ISO") == 0))
+    {
+      snprintf(g_loadError, sizeof g_loadError,
+               "a PS3 disc needs the system software (PS3UPDAT.PUP), and none was provided");
+      return 0;
+    }
+  }
   if (!chimera_rpcs3_init(nullptr, romName, firmware, dkey))
   {
     snprintf(g_loadError, sizeof g_loadError, "%s", chimera_rpcs3_error());
