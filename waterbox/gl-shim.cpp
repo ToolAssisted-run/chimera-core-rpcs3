@@ -19,8 +19,6 @@
 #include <EGL/egl.h>
 #endif
 
-bool chimera_gl_install(chimera_gl_bridge_fn bridge);
-void* chimera_gl_lookup(const char* name);
 
 static chimera_gl_bridge_fn g_bridge;
 
