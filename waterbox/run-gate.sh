@@ -34,6 +34,12 @@
 #                          draws: the machine after the load runs on to the
 #                          same memory (the renderer's caches, in guest
 #                          memory, survive the load consistently)
+#   gpu:context            the same across two PROCESSES, which is what opening
+#                          a project tomorrow is: the GL objects the state
+#                          names belong to a context that is gone, so the
+#                          renderer notices and builds them again - and the
+#                          picture after the load is the picture before the
+#                          save, rather than no picture at all
 # Run from anywhere; artifacts land in waterbox/work/gate.
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -387,6 +393,34 @@ else
 			else
 				failed "gpu:rewind - $(grep '^rewind' "$work/grewind.txt" || tail -1 "$work/grewind.err")"
 			fi
+		fi
+
+		# The question rewind cannot ask, because it needs two PROCESSES: a
+		# state saved by one session, loaded by another. The renderer's GL
+		# objects are names a context handed out and they live in guest memory,
+		# so they come back naming nothing; the driver refuses every call using
+		# one and tells the guest nothing, and what used to happen is a machine
+		# that runs and draws NOTHING (a black screen, then a crash - the
+		# chimera issue this leg exists for). The renderer notices the context
+		# is not its own and builds its objects again, so the picture after the
+		# load is the picture before the save.
+		if [ "$have_wbx" = 1 ]; then
+			st="$work/context.state"
+			rm -f "$st"
+			if CHIMERA_GPU=1 "$wbx" "$core" --firmware "$pup" --settings '{"renderer":"opengl-hw"}' --frames 120 --report 120 --save-state "$st" "$disc" > "$work/gctx1.txt" 2>"$work/gctx1.err" \
+				&& CHIMERA_GPU=1 "$wbx" "$core" --firmware "$pup" --settings '{"renderer":"opengl-hw"}' --frames 20 --report 20 --state "$st" "$disc" > "$work/gctx2.txt" 2>"$work/gctx2.err"; then
+				before="$(grep '^frame' "$work/gctx1.txt" | tail -1 | sed 's/.*vid \([0-9x]*\) \([0-9a-f]*\).*/\1 \2/')"
+				after="$(grep '^frame' "$work/gctx2.txt" | tail -1 | sed 's/.*vid \([0-9x]*\) \([0-9a-f]*\).*/\1 \2/')"
+				blank="$(printf '%s' "$after" | grep -c '1920x1080' || true)"
+				if [ "$after" = "$before" ] && [ "$blank" = 0 ]; then
+					pass "gpu:context - a state loaded in another process draws again ($after)"
+				else
+					failed "gpu:context - the picture after the load is '$after', the one before the save was '$before'"
+				fi
+			else
+				failed "gpu:context - $(tail -1 "$work/gctx2.err" || tail -1 "$work/gctx1.err")"
+			fi
+			rm -f "$st"
 		fi
 	fi
 fi

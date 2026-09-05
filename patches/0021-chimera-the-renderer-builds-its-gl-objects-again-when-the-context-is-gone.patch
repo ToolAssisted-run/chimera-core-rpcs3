@@ -1,0 +1,569 @@
+diff --git a/rpcs3/Emu/RSX/GL/GLGSRender.cpp b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+index da04a1b6c..4b2e31ebe 100644
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.cpp
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+@@ -102,6 +102,14 @@ void GLGSRender::on_init_thread()
+ 	// This allows context sharing to work (both GLRCs passed to wglShareLists have to be idle or you get ERROR_BUSY)
+ 	m_context = m_frame->make_context();
+ 
++	// chimera: everything below belongs to the CONTEXT rather than to the
++	// machine, and can be built again when the context is not the one these
++	// objects came from (see chimera_check_gl_context).
++	chimera_gl_setup();
++}
++
++void GLGSRender::chimera_gl_setup()
++{
+ 	const auto shadermode = g_cfg.video.shadermode.get();
+ 	if (shadermode != shader_mode::recompiler)
+ 	{
+@@ -457,6 +465,13 @@ void GLGSRender::on_exit()
+ 	// Destroy internal RSX state, may call upon this->do_local_task
+ 	GSRender::on_exit();
+ 
++	chimera_gl_teardown();
++}
++
++// chimera: the context's half of on_exit - no machine state is touched here,
++// so it is also what runs before the objects are built again.
++void GLGSRender::chimera_gl_teardown()
++{
+ 	// Globals
+ 	// TODO: Move these
+ 	gl::destroy_compute_tasks();
+@@ -1319,8 +1334,55 @@ void GLGSRender::on_semaphore_acquire_wait()
+ 	}
+ }
+ 
++#ifdef CHIMERA_CORE
++// which context the calls are landing on (miniBox source/gl: GL_OP_CONTEXT_ID).
++// Zero when there is no bridge, or the host predates the question.
++extern "C" uint64_t chimera_gl_context_id(void);
++#else
++static inline uint64_t chimera_gl_context_id(void) { return 0; }
++#endif
++
++// chimera: has the ground moved? The objects this renderer holds are names a
++// particular GL context handed out, and a savestate carries those names into
++// whatever session loads it. Comparing the context they came from with the one
++// the calls are landing on is the only way to notice - the driver refuses the
++// calls and the guest is never told - and the answer is to build them again.
++//
++// Cheap enough for the FIFO loop: one call across the bridge and an integer
++// compare, against a frame's worth of drawing.
++void GLGSRender::chimera_check_gl_context()
++{
++	const u64 live = chimera_gl_context_id();
++	if (live == 0 || live == m_chimera_gl_context)
++	{
++		// 0 is "cannot tell" - no bridge, or a host older than the question -
++		// and a renderer that cannot tell must assume nothing moved
++		return;
++	}
++
++	if (m_chimera_gl_context != 0)
++	{
++		rsx_log.warning("chimera: these GL objects came from another context (%llu, now %llu); rebuilding",
++			m_chimera_gl_context, live);
++		chimera_gl_teardown();
++		chimera_gl_setup();
++
++		// Nothing the renderer thought was set up still is: the program it had
++		// bound, the framebuffer it was drawing into, the textures it had
++		// uploaded were all named by the context that is gone. Saying so is
++		// what makes the next draw fetch them again rather than reach for a
++		// handle the driver no longer knows.
++		m_graphics_state |= rsx::pipeline_state::all_dirty;
++		m_draw_fbo = nullptr;
++		m_program = nullptr;
++	}
++	m_chimera_gl_context = live;
++}
++
+ void GLGSRender::do_local_task(rsx::FIFO::state state)
+ {
++	chimera_check_gl_context();
++
+ 	if (!work_queue.empty())
+ 	{
+ 		std::lock_guard lock(queue_guard);
+diff --git a/rpcs3/Emu/RSX/GL/GLGSRender.h b/rpcs3/Emu/RSX/GL/GLGSRender.h
+index 357635c1e..ef46a3baf 100644
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.h
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.h
+@@ -227,6 +227,22 @@ protected:
+ 
+ 	void on_init_thread() override;
+ 	void on_exit() override;
++
++	// chimera: the GL objects, apart from the machine.
++	//
++	// Every object this renderer holds is a NAME the driver handed out, and
++	// those names live in emulated memory, so a whole-machine savestate takes
++	// them with it - into a session where the context that owned them is gone.
++	// Every call naming one is then refused and nothing says so, because the
++	// bridge answers the guest, not the driver. So the two halves of the
++	// renderer's life are split: what belongs to the CONTEXT can be torn down
++	// and built again without touching what belongs to the MACHINE.
++	void chimera_gl_setup();
++	void chimera_gl_teardown();
++	void chimera_check_gl_context();
++
++	// which context the objects above came from; 0 before there is one
++	u64 m_chimera_gl_context = 0;
+ 	void flip(const rsx::display_flip_info_t& info) override;
+ 
+ 	void do_local_task(rsx::FIFO::state state) override;
+diff --git a/rpcs3/Emu/RSX/GL/glutils/program.h b/rpcs3/Emu/RSX/GL/glutils/program.h
+index ea55107c1..dcb6bdcb2 100644
+--- a/rpcs3/Emu/RSX/GL/glutils/program.h
++++ b/rpcs3/Emu/RSX/GL/glutils/program.h
+@@ -1,220 +1,228 @@
+-#pragma once
+-
+-#include "common.h"
+-#include "sync.hpp"
+-
+-#include "Emu/RSX/Program/GLSLTypes.h"
+-#include "Utilities/geometry.h"
+-#include "Utilities/mutex.h"
+-
+-#include <span>
+-
+-namespace gl
+-{
+-	namespace glsl
+-	{
+-		class shader
+-		{
+-			std::string source;
+-			::glsl::program_domain type {};
+-			GLuint m_id = GL_NONE;
+-
+-			fence m_compiled_fence;
+-			fence m_init_fence;
+-
+-			shared_mutex m_compile_lock;
+-			atomic_t<bool> m_is_compiled{};
+-
+-			void precompile();
+-
+-		public:
+-			shader() = default;
+-
+-			shader(::glsl::program_domain type_, const std::string& src)
+-			{
+-				create(type_, src);
+-			}
+-
+-			~shader()
+-			{
+-				remove();
+-			}
+-
+-			void remove()
+-			{
+-				if (m_id)
+-				{
+-					glDeleteShader(m_id);
+-					m_id = GL_NONE;
+-				}
+-			}
+-
+-			void create(::glsl::program_domain type_, const std::string& src);
+-
+-			shader& compile();
+-
+-			uint id() const { return m_id; }
+-
+-			const std::string& get_source() const { return source; }
+-
+-			const fence& get_compile_fence_sync() const { return m_compiled_fence; }
+-
+-			bool created() const { return m_id != GL_NONE; }
+-
+-			bool compiled() const { return m_is_compiled; }
+-
+-			explicit operator bool() const { return created(); }
+-		};
+-
+-		class program
+-		{
+-			GLuint m_id = GL_NONE;
+-			fence m_fence;
+-
+-		public:
+-			class uniform_t
+-			{
+-				program& m_program;
+-				GLint m_location;
+-
+-			public:
+-				uniform_t(program& program, GLint location)
+-					: m_program(program)
+-					, m_location(location)
+-				{
+-				}
+-
+-				GLint location() const
+-				{
+-					return m_location;
+-				}
+-
+-				void operator = (int rhs) const { glProgramUniform1i(m_program.id(), location(), rhs); }
+-				void operator = (unsigned rhs) const { glProgramUniform1ui(m_program.id(), location(), rhs); }
+-				void operator = (float rhs) const { glProgramUniform1f(m_program.id(), location(), rhs); }
+-				void operator = (bool rhs) const { glProgramUniform1ui(m_program.id(), location(), rhs ? 1 : 0); }
+-				void operator = (handle64_t rhs) const { glProgramUniformHandleui64ARB(m_program.id(), location(), rhs); }
+-				void operator = (const color1i& rhs) const { glProgramUniform1i(m_program.id(), location(), rhs.r); }
+-				void operator = (const color1f& rhs) const { glProgramUniform1f(m_program.id(), location(), rhs.r); }
+-				void operator = (const color2i& rhs) const { glProgramUniform2i(m_program.id(), location(), rhs.r, rhs.g); }
+-				void operator = (const color2f& rhs) const { glProgramUniform2f(m_program.id(), location(), rhs.r, rhs.g); }
+-				void operator = (const color3i& rhs) const { glProgramUniform3i(m_program.id(), location(), rhs.r, rhs.g, rhs.b); }
+-				void operator = (const color3f& rhs) const { glProgramUniform3f(m_program.id(), location(), rhs.r, rhs.g, rhs.b); }
+-				void operator = (const color4i& rhs) const { glProgramUniform4i(m_program.id(), location(), rhs.r, rhs.g, rhs.b, rhs.a); }
+-				void operator = (const color4f& rhs) const { glProgramUniform4f(m_program.id(), location(), rhs.r, rhs.g, rhs.b, rhs.a); }
+-				void operator = (const areaf& rhs) const { glProgramUniform4f(m_program.id(), location(), rhs.x1, rhs.y1, rhs.x2, rhs.y2); }
+-				void operator = (const areai& rhs) const { glProgramUniform4i(m_program.id(), location(), rhs.x1, rhs.y1, rhs.x2, rhs.y2); }
+-				void operator = (const mat3f& rhs) const { glProgramUniformMatrix3fv(m_program.id(), location(), 1, GL_FALSE, &rhs[0].rgb[0]); }
+-				void operator = (const std::span<const int>& rhs) const { glProgramUniform1iv(m_program.id(), location(), ::size32(rhs), rhs.data()); }
+-				void operator = (const std::span<const handle64_t>& rhs) const { glProgramUniformHandleui64vARB(m_program.id(), location(), ::size32(rhs), rhs.data()); }
+-			};
+-
+-			class uniforms_t
+-			{
+-				program* m_program = nullptr;
+-				std::unordered_map<std::string, GLint> locations;
+-
+-			public:
+-				uniforms_t(program* program)
+-					: m_program(program)
+-				{}
+-
+-				uniforms_t(uniforms_t&&) noexcept = default;
+-				uniforms_t& operator = (uniforms_t&&) noexcept = default;
+-
+-				void clear() { locations.clear(); }
+-
+-				bool has_location(const std::string& name, int* location = nullptr);
+-
+-				GLint location(const std::string& name);
+-
+-				uniform_t operator[](GLint location) { return{ *m_program, location }; }
+-
+-				uniform_t operator[](const std::string& name) { return{ *m_program, location(name) }; }
+-
+-			} uniforms{ this };
+-
+-		public:
+-			program() = default;
+-
+-			program(const program&) = delete;
+-			program& operator = (const program&) = delete;
+-
+-			~program()
+-			{
+-				if (created())
+-				{
+-					remove();
+-				}
+-			}
+-
+-			void swap(program&& other) noexcept
+-			{
+-				std::swap(m_id, other.m_id);
+-				std::swap(m_fence, other.m_fence);
+-				std::swap(uniforms, other.uniforms);
+-			}
+-
+-			program& recreate()
+-			{
+-				remove();
+-				return create();
+-			}
+-
+-			program& create()
+-			{
+-				m_id = glCreateProgram();
+-				return *this;
+-			}
+-
+-			void remove()
+-			{
+-				glDeleteProgram(m_id);
+-				m_id = GL_NONE;
+-				uniforms.clear();
+-			}
+-
+-			void link(std::function<void(program*)> init_func = {});
+-
+-			void validate();
+-
+-			void sync()
+-			{
+-				if (!m_fence.check_signaled())
+-				{
+-					m_fence.server_wait_sync();
+-				}
+-			}
+-
+-			program& attach(const shader& shader_)
+-			{
+-				if (const auto& comp_fence = shader_.get_compile_fence_sync();
+-					!comp_fence.check_signaled())
+-				{
+-					comp_fence.server_wait_sync();
+-				}
+-
+-				glAttachShader(m_id, shader_.id());
+-				return *this;
+-			}
+-
+-			program& bind_attribute_location(const std::string& name, int index)
+-			{
+-				glBindAttribLocation(m_id, index, name.c_str());
+-				return *this;
+-			}
+-
+-			program& bind_fragment_data_location(const std::string& name, int color_number)
+-			{
+-				glBindFragDataLocation(m_id, color_number, name.c_str());
+-				return *this;
+-			}
+-
+-			GLuint id() const { return m_id; }
+-
+-			bool created() const { return m_id != GL_NONE; }
+-
+-			explicit operator bool() const { return created(); }
+-		};
+-	}
+-}
++#pragma once
++
++#include "common.h"
++#include "sync.hpp"
++
++#include "Emu/RSX/Program/GLSLTypes.h"
++#include "Utilities/geometry.h"
++#include "Utilities/mutex.h"
++
++#include <span>
++
++namespace gl
++{
++	namespace glsl
++	{
++		class shader
++		{
++			std::string source;
++			::glsl::program_domain type {};
++			GLuint m_id = GL_NONE;
++
++			fence m_compiled_fence;
++			fence m_init_fence;
++
++			shared_mutex m_compile_lock;
++			atomic_t<bool> m_is_compiled{};
++
++			void precompile();
++
++		public:
++			shader() = default;
++
++			shader(::glsl::program_domain type_, const std::string& src)
++			{
++				create(type_, src);
++			}
++
++			~shader()
++			{
++				remove();
++			}
++
++			void remove()
++			{
++				if (m_id)
++				{
++					glDeleteShader(m_id);
++					m_id = GL_NONE;
++					// chimera: and it is no longer compiled. compile() returns
++					// early when this is set ("another thread compiled this
++					// already"), so a shader object that is removed and made
++					// again links UNCOMPILED - the program then exists and
++					// answers nothing, every uniform lookup on it failing with
++					// GL_INVALID_OPERATION. Nobody upstream re-creates one; a
++					// renderer rebuilding after its context is gone does.
++					m_is_compiled = false;
++				}
++			}
++
++			void create(::glsl::program_domain type_, const std::string& src);
++
++			shader& compile();
++
++			uint id() const { return m_id; }
++
++			const std::string& get_source() const { return source; }
++
++			const fence& get_compile_fence_sync() const { return m_compiled_fence; }
++
++			bool created() const { return m_id != GL_NONE; }
++
++			bool compiled() const { return m_is_compiled; }
++
++			explicit operator bool() const { return created(); }
++		};
++
++		class program
++		{
++			GLuint m_id = GL_NONE;
++			fence m_fence;
++
++		public:
++			class uniform_t
++			{
++				program& m_program;
++				GLint m_location;
++
++			public:
++				uniform_t(program& program, GLint location)
++					: m_program(program)
++					, m_location(location)
++				{
++				}
++
++				GLint location() const
++				{
++					return m_location;
++				}
++
++				void operator = (int rhs) const { glProgramUniform1i(m_program.id(), location(), rhs); }
++				void operator = (unsigned rhs) const { glProgramUniform1ui(m_program.id(), location(), rhs); }
++				void operator = (float rhs) const { glProgramUniform1f(m_program.id(), location(), rhs); }
++				void operator = (bool rhs) const { glProgramUniform1ui(m_program.id(), location(), rhs ? 1 : 0); }
++				void operator = (handle64_t rhs) const { glProgramUniformHandleui64ARB(m_program.id(), location(), rhs); }
++				void operator = (const color1i& rhs) const { glProgramUniform1i(m_program.id(), location(), rhs.r); }
++				void operator = (const color1f& rhs) const { glProgramUniform1f(m_program.id(), location(), rhs.r); }
++				void operator = (const color2i& rhs) const { glProgramUniform2i(m_program.id(), location(), rhs.r, rhs.g); }
++				void operator = (const color2f& rhs) const { glProgramUniform2f(m_program.id(), location(), rhs.r, rhs.g); }
++				void operator = (const color3i& rhs) const { glProgramUniform3i(m_program.id(), location(), rhs.r, rhs.g, rhs.b); }
++				void operator = (const color3f& rhs) const { glProgramUniform3f(m_program.id(), location(), rhs.r, rhs.g, rhs.b); }
++				void operator = (const color4i& rhs) const { glProgramUniform4i(m_program.id(), location(), rhs.r, rhs.g, rhs.b, rhs.a); }
++				void operator = (const color4f& rhs) const { glProgramUniform4f(m_program.id(), location(), rhs.r, rhs.g, rhs.b, rhs.a); }
++				void operator = (const areaf& rhs) const { glProgramUniform4f(m_program.id(), location(), rhs.x1, rhs.y1, rhs.x2, rhs.y2); }
++				void operator = (const areai& rhs) const { glProgramUniform4i(m_program.id(), location(), rhs.x1, rhs.y1, rhs.x2, rhs.y2); }
++				void operator = (const mat3f& rhs) const { glProgramUniformMatrix3fv(m_program.id(), location(), 1, GL_FALSE, &rhs[0].rgb[0]); }
++				void operator = (const std::span<const int>& rhs) const { glProgramUniform1iv(m_program.id(), location(), ::size32(rhs), rhs.data()); }
++				void operator = (const std::span<const handle64_t>& rhs) const { glProgramUniformHandleui64vARB(m_program.id(), location(), ::size32(rhs), rhs.data()); }
++			};
++
++			class uniforms_t
++			{
++				program* m_program = nullptr;
++				std::unordered_map<std::string, GLint> locations;
++
++			public:
++				uniforms_t(program* program)
++					: m_program(program)
++				{}
++
++				uniforms_t(uniforms_t&&) noexcept = default;
++				uniforms_t& operator = (uniforms_t&&) noexcept = default;
++
++				void clear() { locations.clear(); }
++
++				bool has_location(const std::string& name, int* location = nullptr);
++
++				GLint location(const std::string& name);
++
++				uniform_t operator[](GLint location) { return{ *m_program, location }; }
++
++				uniform_t operator[](const std::string& name) { return{ *m_program, location(name) }; }
++
++			} uniforms{ this };
++
++		public:
++			program() = default;
++
++			program(const program&) = delete;
++			program& operator = (const program&) = delete;
++
++			~program()
++			{
++				if (created())
++				{
++					remove();
++				}
++			}
++
++			void swap(program&& other) noexcept
++			{
++				std::swap(m_id, other.m_id);
++				std::swap(m_fence, other.m_fence);
++				std::swap(uniforms, other.uniforms);
++			}
++
++			program& recreate()
++			{
++				remove();
++				return create();
++			}
++
++			program& create()
++			{
++				m_id = glCreateProgram();
++				return *this;
++			}
++
++			void remove()
++			{
++				glDeleteProgram(m_id);
++				m_id = GL_NONE;
++				uniforms.clear();
++			}
++
++			void link(std::function<void(program*)> init_func = {});
++
++			void validate();
++
++			void sync()
++			{
++				if (!m_fence.check_signaled())
++				{
++					m_fence.server_wait_sync();
++				}
++			}
++
++			program& attach(const shader& shader_)
++			{
++				if (const auto& comp_fence = shader_.get_compile_fence_sync();
++					!comp_fence.check_signaled())
++				{
++					comp_fence.server_wait_sync();
++				}
++
++				glAttachShader(m_id, shader_.id());
++				return *this;
++			}
++
++			program& bind_attribute_location(const std::string& name, int index)
++			{
++				glBindAttribLocation(m_id, index, name.c_str());
++				return *this;
++			}
++
++			program& bind_fragment_data_location(const std::string& name, int color_number)
++			{
++				glBindFragDataLocation(m_id, color_number, name.c_str());
++				return *this;
++			}
++
++			GLuint id() const { return m_id; }
++
++			bool created() const { return m_id != GL_NONE; }
++
++			explicit operator bool() const { return created(); }
++		};
++	}
++}

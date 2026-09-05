@@ -4,7 +4,7 @@
  * diffed against the native reference.
  *
  * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F]
- *        [--rewind] [--rerecord] <game.elf>
+ *        [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>
  *
  * The game is mounted under its own basename (extension drives type
  * detection) with "rom.name" carrying that name, exactly the frontend shape.
@@ -81,6 +81,10 @@ int main(int argc, char **argv)
 	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL, *ramOut = NULL, *dkey = NULL, *settingsJson = NULL, *cacheDir = NULL, *preSpec = NULL;
 	long frames = 60, report = 10;
 	int rewind = 0, rerecord = 0;
+	/* A state written to a file, and one read from one: the only way to ask
+	 * what happens to a machine whose GL context is not the one it drew on,
+	 * because that question needs two PROCESSES. */
+	const char *stateOut = NULL, *stateIn = NULL;
 	struct { long first, count; int index; } press[32];
 	int presses = 0;
 	for (int i = 1; i < argc; i++) {
@@ -100,12 +104,14 @@ int main(int argc, char **argv)
 			}
 		}
 		else if (!strcmp(argv[i], "--rewind")) rewind = 1;
+		else if (!strcmp(argv[i], "--save-state") && i + 1 < argc) stateOut = argv[++i];
+		else if (!strcmp(argv[i], "--state") && i + 1 < argc) stateIn = argv[++i];
 		else if (!strcmp(argv[i], "--rerecord")) rerecord = 1;
 		else if (!core) core = argv[i];
 		else game = argv[i];
 	}
 	if (!core || !game) {
-		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] <game.elf>\n");
+		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>\n");
 		return 2;
 	}
 
@@ -241,6 +247,23 @@ int main(int argc, char **argv)
 	printf("booted; threads %d\n", GetThreadCount());
 	fflush(stdout);
 
+	if (stateIn) {
+		/* the machine somebody else saved, in a session of its own */
+		FILE *f = fopen(stateIn, "rb");
+		if (!f) { fprintf(stderr, "state: cannot read %s\n", stateIn); return 1; }
+		membuf st = {0};
+		fseek(f, 0, SEEK_END); st.len = (size_t)ftell(f); fseek(f, 0, SEEK_SET);
+		st.b = malloc(st.len);
+		if (!st.b || fread(st.b, 1, st.len, f) != st.len) { fprintf(stderr, "state: short read\n"); return 1; }
+		fclose(f);
+		st.pos = 0;
+		wbx_load_state(h, mem_read, (uintptr_t)&st, &r);
+		if (r.error_message[0]) { fprintf(stderr, "load: %s\n", r.error_message); return 1; }
+		free(st.b);
+		printf("loaded state %s\n", stateIn);
+		fflush(stdout);
+	}
+
 	if (rewind) {
 		long half = frames / 2;
 		for (long f = 1; f <= half; f++) FrameAdvance(0);
@@ -288,6 +311,18 @@ int main(int argc, char **argv)
 		}
 		FrameAdvance(0);
 		if (!InputWasRead()) lag++;
+		if (stateOut && f == frames) {
+			/* the machine as it stands, for another process to pick up */
+			membuf st = {0};
+			wbx_save_state(h, mem_write, (uintptr_t)&st, &r);
+			if (r.error_message[0]) { fprintf(stderr, "save: %s\n", r.error_message); return 1; }
+			FILE *sf = fopen(stateOut, "wb");
+			if (!sf || fwrite(st.b, 1, st.len, sf) != st.len) { fprintf(stderr, "state: cannot write %s\n", stateOut); return 1; }
+			fclose(sf);
+			free(st.b);
+			printf("saved state %s (%zu bytes)\n", stateOut, st.len);
+			fflush(stdout);
+		}
 		if (f % report == 0 || f == frames) {
 			int64_t tn = GetTtySize();
 			const uint8_t *tty = (const uint8_t *)GetTty();
