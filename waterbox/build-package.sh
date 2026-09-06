@@ -31,6 +31,20 @@ fi
 chimera_root="$(cd "$chimera_root" && pwd)"
 [ -n "$mb" ] || mb="$chimera_root/extern/tools/chimera-common-minibox"
 
+# Every step below builds against the miniBox guest toolchain, and each one used
+# to find it by guessing at $HOME. That works on the machine the guess was
+# written on and nowhere else - on a CI runner $HOME is not the checkout, so
+# gcc was handed a specs file that does not exist and ffmpeg's configure failed
+# with its complaint on stdout, which the bundle sends to /dev/null. Say where
+# it is, once.
+MINIBOX_SYSROOT="$mb/build/meson-cpp/guest-sysroot"
+export MINIBOX_SYSROOT MINIBOX_DIR="$mb"
+
+[ -f "$MINIBOX_SYSROOT/lib/musl-gcc.specs" ] || {
+	echo "miniBox guest toolchain missing at $MINIBOX_SYSROOT" >&2
+	echo "build it with: meson setup <miniBox>/build/meson-cpp -Dguest_cpp=true && ninja -C <miniBox>/build/meson-cpp" >&2
+	exit 1; }
+
 # the guest: cmake archives + the musl ffmpeg + the adapter, linked by build-core.sh
 [ -d "$root/build/ffmpeg-guest/lib" ] || sh "$here/build-ffmpeg.sh" guest
 
