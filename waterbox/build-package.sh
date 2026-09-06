@@ -33,6 +33,17 @@ chimera_root="$(cd "$chimera_root" && pwd)"
 
 # the guest: cmake archives + the musl ffmpeg + the adapter, linked by build-core.sh
 [ -d "$root/build/ffmpeg-guest/lib" ] || sh "$here/build-ffmpeg.sh" guest
+
+# The PPU and SPU recompilers are LLVM, so the guest needs one. Nothing else
+# builds it: a machine that has never built this core has no LLVM at all, and
+# the cmake configure below fails on the spot with "Can't find LLVM libraries".
+# Only the table generator is taken from the native flavor - the rest of that
+# flavor is for the native reference, which a package does not use.
+if [ ! -d "$root/build/llvm-guest/lib/cmake/llvm" ]; then
+	sh "$here/build-llvm.sh" tblgen
+	sh "$here/build-llvm.sh" guest
+fi
+
 [ -d "$root/build/guest" ] || sh "$here/build-guest.sh"
 MINIBOX_DIR="$mb" sh "$here/build-core.sh" -m "$mb"
 

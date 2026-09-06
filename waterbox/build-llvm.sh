@@ -1,7 +1,9 @@
 #!/bin/sh
 # LLVM 22 from RPCS3's submodule, for the PPU/SPU LLVM recompilers: the
 # native flavor here, and (after it, for its table generator) the guest.
-#   build-llvm.sh native
+#   build-llvm.sh native      the whole thing, for the native reference
+#   build-llvm.sh tblgen      only the table generator the guest build needs
+#   build-llvm.sh guest
 # Options: X86 only, no threads (the machine's scheduler is the only
 # scheduler), static, no tools, no compression or terminfo libraries. The
 # native flavor is built WITHOUT CET: LLVM's X86 backend emits endbr64 into
@@ -12,7 +14,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 flavor="${1:-native}"
 src="$root/extern/rpcs3/3rdparty/llvm/llvm/llvm"
-out="$root/build/llvm-$flavor"
+case "$flavor" in tblgen) out="$root/build/llvm-native" ;; *) out="$root/build/llvm-$flavor" ;; esac
 common="-DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_ENABLE_THREADS=OFF -DLLVM_ENABLE_PIC=OFF
 -DBUILD_SHARED_LIBS=OFF -DLLVM_BUILD_LLVM_DYLIB=OFF -DLLVM_ENABLE_ASSERTIONS=OFF
 -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ZSTD=OFF -DLLVM_ENABLE_LIBXML2=OFF -DLLVM_ENABLE_TERMINFO=OFF
@@ -22,12 +24,16 @@ common="-DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_ENABLE_THREADS=OFF -DLLVM_ENABLE_PIC=
 -DLLVM_ENABLE_WARNINGS=OFF -DLLVM_ENABLE_RTTI=ON -DLLVM_ENABLE_EH=ON -DLLVM_USE_INTEL_JITEVENTS=OFF -DLLVM_USE_PERF=OFF
 -DLLVM_ENABLE_UNWIND_TABLES=ON -DCMAKE_BUILD_TYPE=Release"
 case "$flavor" in
-native)
+native|tblgen)
 	# the native rpcs3 links -fno-pic objects? no: native rpcs3 is PIE; LLVM static libs need PIC for that
 	cmake -G Ninja -S "$src" -B "$out" $common -DLLVM_ENABLE_PIC=ON -DLLVM_INCLUDE_UTILS=ON -DLLVM_BUILD_UTILS=ON \
 		-DCMAKE_C_FLAGS="-msse -msse2 -mcx16 -fcf-protection=none" -DCMAKE_CXX_FLAGS="-msse -msse2 -mcx16 -fcf-protection=none"
 	ninja -C "$out" llvm-tblgen
-	ninja -C "$out"
+
+	# The guest cross build needs the table generator and nothing else from
+	# this flavor. Building the rest is for the native REFERENCE, which a
+	# package does not use - and it is most of the work.
+	[ "$flavor" = "tblgen" ] || ninja -C "$out"
 	;;
 guest)
 	native="$root/build/llvm-native"
