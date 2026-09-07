@@ -13,7 +13,7 @@ src="$root/extern/ffmpeg"
 out="$root/build/ffmpeg-$flavor"
 bld="$root/build/ffmpeg-$flavor-obj"
 mkdir -p "$bld"
-SR="${MINIBOX_SYSROOT:-$HOME/chimera/extern/tools/chimera-common-minibox/build/meson-cpp/guest-sysroot}"
+SR="${MINIBOX_SYSROOT:-$HOME/chimera/extern/chimera-common-minibox/build/meson-cpp/guest-sysroot}"
 if [ "$flavor" = guest ]; then
 	CC="gcc -specs=$SR/lib/musl-gcc.specs"
 	CFLAGS="-fvisibility=hidden -mcmodel=large -mstack-protector-guard=global -fno-stack-protector -fno-pic -fno-pie -fcf-protection=none -O2"
