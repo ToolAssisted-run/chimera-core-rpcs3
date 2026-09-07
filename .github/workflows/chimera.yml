@@ -44,7 +44,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: true
+          # RECURSIVE, not true. RPCS3 keeps its own third parties as
+          # submodules of a submodule - LLVM among them - and one level of
+          # init leaves extern/rpcs3/3rdparty/llvm/llvm an empty directory,
+          # which is where the first run of this workflow stopped.
+          submodules: recursive
 
       - name: Check out Chimera (the waterbox host, the guest toolchain, the frontend)
         uses: actions/checkout@v6
@@ -94,13 +98,22 @@ jobs:
           [ -f "$mb/build/meson-cpp/build.ninja" ] || meson setup "$mb/build/meson-cpp" "$mb" -Dguest_cpp=true
           meson compile -C "$mb/build/meson-cpp"
 
+      - name: Which LLVM this build pins
+        # The key below has to change when the LLVM SOURCE changes, and the
+        # source is a submodule of a submodule: .gitmodules only names the
+        # remote, so bumping extern/rpcs3 to a newer LLVM would leave the key
+        # identical and the job would restore, and ship, the old one. The
+        # pinned commit is the honest key.
+        id: llvm-pin
+        run: echo "sha=$(git -C extern/rpcs3 rev-parse HEAD:3rdparty/llvm/llvm)" >> "$GITHUB_OUTPUT"
+
       - name: Cache LLVM (hours to build; changes only when the pin does)
         uses: actions/cache@v4
         with:
           path: |
             build/llvm-native
             build/llvm-guest
-          key: rpcs3-llvm-${{ runner.os }}-${{ hashFiles('waterbox/build-llvm.sh') }}-${{ hashFiles('.gitmodules') }}
+          key: rpcs3-llvm-${{ runner.os }}-${{ hashFiles('waterbox/build-llvm.sh') }}-${{ steps.llvm-pin.outputs.sha }}
 
       - name: Build the waterbox core
         # The GUEST only. The native reference needs LLVM and ffmpeg built for
