@@ -134,6 +134,14 @@ ECL_EXPORT uint64_t GetFaultCount(void)
   return chimera_rpcs3_fault_count();
 }
 
+// Diagnosis, never machine state: every CPU thread, where it is and what it
+// last called, to the host's stderr. For a machine that has gone quiet - a
+// PPU parked in an lv2 wait names the HLE function it is parked in.
+ECL_EXPORT void DebugThreads(void)
+{
+  chimera_rpcs3_debug_threads();
+}
+
 // The compile cache bridge: the host's dispatcher, handed over before Init
 // when the frontend keeps compiled objects for this core (cache-bridge.h)
 ECL_EXPORT void SetCacheBridge(uint64_t addr)

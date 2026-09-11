@@ -51,6 +51,9 @@ int chimera_rpcs3_is_running(void);
 // The installed firmware's version ("4.82"), empty without firmware.
 const char* chimera_rpcs3_firmware_version(void);
 void chimera_rpcs3_debug_ppu(void);
+// Every CPU thread, where it is and what it last called - for a machine that
+// has gone quiet. Written to stderr; never machine state.
+void chimera_rpcs3_debug_threads(void);
 
 // The renderer the project asked for ("null" or "opengl-hw"), before init;
 // opengl-hw draws only when a GPU bridge was installed (waterbox/gl-shim.cpp)

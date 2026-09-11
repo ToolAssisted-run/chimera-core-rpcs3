@@ -489,20 +489,68 @@ optimisation. No user interface, no networking, no real audio or input devices.
   before this change and deterministic across two runs, natively and on Windows
   through the GPU bridge.
 
-- **Open: Bejeweled 3 boots but stops at its launcher.** The TTY says "PopCap
-  Launcher App" and then nothing: main memory does not change over 600 frames,
-  every frame is a lag frame, and the machine is idle rather than spinning. The
-  disc carries one EBOOT and several games' assets, so this is a compilation
-  launcher waiting for something it is not getting. Identical under the SPU
-  interpreter, so it is not the recompiler.
+- **Open: Bejeweled 3's launcher waits for a Raw SPU that has stopped.** The
+  TTY says "PopCap Launcher App" and then nothing. The machine is NOT hung -
+  vsched switches climb into the hundreds of thousands and a 200 frame run
+  finishes in normal time - it simply makes no progress. Traced as far as this:
 
-- **Open: a sandboxed machine's log cannot be read.** `CHIMERA_LOG_TRACE` and
-  `CHIMERA_SPU_TRACE` are `getenv`, and a sandboxed guest is handed no
-  environment at all, so both do nothing in the box - they only work in
-  `run-native`. The log file itself lives in the memory filesystem, which
-  nothing outside can read. Chasing the launcher above needs one of the two
-  fixed: an export that takes the channel list, or a way to pull
-  /cache/RPCS3.log out of memfs (`--log-out`, beside `--tty-out`).
+  Two PPU threads and one SPU. `_gcm_intr_thread` is parked in
+  `sys_event_queue_receive`, which is where it belongs. `main_thread` is
+  spinning in the game's own code at 0x67a38, fifteen frames deep, having last
+  called `_sys_lwmutex_create`. Disassembling that address out of a MainRAM
+  dump (`--ram-out`; offset 0 is PS3 0x10000) gives a Raw SPU mailbox poll:
+  read SPU_Mbox_Stat at 0xE0044014, keep bit 0 (`rldicl r0,r0,0,63`), loop
+  while it is clear; then read SPU_Out_Mbox at 0xE0044004 and loop unless it
+  equals **0xDEADBEEF**.
+
+  The whole handshake, from a trace of every Raw SPU register access: two MFC
+  proxy DMAs into the local store (LSA 0x80 and 0x800, tag 0x1f, GET), then
+  SPU_NPC = 0xE0 and SPU_RunCntl = 1. The SPU sends two outbound messages
+  (0x00000a00, 0x00010c00), the PPU sends two inbound ones (0x00080000,
+  0x00120001), the SPU sends a third outbound message whose value is
+  **0x00000000**, and after that nothing happens ever again.
+
+  The SPU's own state at that point: `inbox=0 outbox=0 tagmask=3 tagstat=empty
+  tagupd=0 mfcq=0 events=0 stallmask=0`, status RUNNING, no cpu flags. So it is
+  not waiting for a DMA, it has taken both inbound messages, and it has nothing
+  queued to send. Its `pc` does not move over hundreds of frames (0x268 under
+  the interpreter, 0x294 under asmjit) and is not to be trusted as the place it
+  stopped - under the interpreter it points at a `nop`.
+
+  So the rendezvous has gone wrong on the SPU side, and the next step is to
+  TRACE the SPU's execution rather than sample it (rpcs3's own spu_debug /
+  block logging), to find the last instruction it really ran and why it did not
+  reach the `wrch SPU_WrOutMbox` that would carry 0xDEADBEEF. Identical under
+  both SPU decoders, so it is not the recompiler.
+
+- **Diagnosis that a sandboxed machine can answer (2026-09-11).** Three tools,
+  added while chasing the above:
+
+  `run-wbx --debug-at N` calls the new `DebugThreads` export after frame N: the
+  machine's status and vsched's switch count, then every PPU (id, cia, state
+  flags, priority, the HLE function it is in and the last one it called, its
+  name, and a call stack) and every SPU (pc, state, status, mailbox counts, tag
+  mask and status, pending tag update, MFC queue depth, barrier and fence,
+  events, stall mask, and the instructions around its pc).
+
+  `run-wbx --log-trace <chans>` raises those RPCS3 log channels to trace and
+  mirrors every message to stderr; `all` means every registered channel. It
+  arrives as a MOUNTED FILE, because **a sandboxed guest is handed no
+  environment at all** - `getenv` answers null in the box, which is why
+  `CHIMERA_LOG_TRACE` and `CHIMERA_SPU_TRACE` had never once worked there. The
+  levels are applied again after the boot, because loading a game re-applies
+  the configured ones over the top.
+
+  `MB_ALLOW_PTRACE=1` in run-wbx's own environment calls `prctl(PR_SET_PTRACER)`
+  so a gdb that is not an ancestor can attach (yama scope 1). The guest is
+  green threads on ONE host thread and core.wbx is linked EXEC at a fixed base,
+  so `nm --defined-only -n bin/core.wbx` symbolises any guest address and an
+  attached gdb can read guest statics by name - which is how vsched's own ring
+  was read while it was stuck.
+
+  Still missing: a way to pull /cache/RPCS3.log out of the memory filesystem
+  (`--log-out`, beside `--tty-out`) for the messages that are written before a
+  listener could be added.
 
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the

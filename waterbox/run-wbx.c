@@ -4,6 +4,7 @@
  * diffed against the native reference.
  *
  * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F]
+ *        [--log-trace CHANS] [--debug-at N]
  *        [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>
  *
  * The game is mounted under its own basename (extension drives type
@@ -66,6 +67,7 @@ typedef uint32_t (MB_GUEST_ABI *u32fn)(void);
 typedef void (MB_GUEST_ABI *framefn)(uint64_t);
 typedef uintptr_t (MB_GUEST_ABI *ptrfn)(void);
 typedef uint64_t (MB_GUEST_ABI *u64fn)(void);
+typedef void (MB_GUEST_ABI *voidfn)(void);
 typedef int64_t (MB_GUEST_ABI *i64fn)(void);
 typedef void (MB_GUEST_ABI *btnfn)(int32_t, int32_t);
 typedef uintptr_t (MB_GUEST_ABI *ptrfn_i)(int);
@@ -89,6 +91,8 @@ int main(int argc, char **argv)
 	if (getenv("MB_ALLOW_PTRACE")) prctl(PR_SET_PTRACER, -1L, 0, 0, 0);
 #endif
 	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL, *ramOut = NULL, *dkey = NULL, *settingsJson = NULL, *cacheDir = NULL, *preSpec = NULL;
+	const char *logTrace = NULL;
+	long debugAt = -1;
 	long frames = 60, report = 10;
 	int rewind = 0, rerecord = 0;
 	/* A state written to a file, and one read from one: the only way to ask
@@ -101,6 +105,8 @@ int main(int argc, char **argv)
 		if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--report") && i + 1 < argc) report = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--tty-out") && i + 1 < argc) ttyOut = argv[++i];
+		else if (!strcmp(argv[i], "--log-trace") && i + 1 < argc) logTrace = argv[++i];
+		else if (!strcmp(argv[i], "--debug-at") && i + 1 < argc) debugAt = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--firmware") && i + 1 < argc) firmware = argv[++i];
 		else if (!strcmp(argv[i], "--dkey") && i + 1 < argc) dkey = argv[++i];
 		else if (!strcmp(argv[i], "--settings") && i + 1 < argc) settingsJson = argv[++i];
@@ -151,6 +157,14 @@ int main(int argc, char **argv)
 	memreader nr = { (const uint8_t *)vfsname, strlen(vfsname), 0 };
 	wbx_mount_file(h, "rom.name", mem_reader, (uintptr_t)&nr, false, &r);
 	if (r.error_message[0]) { fprintf(stderr, "mount rom.name: %s\n", r.error_message); return 1; }
+
+	/* the log channels to raise, as a file: a sandboxed guest is handed no
+	 * environment, so CHIMERA_LOG_TRACE cannot reach it any other way */
+	if (logTrace) {
+		memreader lr = { (const uint8_t *)logTrace, strlen(logTrace), 0 };
+		wbx_mount_file(h, "logtrace", mem_reader, (uintptr_t)&lr, false, &r);
+		if (r.error_message[0]) { fprintf(stderr, "mount logtrace: %s\n", r.error_message); return 1; }
+	}
 
 	/* the settings channel, exactly as the frontend mounts it */
 	if (settingsJson) {
@@ -321,6 +335,10 @@ int main(int argc, char **argv)
 		}
 		FrameAdvance(0);
 		if (!InputWasRead()) lag++;
+		if (debugAt == f) {
+			voidfn DebugThreads = (voidfn)proc(h, "DebugThreads");
+			if (DebugThreads) DebugThreads();
+		}
 		if (stateOut && f == frames) {
 			/* the machine as it stands, for another process to pick up */
 			membuf st = {0};

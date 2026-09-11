@@ -741,16 +741,29 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   // Applied again after the boot, because loading a game re-applies the
   // configured levels over the top of these.
   //
-  // NATIVE RUNNER ONLY. A sandboxed guest is handed no environment at all, so
-  // getenv answers null there and this - like CHIMERA_SPU_TRACE - does nothing
-  // in the box. Reaching the log of a sandboxed machine needs a channel that
-  // is not the environment; see docs/PLAN.md.
+  // A sandboxed guest is handed no environment at all, so in the box the list
+  // arrives as a mounted file called "logtrace" instead (run-wbx --log-trace).
+  // CHIMERA_SPU_TRACE, still getenv, is native-only for that reason.
   const auto apply_log_trace = []
   {
-    const char* trace = getenv("CHIMERA_LOG_TRACE");
-    if (!trace)
+    std::string list;
+    if (const char* trace = getenv("CHIMERA_LOG_TRACE"))
+    {
+      list = trace;
+    }
+    else if (FILE* f = fopen("logtrace", "rb"))
+    {
+      // a sandboxed guest has no environment, so the host mounts the list as
+      // a file instead (run-wbx --log-trace)
+      char buf[256] = "";
+      const size_t n = fread(buf, 1, sizeof buf - 1, f);
+      fclose(f);
+      while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+        buf[n - 1] = '\0';
+      list = buf;
+    }
+    if (list.empty())
       return;
-    std::string list = trace;
     size_t start = 0;
     while (start <= list.size())
     {
@@ -1004,6 +1017,49 @@ const char* chimera_rpcs3_firmware_version(void)
 int chimera_rpcs3_is_running(void)
 {
   return Emu.IsRunning() ? 1 : 0;
+}
+
+// Debugging: every CPU thread, where it is and what it last called, to
+// stderr. For a machine that has gone quiet: a PPU parked in an lv2 wait
+// names the HLE function it is parked in, which is usually the whole answer.
+void chimera_rpcs3_debug_threads(void)
+{
+  fprintf(stderr, "== machine: status=%d time=%lluus vsched=%d threads switches=%llu\n",
+          static_cast<int>(Emu.GetStatus(false)), (unsigned long long)(vsched_now_ns() / 1000),
+          vsched_thread_count(), (unsigned long long)vsched_switch_count());
+  idm::select<named_thread<ppu_thread>>([](u32 id, ppu_thread& p)
+  {
+    const auto name = p.ppu_tname.load();
+    fprintf(stderr, "  PPU %08x cia=%08x state=%08x prio=%d in=%s last=%s name=%s\n",
+            id, p.cia, static_cast<u32>(p.state.load()), p.prio.load().prio,
+            p.current_function ? p.current_function : "-",
+            p.last_function ? p.last_function : "-",
+            name ? name->c_str() : "-");
+    const std::string stack = p.dump_callstack();
+    if (!stack.empty())
+      fprintf(stderr, "%s\n", stack.c_str());
+  });
+  idm::select<named_thread<spu_thread>>([](u32 id, spu_thread& t)
+  {
+    fprintf(stderr, "  SPU %08x pc=%05x state=%08x status=%08x inbox=%u outbox=%u"
+                    " tagmask=%08x tagstat=%u tagupd=%u mfcq=%u barrier=%08x fence=%08x"
+                    " events=%08x stallmask=%08x\n",
+            id, t.pc, static_cast<u32>(t.state.load()), t.status_npc.load().status,
+            t.ch_in_mbox.get_count(), t.ch_out_mbox.get_count(),
+            t.ch_tag_mask, t.ch_tag_stat.get_count(), t.ch_tag_upd,
+            t.mfc_size, t.mfc_barrier, t.mfc_fence,
+            static_cast<u32>(t.ch_events.load().events), t.ch_stall_mask);
+    // the instructions around where it is parked: an SPU that is not moving is
+    // almost always sitting on a channel read, and the opcode names which one
+    for (int k = -2; k <= 2; k++)
+    {
+      const u32 at = (t.pc + k * 4) & 0x3fffc;
+      const u32 w = *reinterpret_cast<const be_t<u32>*>(t.ls + at);
+      fprintf(stderr, "    ls %05x: %08x  op11=%03x ra=%02x rt=%02x%s\n",
+              at, w, w >> 21, (w >> 7) & 0x7f, w & 0x7f, k == 0 ? "  <== pc" : "");
+    }
+  });
+  fflush(stderr);
 }
 
 // Debugging: where every PPU thread is, to stderr.
