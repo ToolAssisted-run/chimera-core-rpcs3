@@ -525,12 +525,18 @@ optimisation. No user interface, no networking, no real audio or input devices.
   baseline and deterministic on Linux, and its MainRAM after 900 frames on
   Windows through the GPU is still 6d3c69a242d216dd2c5b98d6d923650b.
 
-- **Open: Bejeweled 3 then shows a black screen.** At frame 1500 every PPU is
-  parked in an lv2 wait - main_thread in sys_semaphore_wait, SpursHdlr0 in
-  sys_spu_thread_group_join - two SPUs report RUNNING, main memory still
-  changes every 100 frames, and the picture through the GPU is black at
-  frames 600, 1000 and 1499. Whether that is loading or a new wait is not yet
-  known; `--debug-at` and `--log-trace` there are where the next pass starts.
+- **Open: Bejeweled 3 then runs without ever drawing.** Measured to 3000
+  frames: no fault, main memory changes every 250 frames, the pad is read on
+  all but 6 of the 3000 frames (all 6 before frame 500), and the SPURS kernel
+  SPU is executing (pc 0xbc30 at frame 1500, 0x7564 at 3000). But the TTY stays
+  at the 178 bytes printed by frame 500, the thread list does not change after
+  frame 500, and the picture never changes: the video digest is
+  00a287b3051f8383 from frame 250 to 3000, the digest GTA San Andreas reports
+  while its screen is still black at boot, and through the GPU bridge frames
+  600, 1000 and 1499 are solid black. Every PPU is parked in an lv2 wait the
+  whole time - main_thread in sys_semaphore_wait, SpursHdlr0 in
+  sys_spu_thread_group_join. So it is a new wait, not loading; the next pass
+  starts from what main_thread's semaphore is waiting for.
 
 - **Diagnosis that a sandboxed machine can answer (2026-09-11).** Three tools,
   added while chasing the above:
