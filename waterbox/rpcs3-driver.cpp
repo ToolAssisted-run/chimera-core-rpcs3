@@ -688,6 +688,24 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   static bool s_fatal_added = (logs::listener::add(&s_fatal), true);
   (void)s_fatal_added;
 
+  // With CHIMERA_LOG_TRACE set, every message also reaches stderr: raising a
+  // channel's LEVEL is no use on its own when the log it is raised into is a
+  // file in the memory filesystem. (Native runner only - see below.)
+  struct all_to_stderr final : logs::listener
+  {
+    void log(u64, const logs::message&, std::string_view prefix, std::string_view text) override
+    {
+      fprintf(stderr, "rpcs3: %.*s %.*s\n", static_cast<int>(prefix.size()), prefix.data(),
+              static_cast<int>(text.size()), text.data());
+    }
+  };
+  static all_to_stderr s_all;
+  if (getenv("CHIMERA_LOG_TRACE"))
+  {
+    static bool s_all_added = (logs::listener::add(&s_all), true);
+    (void)s_all_added;
+  }
+
   vsched_init();
 
   Emu.SetHasGui(false);
@@ -718,10 +736,20 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
 
   g_tty_path = g_android_cache_dir + "TTY.log";
 
-  // CHIMERA_LOG_TRACE=chan,chan: those log channels at trace level, for
-  // chasing a machine that goes quiet (the log is never machine state)
-  if (const char* trace = getenv("CHIMERA_LOG_TRACE"))
+  // CHIMERA_LOG_TRACE=chan,chan (or "all"): those log channels at trace level,
+  // for chasing a machine that goes quiet (the log is never machine state).
+  // Applied again after the boot, because loading a game re-applies the
+  // configured levels over the top of these.
+  //
+  // NATIVE RUNNER ONLY. A sandboxed guest is handed no environment at all, so
+  // getenv answers null there and this - like CHIMERA_SPU_TRACE - does nothing
+  // in the box. Reaching the log of a sandboxed machine needs a channel that
+  // is not the environment; see docs/PLAN.md.
+  const auto apply_log_trace = []
   {
+    const char* trace = getenv("CHIMERA_LOG_TRACE");
+    if (!trace)
+      return;
     std::string list = trace;
     size_t start = 0;
     while (start <= list.size())
@@ -730,16 +758,27 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
       if (comma == std::string::npos)
         comma = list.size();
       if (comma > start)
-        logs::set_level(list.substr(start, comma - start), logs::level::trace);
+      {
+        const std::string name = list.substr(start, comma - start);
+        // "all" is every channel the build registered, which is what someone
+        // chasing a machine that has gone quiet actually wants
+        if (name == "all")
+          for (const std::string& ch : logs::get_channels())
+            logs::set_level(ch, logs::level::trace);
+        else
+          logs::set_level(name, logs::level::trace);
+      }
       start = comma + 1;
     }
-  }
+  };
+  apply_log_trace();
   // one line for whoever runs the core, never machine state: which renderer
   // the machine got and why
   fprintf(stderr, "chimera rpcs3: renderer %s%s\n", s_gpu ? "opengl-hw through the GPU bridge" : "null",
           (!s_gpu && s_renderer_opengl) ? " (opengl-hw asked for, no GPU bridge offered)" : "");
 
   const game_boot_result r = Emu.BootGame(game, "", true, cfg_mode::custom);
+  apply_log_trace();
   run_main_queue();
   if (r != game_boot_result::no_errors)
   {

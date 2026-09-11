@@ -1,8 +1,6 @@
-diff --git a/rpcs3/Emu/Cell/SPUThread.h b/rpcs3/Emu/Cell/SPUThread.h
-index b1f701743..412699854 100644
 --- a/rpcs3/Emu/Cell/SPUThread.h
 +++ b/rpcs3/Emu/Cell/SPUThread.h
-@@ -671,6 +671,13 @@ public:
+@@ -671,6 +671,13 @@
  	// May be used internally by recompilers.
  	u32 base_pc = 0;
  
@@ -16,22 +14,22 @@ index b1f701743..412699854 100644
  	// May be used by recompilers.
  	u8* memory_base_addr = vm::g_base_addr;
  	u8* memory_sudo_addr = vm::g_sudo_addr;
-diff --git a/rpcs3/Emu/Cell/SPUASMJITRecompiler.h b/rpcs3/Emu/Cell/SPUASMJITRecompiler.h
-index 36c238f23..82f768add 100644
 --- a/rpcs3/Emu/Cell/SPUASMJITRecompiler.h
 +++ b/rpcs3/Emu/Cell/SPUASMJITRecompiler.h
-@@ -91,6 +91,9 @@ private:
+@@ -91,6 +91,13 @@
  
  	asmjit::x86::Mem get_pc(u32 addr);
  	void branch_fixed(u32 target, bool absolute = false);
 +#ifdef CHIMERA_CORE
 +	void chimera_charge(u32 n);  // Chimera: charge the scheduler's budget by n instructions
++	// Chimera: the address of the branch whose taken path is being emitted,
++	// for the conditional branches that defer it to `after` - by then m_pos
++	// has moved on. umax while the main loop is emitting, where m_pos is it.
++	u32 m_chimera_from = umax;
 +#endif
  	void branch_indirect(spu_opcode_t op, bool jt = false, bool ret = true);
  	void branch_set_link(u32 target);
  	void fall(spu_opcode_t op);
-diff --git a/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp b/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp
-index acf4b6131..7842fc1da 100644
 --- a/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp
 +++ b/rpcs3/Emu/Cell/SPUASMJITRecompiler.cpp
 @@ -1,3 +1,6 @@
@@ -41,7 +39,7 @@ index acf4b6131..7842fc1da 100644
  #include "stdafx.h"
  #include "SPUASMJITRecompiler.h"
  
-@@ -186,6 +189,11 @@ spu_function_t spu_recompiler::compile(spu_program&& _func)
+@@ -186,6 +189,11 @@
  	c->cmp(SPU_OFF_32(state), 0);
  	c->jnz(label_stop);
  
@@ -53,7 +51,7 @@ index acf4b6131..7842fc1da 100644
  	if ((g_cfg.core.spu_prof || g_cfg.core.spu_debug) && g_cfg.core.spu_verification)
  	{
  		c->mov(x86::rax, m_hash_start & -0xffff);
-@@ -987,6 +995,35 @@ static void check_state(spu_thread* _spu)
+@@ -987,6 +995,35 @@
  	}
  }
  
@@ -89,17 +87,125 @@ index acf4b6131..7842fc1da 100644
  void spu_recompiler::branch_fixed(u32 target, bool absolute)
  {
  	using namespace asmjit;
-@@ -1005,6 +1042,13 @@ void spu_recompiler::branch_fixed(u32 target, bool absolute)
+@@ -1005,6 +1042,27 @@
  			c->jne(fail);
  		}
  
 +#ifdef CHIMERA_CORE
-+		// Chimera: a backward branch ran its loop body once more (m_pos is
-+		// the branch's own address, or "none" on the fallthrough paths, which
-+		// carry no loop)
-+		if (m_pos != umax && target <= m_pos && m_pos - target < 0x40000)
-+			chimera_charge((m_pos - target) / 4 + 1);
++		// Chimera: a backward branch ran its loop body once more.
++		//
++		// The branch's own address is m_pos while the main loop is emitting,
++		// but a CONDITIONAL branch does not emit its taken path there - it
++		// defers it to `after`, which runs when m_pos has moved on or is
++		// "none". A conditional backward branch is how an SPU loop is
++		// normally written, so relying on m_pos alone left the commonest
++		// loop of all charging nothing, and a thread that charges nothing
++		// never gives way: Bejeweled 3 hung with one SPU spinning and
++		// twenty-eight threads waiting on it. m_chimera_from carries the
++		// address across that deferral.
++		//
++		// A branch whose origin is genuinely unknown still charges one, so
++		// that no loop, however it is closed, can run for free.
++		const u32 origin = m_chimera_from != umax ? m_chimera_from : m_pos;
++		if (origin != umax && target <= origin && origin - target < 0x40000)
++			chimera_charge((origin - target) / 4 + 1);
++		else if (origin == umax)
++			chimera_charge(1);
 +#endif
  		c->cmp(SPU_OFF_32(state), 0);
  		c->jz(local->second);
  		c->lea(addr->r64(), get_pc(target));
+@@ -4188,6 +4246,9 @@
+ void spu_recompiler::BRZ(spu_opcode_t op)
+ {
+ 	const u32 target = spu_branch_target(m_pos, op.i16);
++#ifdef CHIMERA_CORE
++	const u32 chimera_from = m_pos;  // see branch_fixed: `after` runs when m_pos has moved on
++#endif
+ 
+ 	if (target == m_pos + 4)
+ 	{
+@@ -4202,7 +4263,13 @@
+ 	{
+ 		c->align(asmjit::AlignMode::kCode, 16);
+ 		c->bind(branch_label);
++#ifdef CHIMERA_CORE
++		m_chimera_from = chimera_from;
++#endif
+ 		branch_fixed(target);
++#ifdef CHIMERA_CORE
++		m_chimera_from = umax;
++#endif
+ 	});
+ }
+ 
+@@ -4228,6 +4295,9 @@
+ void spu_recompiler::BRNZ(spu_opcode_t op)
+ {
+ 	const u32 target = spu_branch_target(m_pos, op.i16);
++#ifdef CHIMERA_CORE
++	const u32 chimera_from = m_pos;  // see branch_fixed: `after` runs when m_pos has moved on
++#endif
+ 
+ 	if (target == m_pos + 4)
+ 	{
+@@ -4242,13 +4312,22 @@
+ 	{
+ 		c->align(asmjit::AlignMode::kCode, 16);
+ 		c->bind(branch_label);
++#ifdef CHIMERA_CORE
++		m_chimera_from = chimera_from;
++#endif
+ 		branch_fixed(target);
++#ifdef CHIMERA_CORE
++		m_chimera_from = umax;
++#endif
+ 	});
+ }
+ 
+ void spu_recompiler::BRHZ(spu_opcode_t op)
+ {
+ 	const u32 target = spu_branch_target(m_pos, op.i16);
++#ifdef CHIMERA_CORE
++	const u32 chimera_from = m_pos;  // see branch_fixed: `after` runs when m_pos has moved on
++#endif
+ 
+ 	if (target == m_pos + 4)
+ 	{
+@@ -4263,13 +4342,22 @@
+ 	{
+ 		c->align(asmjit::AlignMode::kCode, 16);
+ 		c->bind(branch_label);
++#ifdef CHIMERA_CORE
++		m_chimera_from = chimera_from;
++#endif
+ 		branch_fixed(target);
++#ifdef CHIMERA_CORE
++		m_chimera_from = umax;
++#endif
+ 	});
+ }
+ 
+ void spu_recompiler::BRHNZ(spu_opcode_t op)
+ {
+ 	const u32 target = spu_branch_target(m_pos, op.i16);
++#ifdef CHIMERA_CORE
++	const u32 chimera_from = m_pos;  // see branch_fixed: `after` runs when m_pos has moved on
++#endif
+ 
+ 	if (target == m_pos + 4)
+ 	{
+@@ -4284,7 +4372,13 @@
+ 	{
+ 		c->align(asmjit::AlignMode::kCode, 16);
+ 		c->bind(branch_label);
++#ifdef CHIMERA_CORE
++		m_chimera_from = chimera_from;
++#endif
+ 		branch_fixed(target);
++#ifdef CHIMERA_CORE
++		m_chimera_from = umax;
++#endif
+ 	});
+ }
+ 

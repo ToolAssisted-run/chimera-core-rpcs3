@@ -13,6 +13,9 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 #include <string.h>
 #include "cache-bridge.h"
 int chimera_cache_host_init(const char *dir);
@@ -78,6 +81,13 @@ static uintptr_t proc(mb_host *h, const char *n)
 
 int main(int argc, char **argv)
 {
+#ifdef __linux__
+	/* MB_ALLOW_PTRACE: let a gdb that is not an ancestor attach (yama scope 1).
+	 * The guest is green threads on one host thread and its statics are in
+	 * core.wbx's symbol table, so an attached gdb can read the scheduler's own
+	 * state - which is how a thread that never gives way is found. */
+	if (getenv("MB_ALLOW_PTRACE")) prctl(PR_SET_PTRACER, -1L, 0, 0, 0);
+#endif
 	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL, *ramOut = NULL, *dkey = NULL, *settingsJson = NULL, *cacheDir = NULL, *preSpec = NULL;
 	long frames = 60, report = 10;
 	int rewind = 0, rerecord = 0;

@@ -459,13 +459,50 @@ optimisation. No user interface, no networking, no real audio or input devices.
   Verified: GTA San Andreas is byte-identical in MainRAM to the run before the
   change, on Windows through the GPU bridge, and two runs of it agree.
 
-- **Open: Bejeweled 3 does not finish booting.** With the window served it no
-  longer crashes; it hangs instead, after the proxy DMA, spinning in guest code
-  with no syscall and no further MMIO access (a syscall trace goes silent right
-  after one `sched_yield`). That is risk #1 in this document - a wait outside
-  vsched deadlocks the single runner - and it is where the next pass on this
-  title starts. A poll of a Raw SPU register now yields to vsched, which is
-  right in itself but was not the spin.
+- **A conditional branch charges the clock too (2026-09-11).** With the Raw SPU
+  window served, Bejeweled 3 stopped crashing and started HANGING: one SPU
+  spinning forever while twenty-eight threads waited on it, no syscall, no
+  further MMIO. Risk #1 in this document, and the cause was in patch 0016.
+
+  Recompiled SPU code charges `chimera_budget` on function entry and on a
+  backward branch, and `branch_fixed` decided "backward" from `m_pos`, the
+  address of the instruction the main loop is emitting. But a CONDITIONAL
+  branch does not emit its taken path there: BRZ, BRNZ, BRHZ and BRHNZ defer it
+  into `after`, which runs after the loop, when `m_pos` has moved on or is
+  "none". A conditional backward branch is how an SPU loop is normally
+  written - so the commonest loop of all charged nothing, and a thread that
+  charges nothing never gives way. `m_chimera_from` carries the branch's own
+  address across that deferral, and a branch whose origin is genuinely unknown
+  now charges one, so no loop can run for free however it is closed.
+
+  How it was found, for the next time a machine goes quiet: vsched's statics
+  are in the symbol table, so `g_switches`, `g_cur` and the thread ring read
+  straight out of a live process (`nm --defined-only bin/core.wbx | grep g_cur`
+  gives the address; core.wbx is EXEC at a fixed base). 47 switches and not
+  moving, one RUNNABLE thread, and a `%r13`-relative register file with
+  `and $0x3fff0` local-store masks said "SPU recompiler" before anything else
+  was known. `--settings '{"spu_decoder":"interpreter"}'` then confirmed it in
+  one run.
+
+  Verified: Bejeweled 3 runs, and the recompiler's digests are the
+  interpreter's, frame for frame. GTA San Andreas is byte-identical to the run
+  before this change and deterministic across two runs, natively and on Windows
+  through the GPU bridge.
+
+- **Open: Bejeweled 3 boots but stops at its launcher.** The TTY says "PopCap
+  Launcher App" and then nothing: main memory does not change over 600 frames,
+  every frame is a lag frame, and the machine is idle rather than spinning. The
+  disc carries one EBOOT and several games' assets, so this is a compilation
+  launcher waiting for something it is not getting. Identical under the SPU
+  interpreter, so it is not the recompiler.
+
+- **Open: a sandboxed machine's log cannot be read.** `CHIMERA_LOG_TRACE` and
+  `CHIMERA_SPU_TRACE` are `getenv`, and a sandboxed guest is handed no
+  environment at all, so both do nothing in the box - they only work in
+  `run-native`. The log file itself lives in the memory filesystem, which
+  nothing outside can read. Chasing the launcher above needs one of the two
+  fixed: an export that takes the channel list, or a way to pull
+  /cache/RPCS3.log out of memfs (`--log-out`, beside `--tty-out`).
 
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
