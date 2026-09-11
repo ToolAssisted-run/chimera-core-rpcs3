@@ -429,15 +429,48 @@ optimisation. No user interface, no networking, no real audio or input devices.
   machine's audio and Chimera has no overlays, so the setting is now off in
   rpcs3-driver.cpp beside `autostart` and `enable_gamemode`.
 
-- **Open: Bejeweled 3 [BLUS30865] segfaults during boot.** After the boot-music
-  fix it gets further and then dies inside guest code, on BOTH platforms and
-  with BOTH renderers (Windows: a declined write to 0x377e0043004 in the mmap
-  arena, reported by miniBox's VEH; Linux: a plain SIGSEGV at a guest address
-  with no host frame). Not the GPU bridge - `--gpu` off, null renderer, same
-  crash. Needs a guest map to go further.
+- **RawSPU: the window cannot be a fault (2026-09-11).** Bejeweled 3
+  [BLUS30865] died during boot on both platforms and with both renderers, and
+  the reason turned out to be the RawSPU milestone arriving as a crash.
+
+  A Raw SPU shows its problem-state registers to the PPU as a window of memory
+  at 0xE0000000 + index * 0x100000 + 0x40000. Upstream leaves that window
+  UNMAPPED on purpose: every access faults, and `handle_access_violation`
+  decodes the x64 instruction that faulted, performs the register access and
+  resumes past it. A sandboxed core cannot do that - the fault leaves the
+  sandbox and what comes back is an address and a direction, with no way to
+  rewrite the interrupted context. So the access is caught one level up
+  instead, in `vm::write` and `ppu_feed_data` (patch 0022), and never becomes a
+  fault at all. `chimera_rpcs3_raw_spu_read/write` do the register access; the
+  test in front of them is two instructions on the interpreter's hot path and
+  the call only happens for the window itself. The write the game died on was
+  0xE0043004 - MFC_LSA of raw SPU 0 - followed by EAH, EAL, Size/Tag and Class
+  CMD: an ordinary proxy DMA.
+
+  Two things had to be found first. Linux was dying in SILENCE, with no
+  diagnosis from anyone, because the core's own fault callback explained its
+  decline with `fprintf` - stdio, inside the host's signal handler, where
+  musl's file lock reads a thread pointer that is not the guest's. That
+  second fault arrives with SIGSEGV already blocked and the process is gone
+  before a word reaches anyone. It says the same thing through `write(2)` now,
+  and miniBox grew `MB_FAULT_TRAIL` and a nested-fault report so the next one
+  is not invisible.
+
+  Verified: GTA San Andreas is byte-identical in MainRAM to the run before the
+  change, on Windows through the GPU bridge, and two runs of it agree.
+
+- **Open: Bejeweled 3 does not finish booting.** With the window served it no
+  longer crashes; it hangs instead, after the proxy DMA, spinning in guest code
+  with no syscall and no further MMIO access (a syscall trace goes silent right
+  after one `sched_yield`). That is risk #1 in this document - a wait outside
+  vsched deadlocks the single runner - and it is where the next pass on this
+  title starts. A poll of a Raw SPU register now yields to vsched, which is
+  right in itself but was not the spin.
 
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
-  pressure, LLVM recompilers, RawSPU.
+  pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
+  interpreter reaches the window through vm::write and ppu_feed_data, but
+  compiled code does not go through either and would still fault.
 
 ## Risks, ranked
 

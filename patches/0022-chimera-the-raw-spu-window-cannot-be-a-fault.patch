@@ -1,0 +1,78 @@
+diff --git a/rpcs3/Emu/Cell/PPUInterpreter.cpp b/rpcs3/Emu/Cell/PPUInterpreter.cpp
+index d01eac389..a080684dd 100644
+--- a/rpcs3/Emu/Cell/PPUInterpreter.cpp
++++ b/rpcs3/Emu/Cell/PPUInterpreter.cpp
+@@ -451,6 +451,24 @@ auto ppu_feed_data(ppu_thread& ppu, u64 addr)
+ {
+ 	static_assert(sizeof(T) <= 128, "Incompatible type-size, break down into smaller loads");
+ 
++#ifdef CHIMERA_CORE
++	/* chimera: the read half of the Raw SPU window - see the comment on
++	   vm::is_raw_spu_mmio. Upstream would let this fault and decode the
++	   instruction; a sandboxed core cannot resume one, so it is caught here. */
++	if constexpr (std::is_integral_v<T> && sizeof(T) <= 4)
++	{
++		const u32 mmio_ea = vm::cast(addr);
++		if (vm::is_raw_spu_mmio(mmio_ea)) [[unlikely]]
++		{
++			u64 got = 0;
++			if (vm::chimera_rpcs3_raw_spu_read(mmio_ea, static_cast<u32>(sizeof(T)), &got))
++			{
++				return to_be_t<T>(static_cast<T>(got));
++			}
++		}
++	}
++#endif
++
+ 	auto value = vm::_ref<T>(vm::cast(addr));
+ 
+ #ifdef RPCS3_HAS_MEMORY_BREAKPOINTS
+diff --git a/rpcs3/Emu/Memory/vm.h b/rpcs3/Emu/Memory/vm.h
+index c59e32d5b..cc81c5dd3 100644
+--- a/rpcs3/Emu/Memory/vm.h
++++ b/rpcs3/Emu/Memory/vm.h
+@@ -302,6 +302,27 @@ namespace vm
+ 			return *static_cast<const to_be_t<T>*>(base(addr));
+ 		}
+ 
++#ifdef CHIMERA_CORE
++		/* chimera: a Raw SPU shows its problem-state registers to the PPU as a
++		   window of memory, and upstream leaves that window UNMAPPED on purpose:
++		   every access faults, and its SIGSEGV handler decodes the x64
++		   instruction that faulted, performs the register access and resumes
++		   past it. A sandboxed core cannot resume a decoded instruction - the
++		   fault leaves the sandbox and what comes back cannot rewrite the
++		   interrupted context - so the access is caught HERE instead, before it
++		   is ever a fault. Implemented in waterbox/rpcs3-driver.cpp.
++
++		   The test is two instructions on a path that runs for every guest load
++		   and store; the call only happens for the window itself. */
++		inline bool is_raw_spu_mmio(u32 addr)
++		{
++			return addr - 0xe0000000u < 6u * 0x100000u && (addr % 0x100000u) >= 0x40000u;
++		}
++
++		extern "C" bool chimera_rpcs3_raw_spu_read(u32 addr, u32 size, u64* out);
++		extern "C" bool chimera_rpcs3_raw_spu_write(u32 addr, u32 size, u64 value);
++#endif
++
+ 		// Access memory bypassing memory protection
+ 		template <typename T = u8>
+ 		inline to_be_t<T>* get_super_ptr(u32 addr)
+@@ -326,6 +347,16 @@ namespace vm
+ 
+ 			if constexpr (!std::is_void_v<T>)
+ 			{
++#ifdef CHIMERA_CORE
++				if constexpr (sizeof(dest_t) == 4 && std::is_convertible_v<dest_t, u32>)
++				{
++					if (is_raw_spu_mmio(addr)
++						&& chimera_rpcs3_raw_spu_write(addr, 4, static_cast<u32>(dest_t(value))))
++					{
++						return;
++					}
++				}
++#endif
+ 				*_ptr<dest_t>(addr) = value;
+ 			}
+ 

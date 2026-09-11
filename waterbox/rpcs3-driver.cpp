@@ -13,6 +13,7 @@
 #include "Emu/VFS.h"
 #include "Emu/Memory/vm.h"
 #include "Emu/Cell/PPUThread.h"
+#include "Emu/Cell/SPUThread.h"
 #include "Emu/RSX/Null/NullGSRender.h"
 #include "Emu/RSX/GSFrameBase.h"
 #include "Emu/Audio/AudioBackend.h"
@@ -65,6 +66,7 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 
 #include "memfs.h"
 #include "rpcs3-driver.h"
+#include <unistd.h>
 #include "chimera-assets.h"
 #include "cache-bridge.h"
 #include "vsched.h"
@@ -1009,7 +1011,17 @@ extern "C" int chimera_rpcs3_on_fault(uint64_t addr, int is_write)
   const auto decline = [&](const char* why) -> int
   {
     if (s_declines++ < 8)
-      fprintf(stderr, "chimera fault: declined %#llx (%s): %s\n", (unsigned long long)addr, is_write ? "write" : "read", why);
+    {
+      // write(2), not stdio: this runs inside the HOST's fault handler, where
+      // musl's file lock reads a thread pointer that is not the guest's.
+      char b[256]; int n = 0;
+      for (const char *p = "chimera fault: declined 0x"; *p; p++) b[n++] = *p;
+      for (int sh = 60; sh >= 0; sh -= 4) b[n++] = "0123456789abcdef"[(addr >> sh) & 0xf];
+      for (const char *p = is_write ? " (write): " : " (read): "; *p; p++) b[n++] = *p;
+      for (const char *p = why; *p && n < 250; p++) b[n++] = *p;
+      b[n++] = '\n';
+      ssize_t ig = write(2, b, n); (void)ig;
+    }
     return 0;
   };
 
@@ -1165,4 +1177,76 @@ extern "C" void chimera_rpcs3_precompile_progress(uint32_t* done, uint32_t* tota
   // total in every session, so the dones add up to it
   *done = g_chimera_precompile_done;
   *total = g_chimera_precompile_total;
+}
+
+// ---- Raw SPU MMIO, without a fault ----------------------------------------
+//
+// A Raw SPU shows its problem-state registers to the PPU as a window of memory
+// at 0xE0000000 + index * 0x100000 + 0x40000. Upstream leaves that window
+// UNMAPPED on purpose and services every access from inside its own SIGSEGV
+// handler: it decodes the x64 instruction that faulted, performs the register
+// access, and resumes with the instruction pointer moved past it.
+//
+// A sandboxed core cannot do that. The fault reaches the host, and the host's
+// callback into the guest is told an address and a direction - it cannot
+// rewrite the interrupted context, which is the whole trick. So the access is
+// caught one level up instead, where the PPU makes it (vm::write and
+// ppu_feed_data, patched), and never becomes a fault at all. The cost is one
+// compare per guest memory access on the interpreter's path.
+//
+// Sizes: a register is four bytes and an access may not cross one, which is
+// what upstream requires of the instruction it decodes. The value is the PPU's
+// own, big-endian, and passes through unswapped - upstream's X64OP_*_BE cases,
+// which are the ones a PowerPC load or store compiles to.
+namespace {
+
+constexpr bool raw_spu_is_mmio(u32 addr)
+{
+  return addr - RAW_SPU_BASE_ADDR < 6u * RAW_SPU_OFFSET
+      && (addr % RAW_SPU_OFFSET) >= RAW_SPU_PROB_OFFSET;
+}
+
+spu_thread *raw_spu_for(u32 addr)
+{
+  const u32 index = (addr - RAW_SPU_BASE_ADDR) / RAW_SPU_OFFSET;
+  const auto thread = idm::get_unlocked<named_thread<spu_thread>>(spu_thread::find_raw_spu(index));
+  return thread ? static_cast<spu_thread *>(thread.get()) : nullptr;
+}
+
+}  // namespace
+
+extern "C" bool chimera_rpcs3_raw_spu_mmio(u32 addr)
+{
+  return raw_spu_is_mmio(addr);
+}
+
+// Returns false when nothing owns the address, which leaves the caller to do
+// what it would have done - and the fault, if there is one, to be reported.
+extern "C" bool chimera_rpcs3_raw_spu_read(u32 addr, u32 size, u64 *out)
+{
+  if (!raw_spu_is_mmio(addr) || size > 4 || addr % 4 + size > 4) return false;
+  spu_thread *const thread = raw_spu_for(addr);
+  if (!thread) return false;
+  // A read of these registers is a POLL - the PPU is asking whether the SPU has
+  // got anywhere yet - and on a cooperative scheduler a poll that never gives
+  // way is a deadlock: the SPU it is waiting for is a thread that only runs
+  // when someone else stops. Natively the SPU has a core of its own and the
+  // loop simply spins until it sees the answer. Here the loop IS the yield
+  // point, and this is the only place it can be taken.
+  vsched_yield(0);
+  u32 value = 0;
+  if (!thread->read_reg(addr & -4, value)) return false;
+  // the register is four bytes; a narrower read takes its high-order end,
+  // because the PPU is big-endian and so is this window
+  value >>= (4 - size - (addr % 4)) * 8;
+  *out = size == 4 ? value : (value & ((1u << (size * 8)) - 1));
+  return true;
+}
+
+extern "C" bool chimera_rpcs3_raw_spu_write(u32 addr, u32 size, u64 value)
+{
+  if (!raw_spu_is_mmio(addr) || size != 4 || addr % 4) return false;
+  spu_thread *const thread = raw_spu_for(addr);
+  if (!thread) return false;
+  return thread->write_reg(addr, static_cast<u32>(value));
 }
