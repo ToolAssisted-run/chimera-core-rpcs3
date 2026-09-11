@@ -410,9 +410,34 @@ optimisation. No user interface, no networking, no real audio or input devices.
   even headless; a worker leaves through the run loop (_exitRequestPending),
   not Environment.Exit, or a control's finaliser turns the exit code to 255.
   The design is docs/compile-cache.md in the chimera repository.
-- **Still open after M5**: Windows end to end (the lazy 20 GiB block, the
-  bridge and the VEH fault path are all cross-compiled only), real hardware,
-  LLVM recompilers, RawSPU.
+- **Windows end to end, on real hardware (2026-09-11)**: GTA San Andreas boots
+  and draws through the GPU bridge on a GTX 1060 - 1280x720, the Rockstar North
+  logo by frame 900. Determinism and rewind were measured with the rest of the
+  bridged cores (chimera docs/gpu-bridge.md): a straight run twice is identical
+  in MainRAM and in the picture, and three passes of seek-back-and-replay are
+  identical too. This core needs no `video.drawEveryFrame`: it exports no
+  `SetRenderingEnabled`, so it was never told to stop drawing in the first
+  place.
+
+  Getting there took one fix. **A disc with a boot jingle on it killed the core
+  before its first frame.** `g_cfg.misc.play_music_during_boot` is on by
+  default; RSXThread hands the path to `display_manager::start_audio`, which
+  builds an `audio_player`, which `ensure()`s `Emu.GetCallbacks()
+  .make_video_source()` - null in a build with no Qt. The abort then leaves
+  through `tkill`, which miniBox does not implement, so the visible failure was
+  an unimplemented syscall two layers from the cause. Overlay audio is not the
+  machine's audio and Chimera has no overlays, so the setting is now off in
+  rpcs3-driver.cpp beside `autostart` and `enable_gamemode`.
+
+- **Open: Bejeweled 3 [BLUS30865] segfaults during boot.** After the boot-music
+  fix it gets further and then dies inside guest code, on BOTH platforms and
+  with BOTH renderers (Windows: a declined write to 0x377e0043004 in the mmap
+  arena, reported by miniBox's VEH; Linux: a plain SIGSEGV at a guest address
+  with no host frame). Not the GPU bridge - `--gpu` off, null renderer, same
+  crash. Needs a guest map to go further.
+
+- **Still open after M5**: the lazy 20 GiB block on Windows under memory
+  pressure, LLVM recompilers, RawSPU.
 
 ## Risks, ranked
 

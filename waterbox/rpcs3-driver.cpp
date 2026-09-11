@@ -497,6 +497,12 @@ namespace
     g_cfg.sys.console_psid.from_string("0x0000000000000000");
     g_cfg.misc.autostart.set(false);
     g_cfg.misc.enable_gamemode.set(false);
+    // The disc's own boot jingle, played by an OVERLAY and not by the machine.
+    // It is not part of the emulated audio, it needs a video source the host
+    // side of a headless build does not have, and asking for one is fatal
+    // (overlay_audio.cpp ensure()s the callback) - which is how a game with a
+    // SND0.AT3 on it killed the core before it drew a frame.
+    g_cfg.misc.play_music_during_boot.set(false);
     // no firmware yet: the two startup libraries are HLE, nothing is loaded
     // from dev_flash (M3 turns this around)
     g_cfg.core.libraries_control.set_set({"liblv2.sprx:hle", "libsysmodule.sprx:hle"});
