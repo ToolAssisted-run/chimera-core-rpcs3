@@ -1,0 +1,47 @@
+--- a/rpcs3/Emu/Cell/SPUThread.cpp
++++ b/rpcs3/Emu/Cell/SPUThread.cpp
+@@ -1767,6 +1767,23 @@
+ 
+ u8* spu_thread::map_ls(utils::shm& shm, void* ptr)
+ {
++#ifdef CHIMERA_CORE
++	// Chimera: storage that already IS the guest window (see the constructor)
++	// was mapped by the caller's falloc. Building the mirror ring around it
++	// would commit a second copy of the store, and pages of whatever guest
++	// memory lies either side of the window.
++	//
++	// The test is deliberately narrow: inside the 4 GiB base view, at or
++	// above the Raw SPU windows. vm::try_get_addr is NOT the right question -
++	// it answers yes for 8 GiB past the base, and a threaded SPU's private
++	// storage is reserved in exactly that band. Asking it left a SPURS kernel
++	// thread's storage uncommitted, and the image copy into it faulted.
++	const u64 guest = static_cast<u64>(static_cast<u8*>(ptr) - vm::g_base_addr);
++	if (ptr && guest >= RAW_SPU_BASE_ADDR && guest < 0x1'0000'0000ull)
++	{
++		return static_cast<u8*>(ptr);
++	}
++#endif
+ 	const auto ls = ptr ? static_cast<u8*>(ptr) : static_cast<u8*>(ensure(utils::memory_reserve(SIGNED_LS_SIZE * 7, nullptr, true))) + SIGNED_LS_SIZE * 3;
+ 
+ 	vm::writer_lock mlock;
+@@ -1835,7 +1852,20 @@
+ 	, index(index)
+ 	, thread_type(group ? spu_type::threaded : is_isolated ? spu_type::isolated : spu_type::raw)
+ 	, shm(std::make_shared<utils::shm>(SPU_LS_SIZE))
++#ifdef CHIMERA_CORE
++	// Chimera: a Raw or isolated SPU's local storage IS its window in guest
++	// memory. The PPU reads and writes that window directly, and in the
++	// sandbox a shared-memory object does not alias - each map commits pages
++	// of its own - so a separate storage here is a second copy the PPU never
++	// sees. Bejeweled 3's launcher handed its Raw SPU a parameter block
++	// through the window, the SPU polled its own copy and found zeros, and
++	// the two waited on each other forever. A threaded SPU keeps its private
++	// storage: its window is allocated hidden (no access in the base view),
++	// and the PPU only reaches it through syscalls that go through ls.
++	, ls(thread_type >= spu_type::raw ? vm::_ptr<u8>(vm_offset()) : static_cast<u8*>(utils::memory_reserve(SPU_LS_SIZE * 7, nullptr, true)) + SPU_LS_SIZE * 3)
++#else
+ 	, ls(static_cast<u8*>(utils::memory_reserve(SPU_LS_SIZE * 7, nullptr, true)) + SPU_LS_SIZE * 3)
++#endif
+ 	, option(option)
+ 	, lv2_id(lv2_id)
+ 	, spu_tname(make_single<std::string>(name))

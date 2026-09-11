@@ -489,39 +489,48 @@ optimisation. No user interface, no networking, no real audio or input devices.
   before this change and deterministic across two runs, natively and on Windows
   through the GPU bridge.
 
-- **Open: Bejeweled 3's launcher waits for a Raw SPU that has stopped.** The
-  TTY says "PopCap Launcher App" and then nothing. The machine is NOT hung -
-  vsched switches climb into the hundreds of thousands and a 200 frame run
-  finishes in normal time - it simply makes no progress. Traced as far as this:
+- **A Raw SPU's local storage is its guest window (2026-09-11).** The
+  Bejeweled 3 launcher stall, traced to the end. In the sandbox a
+  `utils::shm` object does not alias - patch 0007 says so ("each map commits
+  its own pages ... true guest aliasing waits for a title that needs it"),
+  and miniBox refuses any mmap that is not MAP_ANONYMOUS. RPCS3 gives every
+  SPU a separately reserved `ls` and maps its storage object there AND into
+  the vm::spu block, so the two became two copies. For a threaded SPU that is
+  harmless: its window is allocated hidden, and the PPU reaches the store only
+  through syscalls that go through `ls`. A Raw SPU is the one case where the
+  PPU writes into the window directly. This is that title.
 
-  Two PPU threads and one SPU. `_gcm_intr_thread` is parked in
-  `sys_event_queue_receive`, which is where it belongs. `main_thread` is
-  spinning in the game's own code at 0x67a38, fifteen frames deep, having last
-  called `_sys_lwmutex_create`. Disassembling that address out of a MainRAM
-  dump (`--ram-out`; offset 0 is PS3 0x10000) gives a Raw SPU mailbox poll:
-  read SPU_Mbox_Stat at 0xE0044014, keep bit 0 (`rldicl r0,r0,0,63`), loop
-  while it is clear; then read SPU_Out_Mbox at 0xE0044004 and loop unless it
-  equals **0xDEADBEEF**.
+  Proof, at the stall: the SPU's `ls` and the PPU's window sat at different
+  offsets of the MiniBoxBlock memfd (0x909990000 and 0x8e0000000). The
+  launcher had written a parameter block through its window
+  (`3002de80 00000000 c0005480 00001000` at +0xa04, a table at +0x10c04); the
+  SPU's copy held zeros at both offsets. The SPU polled its copy, the PPU
+  polled SPU_Out_Mbox for 0xDEADBEEF, and neither could ever move.
 
-  The whole handshake, from a trace of every Raw SPU register access: two MFC
-  proxy DMAs into the local store (LSA 0x80 and 0x800, tag 0x1f, GET), then
-  SPU_NPC = 0xE0 and SPU_RunCntl = 1. The SPU sends two outbound messages
-  (0x00000a00, 0x00010c00), the PPU sends two inbound ones (0x00080000,
-  0x00120001), the SPU sends a third outbound message whose value is
-  **0x00000000**, and after that nothing happens ever again.
+  Fix, patch 0023: for Raw and isolated SPUs `ls` is the guest window itself -
+  the constructor that loads a savestate already did this, the one that
+  creates an SPU did not - and `map_ls` returns early for such a pointer
+  instead of building a mirror ring of copies. The guard is deliberately
+  narrow, inside the 4 GiB base view at or above RAW_SPU_BASE_ADDR. The first
+  version asked vm::try_get_addr, which answers yes for 8 GiB past the base -
+  exactly where a threaded SPU's private storage is reserved - so it left the
+  SPURS kernel thread's storage uncommitted and the image copy into it
+  faulted "outside the guest's 4 GiB view".
 
-  The SPU's own state at that point: `inbox=0 outbox=0 tagmask=3 tagstat=empty
-  tagupd=0 mfcq=0 events=0 stallmask=0`, status RUNNING, no cpu flags. So it is
-  not waiting for a DMA, it has taken both inbound messages, and it has nothing
-  queued to send. Its `pc` does not move over hundreds of frames (0x268 under
-  the interpreter, 0x294 under asmjit) and is not to be trusted as the place it
-  stopped - under the interpreter it points at a `nop`.
+  Verified: the launcher clears the handshake and SPURS init, opens audio
+  (the TTY grows from "PopCap Launcher App" to 178 bytes: channel count,
+  Dolby/DTS, cellAudioPortOpen), starts SpursHdlr0/1, spu_printf_handler and
+  FMOD's MultiStream thread, and runs 1500 frames without a fault on Linux and
+  on Windows through the GPU bridge. GTA San Andreas is byte-identical to the
+  baseline and deterministic on Linux, and its MainRAM after 900 frames on
+  Windows through the GPU is still 6d3c69a242d216dd2c5b98d6d923650b.
 
-  So the rendezvous has gone wrong on the SPU side, and the next step is to
-  TRACE the SPU's execution rather than sample it (rpcs3's own spu_debug /
-  block logging), to find the last instruction it really ran and why it did not
-  reach the `wrch SPU_WrOutMbox` that would carry 0xDEADBEEF. Identical under
-  both SPU decoders, so it is not the recompiler.
+- **Open: Bejeweled 3 then shows a black screen.** At frame 1500 every PPU is
+  parked in an lv2 wait - main_thread in sys_semaphore_wait, SpursHdlr0 in
+  sys_spu_thread_group_join - two SPUs report RUNNING, main memory still
+  changes every 100 frames, and the picture through the GPU is black at
+  frames 600, 1000 and 1499. Whether that is loading or a new wait is not yet
+  known; `--debug-at` and `--log-trace` there are where the next pass starts.
 
 - **Diagnosis that a sandboxed machine can answer (2026-09-11).** Three tools,
   added while chasing the above:
