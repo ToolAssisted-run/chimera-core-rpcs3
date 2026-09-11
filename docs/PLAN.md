@@ -552,6 +552,131 @@ optimisation. No user interface, no networking, no real audio or input devices.
   (`--log-out`, beside `--tty-out`) for the messages that are written before a
   listener could be added.
 
+- **Ultra Street Fighter IV [BLUS31218]: a disc executable without its disc
+  (2026-09-11).** The title exists here only as a dumped FOLDER - PS3_DISC.SFB
+  beside PS3_GAME/, 18 GB over 1002 files - and there is no image of it.
+  Pointed at `PS3_GAME/USRDIR/EBOOT.BIN`, the core boots, reaches 28 threads
+  and then does nothing whatever: main memory's digest is 325942431de025e1 at
+  frame 30 and still 325942431de025e1 at frame 60, the TTY is empty, every
+  frame is a lag frame, and `--debug-at 40` finds the whole machine parked -
+  main_thread in `sys_timer_sleep`, "Em File Thread" in
+  `_sys_lwcond_queue_wait`, six CriThreads in `sys_cond_wait`. A precompile
+  session over the same file reports "Precompiled 0/0 modules".
+
+  One cause, and it is not the recompiler. `chimera_rpcs3_init` grafts the game
+  into the memory filesystem as ONE file, `game/<basename>`, because one file
+  is all a project ever hands over; so the executable's directory is `game/`,
+  and `Emulator::GetBdvdDir` - which walks UP from the executable looking for a
+  directory named PS3_GAME whose parent holds a valid PS3_DISC.SFB - finds
+  neither, and /dev_bdvd is never mounted. The log says so:
+
+      Mounted path "/app_home" to "/vfsv0_..._memory_fs_dev/game/"
+      Title: EBOOT.BIN
+      Version: APP_VER=Unknown VERSION=Unknown
+      Ignoring empty vfs BDVD directory: '..._memory_fs_dev/config/dev_bdvd/'
+      Elf path: /app_home/EBOOT.BIN
+
+  and then the game says it in its own words:
+
+      PPU[0x1000000] Thread (main_thread) [liblv2: 0x010a3c0c]
+        '_sys_process_get_paramsfo' failed with 0x80010006 : CELL_ENOENT [1]
+
+  It asked the system for its own PARAM.SFO, and there is not one, because
+  there is no game here - only a program. It imports cellGameBootCheck,
+  cellGameDataCheck and cellGameContentPermit and never gets past them.
+  `Emu.GetGameDirs()` is empty for exactly the same reason, and that is the
+  precompile's zero.
+
+  **A disc folder is not something a project can carry, by design.** chimera's
+  content model is a flat set of named files, every byte hashed into the movie
+  (docs/multi-file.md: "a name with a path separator is structurally invalid").
+  A disc belongs to it as one image, which is also what a Redump dump is. So
+  the fix is not folder support; the fix is that this stops being SILENT. A
+  disc game's EBOOT.BIN booted with no /dev_bdvd and no title id is now refused
+  by `chimera_rpcs3_init`, naming the cause and the remedy, instead of handing
+  back a machine that runs forever and arrives nowhere. `file_slots.json` no
+  longer offers EBOOT.BIN as a thing to pick.
+
+  **Verified by turning the folder into a disc.** The same content as one image
+  boots and plays: `Title: ULTRA STREET FIGHTER IV`, `Category: DG`,
+  `Registered BDVD game directory for title 'BLUS31218'`,
+  `Elf path: /dev_bdvd/PS3_GAME/USRDIR/EBOOT.BIN`; 600 frames with the null
+  renderer, main memory different at every report (c79b7e19, db59128f,
+  473ac050, ce12638a, 0d4db066, 2703cb1c), 1280x720 from frame 200, 48 threads,
+  and the lag count stops at 186 - from frame 187 the game is reading the pad.
+
+  A trap for whoever makes that image: **an ISO9660 image is not a PS3 disc
+  image.** `iso_file_decryption::init` reads sector 0 as the PS3 region table -
+  a big-endian region count at offset 0 (1..127, or it gives up) and each
+  region's last LBA from offset 12 - and a plain `xorriso -as mkisofs` image
+  has zeros there, so the loader refuses with "Corrupt ISO file: Decryption
+  failed" and the boot ends as `Invalid file or folder`. A fully decrypted
+  single-region disc wants `00 00 00 01` at offset 0 and the last sector index
+  at offset 12; that is inside ISO9660's unused system area, so it can be
+  written into a finished image. Joliet has to be on (`-J -joliet-long`) or the
+  names come back uppercased: rpcs3 takes the LAST volume descriptor of type 1
+  or 2, which is the Joliet SVD, and only that one preserves case.
+
+- **`--log-trace` did nothing in the box (2026-09-11).** The diagnostic added
+  the same day raised the channels from the mounted `logtrace` file but
+  installed the stderr mirror only `if (getenv("CHIMERA_LOG_TRACE"))` - and a
+  sandboxed guest is handed no environment, which is the whole reason the file
+  exists. So the levels went up and the messages went into a log file inside
+  the memory filesystem that nothing outside can read. Both now ask the same
+  question, and every line above came out of a sandboxed run.
+
+- **Open: a USF4 precompile session eats the host - this is the "fails to
+  compile".** Measured twice, both over the game's 12 MB EBOOT.BIN:
+
+  - Over the bare EBOOT (no disc): 62 GB resident after 16 minutes and 114
+    objects stored, `miniBox: sbrk heap exhausted` thirty-three times, then
+    death on a write to a guard page (status 32 is `MB_ST_NONE`):
+
+        chimera fault: declined 0x0000037480000000 (write): outside the guest's 4 GiB view
+        [tripguard] unhandled fault: addr=0x37480000000 write rip=0x36fa80fe4bd,
+          inside a registered block (page 5767168 status=32 ...) in the mmap arena
+
+    The rip is past core.wbx's image (base 0x36f00000000, `_end` at
+    +0xa7f5900), so generated code or a mapped region, not the compiler's own
+    text. The host's RAM was already exhausted at that moment, so this fault
+    is not cleanly the guest's alone.
+  - Over the disc image, on an otherwise quiet machine: 61 objects in 8.5
+    minutes, then the kernel's OOM killer, at 19:58:59, five seconds after the
+    last object was written - and it took the whole WSL session down with it:
+    `Out of memory: Killed process 1952 (wbxu2) ... anon-rss:7312kB,
+    shmem-rss:36794872kB`.
+
+  Nearly all of it is SHMEM, the memfd miniBox backs the guest block with, and
+  the likeliest reason is in miniBox rather than in the core. This is READ,
+  not yet measured with a purpose-built guest: `free_pages` in memblock.c
+  memsets every page of every munmap and MADV_DONTNEED range unless the page is
+  `uncommitted`, and on Linux no block is ever lazy (`pal_linux.c: out->lazy =
+  false`), so no page ever is. A range a guest mapped and never wrote costs
+  nothing on a memfd; UNMAPPING it writes zeros into every page, which is what
+  allocates them, and nothing punches them out again. A guest's footprint is
+  therefore the high-water mark of everything it has ever unmapped. A compile
+  maps, fills and frees scratch space part after part (patch 0020 also
+  releases 192 MiB of JIT reservation after every compile), so a session of
+  hundreds of parts walks the whole 40 GiB arena; GTA San Andreas and
+  Bejeweled 3 unmap little and never showed it. The fix wants miniBox to give
+  the pages back (`fallocate(FALLOC_FL_PUNCH_HOLE)` or `madvise(MADV_REMOVE)` on
+  the memfd instead of a memset), after a measurement proves this is the
+  mechanism.
+
+  **Every sandboxed experiment runs under a cap from now on**: `systemd-run
+  --user --scope --quiet -p MemoryMax=16G -p MemorySwapMax=0 <run-wbx ...>`.
+  The memory controller is delegated to the user manager on this box and it
+  does stop memfd growth (a python memfd toucher under a 1 G cap is killed at
+  0.9 GB with status 137). A capped run that exits 137 hit the cap: a memory
+  finding, not the game crashing. One RPCS3 guest at a time.
+
+  Also measured, so nobody chases it again: `tests/roms/flip.elf` booted
+  WITHOUT firmware reaches a 16 G cap in about 35 seconds, after `vm::writer_lock
+  is being used without cpu_flag::wait set by the caller!` in main_thread -
+  identically on the committed core (peak 15.35 GB) and on this change's
+  (15.32 GB). flip needs the firmware, which the gate always passes; with it,
+  it peaks at 5.7 GB and finishes. Not a regression, and not USF4.
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but

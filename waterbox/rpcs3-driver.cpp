@@ -688,9 +688,34 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   static bool s_fatal_added = (logs::listener::add(&s_fatal), true);
   (void)s_fatal_added;
 
-  // With CHIMERA_LOG_TRACE set, every message also reaches stderr: raising a
+  // The channels somebody asked to see, from whichever side could tell us:
+  // CHIMERA_LOG_TRACE=chan,chan (or "all") natively, and the same list as a
+  // mounted file called "logtrace" in the box, because a sandboxed guest is
+  // handed no environment at all and getenv can never be the answer there.
+  const auto trace_list = []() -> std::string
+  {
+    if (const char* trace = getenv("CHIMERA_LOG_TRACE"))
+      return trace;
+    std::string list;
+    if (FILE* f = fopen("logtrace", "rb"))
+    {
+      char buf[256] = "";
+      const size_t n = fread(buf, 1, sizeof buf - 1, f);
+      fclose(f);
+      list.assign(buf, n);
+      while (!list.empty() && (list.back() == '\n' || list.back() == '\r'))
+        list.pop_back();
+    }
+    return list;
+  };
+
+  // With any channel raised, every message also reaches stderr: raising a
   // channel's LEVEL is no use on its own when the log it is raised into is a
-  // file in the memory filesystem. (Native runner only - see below.)
+  // file in the memory filesystem that nothing outside the box can read. The
+  // question asked here has to be the same one the levels are set from, and
+  // getenv was not it: a sandboxed --log-trace raised its channels and then
+  // had nowhere to put the messages, so the diagnostic did nothing in the one
+  // flavor it exists for.
   struct all_to_stderr final : logs::listener
   {
     void log(u64, const logs::message&, std::string_view prefix, std::string_view text) override
@@ -700,7 +725,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     }
   };
   static all_to_stderr s_all;
-  if (getenv("CHIMERA_LOG_TRACE"))
+  if (!trace_list().empty())
   {
     static bool s_all_added = (logs::listener::add(&s_all), true);
     (void)s_all_added;
@@ -744,24 +769,9 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   // A sandboxed guest is handed no environment at all, so in the box the list
   // arrives as a mounted file called "logtrace" instead (run-wbx --log-trace).
   // CHIMERA_SPU_TRACE, still getenv, is native-only for that reason.
-  const auto apply_log_trace = []
+  const auto apply_log_trace = [&trace_list]
   {
-    std::string list;
-    if (const char* trace = getenv("CHIMERA_LOG_TRACE"))
-    {
-      list = trace;
-    }
-    else if (FILE* f = fopen("logtrace", "rb"))
-    {
-      // a sandboxed guest has no environment, so the host mounts the list as
-      // a file instead (run-wbx --log-trace)
-      char buf[256] = "";
-      const size_t n = fread(buf, 1, sizeof buf - 1, f);
-      fclose(f);
-      while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
-        buf[n - 1] = '\0';
-      list = buf;
-    }
+    const std::string list = trace_list();
     if (list.empty())
       return;
     size_t start = 0;
@@ -802,6 +812,38 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   {
     fail(fmt::format("boot did not reach the ready state (state %d)", static_cast<int>(Emu.GetStatus(false))));
     return 0;
+  }
+  // A disc game's executable, handed over without its disc. EBOOT.BIN is the
+  // entry point of a PlayStation 3 disc or package and never of a program
+  // that stands on its own; Emulator::GetBdvdDir mounts /dev_bdvd only when
+  // it finds a PS3_GAME directory with a valid PS3_DISC.SFB ABOVE the
+  // executable, and a project hands the core FILES, never directory trees
+  // (chimera docs/multi-file.md: a name with a path separator is
+  // structurally invalid), so an EBOOT.BIN lifted out of a dumped disc folder
+  // arrives alone in game/ and there is no disc anywhere to find.
+  //
+  // What follows is a machine with the program and none of its data. It boots
+  // and starts its threads and every one of them then parks on a file that is
+  // not there, forever, with nothing in the log louder than the game's own
+  // _sys_process_get_paramsfo answering CELL_ENOENT; and a precompile session
+  // sweeps Emu.GetGameDirs(), which is empty for the same reason, so it
+  // reports a tidy zero modules and stores nothing. Neither of those says
+  // what is wrong. Refusing here does, while the cause is still in hand. The
+  // title id check keeps this to executables the machine could not identify:
+  // a title that does have its PARAM.SFO is a different situation.
+  if (vfs::get("/dev_bdvd").empty() && Emu.GetTitleID().empty())
+  {
+    std::string base = game.substr(game.find_last_of('/') + 1);
+    for (char& c : base)
+      c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (base == "EBOOT.BIN")
+    {
+      fail("EBOOT.BIN, and no disc. This executable is one file of a PlayStation 3 disc, and "
+           "its data, its libraries and its modules are the rest of that disc; alone it boots "
+           "and then waits forever. Give the core the whole disc as a single .iso image "
+           "instead - a disc dumped as a folder is not something a project can carry.");
+      return 0;
+    }
   }
   if (s_precompile_count > 0)
   {
