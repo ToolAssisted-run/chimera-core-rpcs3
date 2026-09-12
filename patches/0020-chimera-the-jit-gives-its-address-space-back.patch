@@ -1,25 +1,7 @@
 diff --git a/Utilities/JITLLVM.cpp b/Utilities/JITLLVM.cpp
-index 15a6e3219..d8a978964 100644
 --- a/Utilities/JITLLVM.cpp
 +++ b/Utilities/JITLLVM.cpp
-@@ -220,7 +220,16 @@ struct JITAnnouncer : llvm::JITEventListener
- struct MemoryManager1 : llvm::RTDyldMemoryManager
- {
- 	// 256 MiB for code or data
-+#ifdef CHIMERA_CORE
-+	// Chimera: the region a compile may fill. Upstream reserves 256 MiB of a
-+	// machine's address space per instance, three times over, which is free
-+	// there and is most of a sandbox's arena here - and two compiles overlap.
-+	// A PS3 module's generated code is a few megabytes; 64 MiB is a wide
-+	// margin, and what is not written is never committed either way.
-+	static constexpr u64 c_max_size = 0x400'0000;
-+#else
- 	static constexpr u64 c_max_size = 0x1000'0000;
-+#endif
- 
- 	// Allocation unit (2M)
- 	static constexpr u64 c_page_size = 2 * 1024 * 1024;
-@@ -255,6 +264,16 @@ struct MemoryManager1 : llvm::RTDyldMemoryManager
+@@ -255,6 +255,16 @@
  
  	~MemoryManager1() override
  	{
@@ -36,3 +18,25 @@ index 15a6e3219..d8a978964 100644
  		// Hack: don't release to prevent reuse of address space, see jit_announce
  		// constexpr auto how_much = [](u64 pos) { return utils::align(pos, pos < c_page_size ? c_page_size / 4 : c_page_size); };
  		// utils::memory_decommit(m_code_mems, how_much(code_ptr));
+@@ -306,6 +316,21 @@
+ 
+ 		u64 newp = olda + sizea;
+ 
++#ifdef CHIMERA_CORE
++		// Chimera: refuse, rather than wrap. The address returned below is taken
++		// modulo c_max_size, so an allocation that passes the end of the region
++		// is placed ON TOP of one that is already loaded, and the next
++		// relocation writes into somebody else's code - silently. It cost a day:
++		// a 4-byte relocation landed inside a symbol resolver's movabs
++		// immediate, which turned the nop after it into "add %bl,(%rdi)" and
++		// wrote to the execution table's first byte. What is wanted from a
++		// region that is too small is a sentence, not a corrupted machine.
++		if (newp > c_max_size)
++		{
++			fmt::throw_exception("JIT region full (size=0x%x, align=0x%x, used=0x%x of 0x%x)", size, align, oldp, c_max_size);
++		}
++#endif
++
+ 		if ((newp - 1) / c_max_size != (oldp - 1) / c_max_size)
+ 		{
+ 			constexpr usz num_of_allocations = 1;

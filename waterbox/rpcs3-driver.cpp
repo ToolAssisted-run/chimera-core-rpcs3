@@ -12,6 +12,7 @@
 #include "Emu/IdManager.h"
 #include "Emu/VFS.h"
 #include "Emu/Memory/vm.h"
+#include "Utilities/JIT.h"
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/SPUThread.h"
 #include "Emu/RSX/Null/NullGSRender.h"
@@ -1000,6 +1001,15 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     // the cache bridge as they finish; the driver thread pumps meanwhile.
     g_chimera_precompile_index = static_cast<u32>(s_precompile_index);
     g_chimera_precompile_count = static_cast<u32>(s_precompile_count);
+    // Where the machine's big regions ended up, so a fault address can be
+    // ATTRIBUTED. A crash inside the sandbox names no module - the guest is
+    // mapped memory, not a loaded image - so without this line an address is
+    // just an address (see the 3-of-8 precompile crash, 2026-09-12).
+    fprintf(stderr, "chimera regions: vm=%p sudo=%p exec=%p stat=%p jit-code-top=%p jit-data-top=%p\n",
+      static_cast<void *>(vm::g_base_addr), static_cast<void *>(vm::g_sudo_addr),
+      static_cast<void *>(vm::g_exec_addr), static_cast<void *>(vm::g_stat_addr),
+      static_cast<void *>(jit_runtime::peek(true)), static_cast<void *>(jit_runtime::peek(false)));
+    fflush(stderr);
     s_precompile_thread = std::make_unique<named_thread<std::function<void()>>>("Chimera Precompile"sv, []()
     {
       // every worker analyses and compiles its share of the parts of the

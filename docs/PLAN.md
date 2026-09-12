@@ -751,6 +751,21 @@ optimisation. No user interface, no networking, no real audio or input devices.
 2. **Address space**: 4 + 8 GiB flat tables plus a 2 GiB asmjit arena plus the game
    in a single miniBox block. Page bookkeeping is 1 byte per page (24 GiB = 6M pages);
    savestate status arrays grow to match. Dirty tracking must stay sparse.
+
+   Shrinking a region to save arena is not free, and one attempt cost a day
+   (2026-09-12). `MemoryManager1` in JITLLVM.cpp returns `block + (pos % c_max_size)`:
+   once its allocation pointer passes the end of the region the addresses WRAP, and a
+   later section is loaded on top of one already there - so the next relocation writes
+   into somebody else's code, silently. Patch 0020 had lowered that bound from
+   upstream's 256 MiB to 64 MiB; Ultra Street Fighter IV's main module is 87.9 MB of
+   generated code in 114 objects, up to 100 of which share one compiler
+   (`c_modules_per_jit`), so a warm cache walked past 64 MiB and a 4-byte relocation
+   landed inside a symbol resolver's `movabs` immediate. The byte after it became
+   `add %bl,(%rdi)`: a store to the first byte of the execution table, which no page
+   backs. Three of eight precompile sessions died with 0xC0000005 and no explanation.
+   The bound is upstream's again and the wrap is now refused with a sentence, so a
+   game bigger than the region says so instead of corrupting itself. Any future
+   region that is sized to fit an arena needs the same treatment: refuse, never wrap.
 3. **Hidden host state**: asmjit runtime arena contents (generated at init, before
    seal: fine), `spu_cache`, the exec table (guest memory: fine), the lv2 scheduler's
    `g_waiting`/`g_ppu` (guest memory: fine), anything `thread_local` we miss (a
