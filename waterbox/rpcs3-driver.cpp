@@ -675,9 +675,13 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     }
     if (ends_with_ci(base, ".7z"))
     {
-      fail("a .7z archive cannot be read by this core yet. Repack the disc folder as a .zip, "
-           "which is read without unpacking. Storing rather than compressing keeps a disc's "
-           "large files seekable, which is what a running game needs.");
+      fail("a .7z archive cannot be read by this core. Its decoder cannot hand over part of a "
+           "file: 7-Zip decompresses a whole solid block into memory at once, which for an "
+           "archive packed the usual way is the entire archive - tens of gigabytes for a "
+           "PlayStation 3 disc - and even with solid mode off it is the whole of whichever file "
+           "is being read, which for a disc is gigabytes. The sandbox has nowhere to put either. "
+           "Repack the disc folder as a .zip with its files STORED rather than compressed: that "
+           "is read where it lies, a few kilobytes at a time.");
       return 0;
     }
 

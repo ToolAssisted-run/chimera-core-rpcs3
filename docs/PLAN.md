@@ -524,11 +524,15 @@ optimisation. No user interface, no networking, no real audio or input devices.
 
   Refused, each with a message that says what to do: **.rar**, because the only
   decoder is unRAR, whose licence does not sit with this core's GPL terms, so
-  no build of this core can carry one; **.7z**, not yet - the LZMA C sources are
-  in 3rdparty and they compile, but SzArEx_Extract decompresses a whole SOLID
-  block into one buffer, which for a disc-sized archive is gigabytes the
-  sandbox has nowhere to put, so it is only sane for a non-solid archive and
-  wants testing before it ships; and an archive with no PS3_DISC.SFB in it.
+  no build of this core can carry one; **.7z**, and the reason is measured, not
+  assumed: the LZMA C sources in 3rdparty do compile, but SzArEx_Extract has no
+  partial read - it decompresses a whole solid block into one buffer. Reading a
+  64-byte file out of a 4 MB solid test archive allocated 4,194,368 bytes, the
+  whole archive; with `-ms=off` the buffer was exactly the file being read
+  (1 MB, 64 bytes, 3 MB for the three members). Scaled to a disc that is either
+  the whole 18 GB or the whole of USF4's 2.6 GB largest member, per read, and
+  the sandbox has nowhere to put either. .zip is the format that works here
+  because a stored member is simply bytes at an offset; and an archive with no PS3_DISC.SFB in it.
 
 - **A Raw SPU's local storage is its guest window (2026-09-11).** The
   Bejeweled 3 launcher stall, traced to the end. In the sandbox a
