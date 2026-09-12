@@ -14,6 +14,7 @@
 #include "memfs.h"
 
 #include "archive.h"
+#include "sevenzip.h"
 
 namespace chimera
 {
@@ -27,6 +28,8 @@ namespace chimera
       u64 host_size = 0;
       std::shared_ptr<const zip_index> arch;             // zip entry (read-only)
       size_t arch_entry = 0;
+      std::shared_ptr<const sz_index> sz;                // .7z entry (read-only)
+      size_t sz_entry = 0;
       std::map<std::string, std::shared_ptr<node>> children;
       s64 mtime = 0;
     };
@@ -119,8 +122,9 @@ namespace chimera
     {
       st.is_directory = n.dir;
       st.is_symlink = false;
-      st.is_writable = n.host_path.empty() && !n.arch;
-      st.size = n.dir ? 0 : ((n.host_path.empty() && !n.arch) ? n.data.size() : n.host_size);
+      const bool in_memory = n.host_path.empty() && !n.arch && !n.sz;
+      st.is_writable = in_memory;
+      st.size = n.dir ? 0 : (in_memory ? n.data.size() : n.host_size);
       st.atime = st.mtime = st.ctime = n.mtime;
     }
 
@@ -133,6 +137,7 @@ namespace chimera
       FILE* host = nullptr;
 
       std::unique_ptr<zip_stream> zip;
+      std::unique_ptr<sz_stream> sevenz;
 
       mem_file(std::shared_ptr<node> n_, bool w, bool a) : n(std::move(n_)), writable(w), append(a)
       {
@@ -140,6 +145,8 @@ namespace chimera
           host = std::fopen(n->host_path.c_str(), "rb");
         else if (n->arch)
           zip = std::make_unique<zip_stream>(n->arch, n->arch_entry);
+        else if (n->sz)
+          sevenz = std::make_unique<sz_stream>(n->sz, n->sz_entry);
       }
       ~mem_file() override
       {
@@ -154,7 +161,7 @@ namespace chimera
       }
       bool trunc(u64 length) override
       {
-        if (!writable || host || zip)
+        if (!writable || host || zip || sevenz)
           return false;
         n->data.resize(length);
         n->mtime = static_cast<s64>(g_clock++);
@@ -164,6 +171,8 @@ namespace chimera
       {
         if (zip)
           return zip->read_at(offset, buffer, size);
+        if (sevenz)
+          return sevenz->read_at(offset, buffer, size);
         if (host)
         {
           if (offset >= n->host_size)
@@ -186,7 +195,7 @@ namespace chimera
       }
       u64 write(const void* buffer, u64 size) override
       {
-        if (!writable || host || zip)
+        if (!writable || host || zip || sevenz)
           return 0;
         if (append)
           pos = n->data.size();
@@ -207,7 +216,7 @@ namespace chimera
       }
       u64 size() override
       {
-        return (host || zip) ? n->host_size : n->data.size();
+        return (host || zip || sevenz) ? n->host_size : n->data.size();
       }
     };
 
@@ -343,7 +352,7 @@ namespace chimera
       bool trunc(const std::string& path, u64 length) override
       {
         auto n = lookup(strip_root(path));
-        if (!n || n->dir || !n->host_path.empty() || n->arch)
+        if (!n || n->dir || !n->host_path.empty() || n->arch || n->sz)
         {
           fs::g_tls_error = fs::error::noent;
           return false;
@@ -387,7 +396,7 @@ namespace chimera
           fs::g_tls_error = fs::error::isdir;
           return nullptr;
         }
-        if (want_write && (!n->host_path.empty() || n->arch))
+        if (want_write && (!n->host_path.empty() || n->arch || n->sz))
         {
           fs::g_tls_error = fs::error::readonly;
           return nullptr;
@@ -452,6 +461,25 @@ namespace chimera
     n->mtime = static_cast<s64>(g_clock++);
     d->children[parts.back()] = n;
     return true;
+  }
+
+  void memfs_graft_sz_entry(const std::string& rel, std::shared_ptr<const sz_index> index, size_t entry, unsigned long long size)
+  {
+    auto parts = split(rel);
+    if (parts.empty())
+      return;
+    std::string dir;
+    for (size_t i = 0; i + 1 < parts.size(); i++)
+      dir += parts[i] + "/";
+    auto d = mkdirs(dir);
+    if (!d)
+      return;
+    auto n = std::make_shared<node>();
+    n->sz = std::move(index);
+    n->sz_entry = entry;
+    n->host_size = size;
+    n->mtime = static_cast<s64>(g_clock++);
+    d->children[parts.back()] = n;
   }
 
   void memfs_graft_zip_entry(const std::string& rel, std::shared_ptr<const zip_index> index, size_t entry, unsigned long long size)

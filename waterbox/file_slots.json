@@ -11,9 +11,10 @@
         "self",
         "bin",
         "iso",
-        "zip"
+        "zip",
+        "7z"
       ],
-      "help": "A PS3 executable (.elf, .self) booted directly the way a modded console would, a disc image (.iso): a decrypted image, or a Redump image with its disc key in the Disc key slot, or a disc dumped as a FOLDER packed into a single .zip. The archive is read where it lies and never unpacked, so it may be as large as the disc; store its files rather than compressing them and the game's big files stay seekable. A disc game's own EBOOT.BIN is not enough by itself, because the rest of that disc is where its data is."
+      "help": "A PS3 executable (.elf, .self) booted directly the way a modded console would, a disc image (.iso): a decrypted image, or a Redump image with its disc key in the Disc key slot, or a disc dumped as a FOLDER packed into a single .zip or .7z. The archive is read where it lies and never unpacked, so it may be as large as the disc; store its files rather than compressing them and the game's big files stay seekable. A disc game's own EBOOT.BIN is not enough by itself, because the rest of that disc is where its data is. A .7z works the same way, but it must be packed NON-SOLID: `7z a -ms=off`. 7-Zip's default packs every file into one shared stream, which has to be decoded from its start to reach anything in it - measured at 190 seconds just to read the first 64KB of one disc's EBOOT.BIN - so a solid archive is refused rather than left to look like a hang."
     },
     {
       "id": "dkey",

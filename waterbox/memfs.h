@@ -14,6 +14,7 @@
 namespace chimera
 {
   struct zip_index;
+  struct sz_index;
 
   // The device's root path as rpcs3 sees it. Everything under it is ours.
   // (The shape is prescribed by fs::get_virtual_device: "/vfsv0_" + 22
@@ -37,6 +38,11 @@ namespace chimera
   // archive is never unpacked: a disc dumped as a folder is tens of gigabytes
   // and the sandbox has nowhere to put that.
   void memfs_graft_zip_entry(const std::string& rel, std::shared_ptr<const zip_index> index, size_t entry, unsigned long long size);
+
+  // The same for one entry of a .7z. Decompressed on demand as a zip entry is,
+  // but what it costs to reach depends on how the archive was packed - see
+  // sevenzip.h on solid blocks.
+  void memfs_graft_sz_entry(const std::string& rel, std::shared_ptr<const sz_index> index, size_t entry, unsigned long long size);
 
   // Put bytes in a file (created, truncated).
   void memfs_put(const std::string& rel, const void* data, size_t size);

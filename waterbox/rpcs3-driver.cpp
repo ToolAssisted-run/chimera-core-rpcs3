@@ -69,6 +69,7 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 #include <memory>
 
 #include "archive.h"
+#include "sevenzip.h"
 #include "memfs.h"
 #include "rpcs3-driver.h"
 #include <unistd.h>
@@ -667,48 +668,79 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
 
     if (ends_with_ci(base, ".rar"))
     {
-      fail("a .rar archive cannot be read by this core. The only RAR decoder that exists is "
-           "unRAR, whose licence forbids the use its source would be put to here and does not "
-           "sit with this core's GPL terms, so no version of this core can carry one. Repack "
-           "the disc folder as a .zip and it will be read without unpacking.");
-      return 0;
-    }
-    if (ends_with_ci(base, ".7z"))
-    {
-      fail("a .7z archive cannot be read by this core. Its decoder cannot hand over part of a "
-           "file: 7-Zip decompresses a whole solid block into memory at once, which for an "
-           "archive packed the usual way is the entire archive - tens of gigabytes for a "
-           "PlayStation 3 disc - and even with solid mode off it is the whole of whichever file "
-           "is being read, which for a disc is gigabytes. The sandbox has nowhere to put either. "
-           "Repack the disc folder as a .zip with its files STORED rather than compressed: that "
-           "is read where it lies, a few kilobytes at a time.");
+      fail("a .rar archive cannot be read by this core. Reading one means carrying a RAR decoder, "
+           "and the obvious one - unRAR - has a licence that does not sit with this core's terms, "
+           "so no build of it can ship one. Repack the disc folder as a .zip or a .7z and it will "
+           "be read without unpacking.");
       return 0;
     }
 
-    if (ends_with_ci(base, ".zip"))
+    // Both archive kinds are read WHERE THEY LIE: entries stay put and bytes
+    // come out as the machine asks for them, because a disc dumped as a folder
+    // is tens of gigabytes and the sandbox has nowhere to unpack it. What
+    // differs is the price of a seek - see sevenzip.h on solid blocks.
+    const bool is_zip = ends_with_ci(base, ".zip");
+    const bool is_7z = ends_with_ci(base, ".7z");
+    if (is_zip || is_7z)
     {
-      auto index = std::make_shared<chimera::zip_index>();
+      auto zindex = std::make_shared<chimera::zip_index>();
+      auto sindex = std::make_shared<chimera::sz_index>();
+      std::vector<std::string> paths;
       std::string err;
-      if (!chimera::zip_open(game_path, *index, err))
+
+      if (is_zip)
       {
-        fail("cannot read the archive: " + err);
-        return 0;
+        if (!chimera::zip_open(game_path, *zindex, err))
+        {
+          fail("cannot read the archive: " + err);
+          return 0;
+        }
+        for (const auto& e : zindex->entries)
+          paths.push_back(e.path);
+      }
+      else
+      {
+        if (!chimera::sz_open(game_path, *sindex, err))
+        {
+          fail("cannot read the archive: " + err);
+          return 0;
+        }
+        for (const auto& e : sindex->entries)
+          paths.push_back(e.path);
+        if (sindex->solid)
+        {
+          // Correct to read, and far too slow to play. A solid block is one
+          // compressed stream, so reaching a file in it means decoding
+          // everything before it, and a disc is read out of order all day.
+          // Measured on a real dump: Ultra Street Fighter IV, 1003 files in 3
+          // blocks, EBOOT.BIN 7 GB into the first one - 190 seconds to read its
+          // first 64 kilobytes, and every seek backwards pays it again. That is
+          // a boot measured in hours, and it would look like a hang rather than
+          // a wait, so it is refused here instead.
+          fail("that .7z is SOLID, which 7-Zip does by default, and a solid archive cannot be "
+               "read at any useful speed: the files share one compressed stream, so reaching one "
+               "means decoding everything packed before it. On a real disc dump that is minutes "
+               "for the first file the emulator asks for and minutes again for each one it asks "
+               "for out of order. Repack it with `7z a -ms=off <name>.7z <disc folder>` - one "
+               "block per file, seekable - or as a .zip, and the core reads it where it lies.");
+          return 0;
+        }
       }
 
       // The disc root is wherever PS3_DISC.SFB sits, so an archive made of
       // the folder itself and one made of its contents both work.
       std::string prefix;
       bool found = false;
-      for (const auto& e : index->entries)
+      for (const auto& path : paths)
       {
-        const size_t slash = e.path.find_last_of('/');
-        const std::string name = slash == std::string::npos ? e.path : e.path.substr(slash + 1);
+        const size_t slash = path.find_last_of('/');
+        const std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
         std::string upper = name;
         for (char& c : upper)
           c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         if (upper != "PS3_DISC.SFB")
           continue;
-        const std::string here = slash == std::string::npos ? std::string() : e.path.substr(0, slash + 1);
+        const std::string here = slash == std::string::npos ? std::string() : path.substr(0, slash + 1);
         if (!found || here.size() < prefix.size())
         {
           prefix = here;
@@ -723,17 +755,10 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
         return 0;
       }
 
-      const std::shared_ptr<const chimera::zip_index> shared = index;
-      for (size_t i = 0; i < index->entries.size(); i++)
-      {
-        const auto& e = index->entries[i];
-        chimera::memfs_graft_zip_entry("game/disc/" + e.path, shared, i, e.size);
-      }
-
       const std::string eboot = prefix + "PS3_GAME/USRDIR/EBOOT.BIN";
       bool has_eboot = false;
-      for (const auto& e : index->entries)
-        if (e.path == eboot)
+      for (const auto& path : paths)
+        if (path == eboot)
         {
           has_eboot = true;
           break;
@@ -745,7 +770,20 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
         return 0;
       }
 
-      chimera_log.notice("disc archive: %zu files, booting %s", index->entries.size(), eboot);
+      if (is_zip)
+      {
+        const std::shared_ptr<const chimera::zip_index> shared = zindex;
+        for (size_t i = 0; i < zindex->entries.size(); i++)
+          chimera::memfs_graft_zip_entry("game/disc/" + zindex->entries[i].path, shared, i, zindex->entries[i].size);
+      }
+      else
+      {
+        const std::shared_ptr<const chimera::sz_index> shared = sindex;
+        for (size_t i = 0; i < sindex->entries.size(); i++)
+          chimera::memfs_graft_sz_entry("game/disc/" + sindex->entries[i].path, shared, i, sindex->entries[i].size);
+      }
+
+      chimera_log.notice("disc archive: %zu files, booting %s", paths.size(), eboot);
       game = root + "game/disc/" + eboot;
     }
     else
@@ -759,7 +797,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     }
     // a Redump disc key rides next to the ISO as "<stem>.dkey", where rpcs3's
     // ISO loader looks first (Loader/ISO.cpp: the path minus its extension)
-    if (dkey_path && *dkey_path && !ends_with_ci(base, ".zip"))
+    if (dkey_path && *dkey_path && !ends_with_ci(base, ".zip") && !ends_with_ci(base, ".7z"))
     {
       std::string stem = base;
       const size_t dot = stem.rfind('.');
@@ -948,8 +986,8 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
       fail("EBOOT.BIN, and no disc. This executable is one file of a PlayStation 3 disc, and "
            "its data, its libraries and its modules are the rest of that disc; alone it boots "
            "and then waits forever. Give the core the whole disc instead: either a single "
-           ".iso image, or the dumped folder packed into one .zip, which is read without "
-           "being unpacked.");
+           ".iso image, or the dumped folder packed into one .zip or .7z, which is read "
+           "without being unpacked.");
       return 0;
     }
   }
@@ -1181,7 +1219,7 @@ void chimera_rpcs3_debug_threads(void)
   {
     const auto name = p.ppu_tname.load();
     fprintf(stderr, "  PPU %08x cia=%08x state=%08x prio=%d in=%s last=%s name=%s\n",
-            id, p.cia, static_cast<u32>(p.state.load()), p.prio.load().prio,
+            id, p.cia, static_cast<u32>(p.state.load()), static_cast<int>(p.prio.load().prio),
             p.current_function ? p.current_function : "-",
             p.last_function ? p.last_function : "-",
             name ? name->c_str() : "-");
