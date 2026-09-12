@@ -489,6 +489,47 @@ optimisation. No user interface, no networking, no real audio or input devices.
   before this change and deterministic across two runs, natively and on Windows
   through the GPU bridge.
 
+- **A disc dumped as a folder arrives as one .zip (2026-09-12).** A chimera
+  project carries FILES, never directory trees, so an 18 GB dump of 1002 files
+  had no way in and the core told people to build an .iso first. An archive is
+  a file, so it fits - as long as it is read the way a disc image is read.
+
+  `waterbox/archive.{h,cpp}` is a zip reader that never unpacks: the central
+  directory is read once, and each open file pulls its own bytes where they
+  lie. memfs gained a third kind of node beside "bytes in memory" and "grafted
+  host file" - an archive entry - so nothing in rpcs3 can tell the difference.
+  Every open file holds its own handle and its own inflate cursor, so no lock
+  is needed when a green thread yields mid-read. ZIP64 is mandatory at this
+  size and is read. The disc root is wherever PS3_DISC.SFB sits, so an archive
+  of the folder and one of its contents both work, and the boot path is the
+  EBOOT.BIN beside it - which is what Emulator::GetBdvdDir walks up to find,
+  so /dev_bdvd mounts by itself.
+
+  STORE rather than compress for a disc. A deflated member has no index, so
+  reaching an offset means decompressing from that member's start: reads that
+  walk forward carry on from the cursor, a read that goes backwards restarts
+  the member. On a 2.6 GB file that is the difference between instant and
+  unusable.
+
+  Verified: Ultra Street Fighter IV, the 18 GB folder packed as a 17.87 GB
+  stored zip, boots and plays - 600 frames at 1280x720, memory changing every
+  report, the pad read from frame 187, which is frame for frame what the same
+  game does from an .iso. A synthetic archive whose EBOOT is garbage gets all
+  the way into rpcs3's loader ("Failed to decrypt content"), which is the proof
+  the tree and the boot path are built correctly. The reader itself was smoke
+  tested natively against stored, deflated and forced-ZIP64 members, including
+  forward seeks, backward seeks and reads past the end. GTA San Andreas is
+  byte-identical to the baseline and deterministic, so the shared memfs change
+  costs the other paths nothing.
+
+  Refused, each with a message that says what to do: **.rar**, because the only
+  decoder is unRAR, whose licence does not sit with this core's GPL terms, so
+  no build of this core can carry one; **.7z**, not yet - the LZMA C sources are
+  in 3rdparty and they compile, but SzArEx_Extract decompresses a whole SOLID
+  block into one buffer, which for a disc-sized archive is gigabytes the
+  sandbox has nowhere to put, so it is only sane for a non-solid archive and
+  wants testing before it ships; and an archive with no PS3_DISC.SFB in it.
+
 - **A Raw SPU's local storage is its guest window (2026-09-11).** The
   Bejeweled 3 launcher stall, traced to the end. In the sandbox a
   `utils::shm` object does not alias - patch 0007 says so ("each map commits

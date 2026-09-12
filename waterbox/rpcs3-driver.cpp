@@ -64,6 +64,11 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 #include <deque>
 #include <string>
 
+#include <cctype>
+#include <cstring>
+#include <memory>
+
+#include "archive.h"
 #include "memfs.h"
 #include "rpcs3-driver.h"
 #include <unistd.h>
@@ -644,15 +649,113 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   {
     const char* base = strrchr(game_path, '/');
     base = base ? base + 1 : game_path;
-    if (!chimera::memfs_graft(std::string("game/") + base, game_path))
+
+    // An archive is how a disc dumped as a FOLDER reaches this core. A
+    // chimera project carries files, never directory trees, so a thousand
+    // files and eighteen gigabytes have to arrive as one - and they are read
+    // where they lie, never unpacked, because the sandbox has nowhere to put
+    // an unpacked disc.
+    const auto ends_with_ci = [](const char* str, const char* suffix) {
+      const size_t n = std::strlen(str), m = std::strlen(suffix);
+      if (m > n)
+        return false;
+      for (size_t i = 0; i < m; i++)
+        if (std::tolower(static_cast<unsigned char>(str[n - m + i])) != suffix[i])
+          return false;
+      return true;
+    };
+
+    if (ends_with_ci(base, ".rar"))
     {
-      fail(std::string("cannot open the game: ") + game_path);
+      fail("a .rar archive cannot be read by this core. The only RAR decoder that exists is "
+           "unRAR, whose licence forbids the use its source would be put to here and does not "
+           "sit with this core's GPL terms, so no version of this core can carry one. Repack "
+           "the disc folder as a .zip and it will be read without unpacking.");
       return 0;
     }
-    game = root + "game/" + base;
+    if (ends_with_ci(base, ".7z"))
+    {
+      fail("a .7z archive cannot be read by this core yet. Repack the disc folder as a .zip, "
+           "which is read without unpacking. Storing rather than compressing keeps a disc's "
+           "large files seekable, which is what a running game needs.");
+      return 0;
+    }
+
+    if (ends_with_ci(base, ".zip"))
+    {
+      auto index = std::make_shared<chimera::zip_index>();
+      std::string err;
+      if (!chimera::zip_open(game_path, *index, err))
+      {
+        fail("cannot read the archive: " + err);
+        return 0;
+      }
+
+      // The disc root is wherever PS3_DISC.SFB sits, so an archive made of
+      // the folder itself and one made of its contents both work.
+      std::string prefix;
+      bool found = false;
+      for (const auto& e : index->entries)
+      {
+        const size_t slash = e.path.find_last_of('/');
+        const std::string name = slash == std::string::npos ? e.path : e.path.substr(slash + 1);
+        std::string upper = name;
+        for (char& c : upper)
+          c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if (upper != "PS3_DISC.SFB")
+          continue;
+        const std::string here = slash == std::string::npos ? std::string() : e.path.substr(0, slash + 1);
+        if (!found || here.size() < prefix.size())
+        {
+          prefix = here;
+          found = true;
+        }
+      }
+      if (!found)
+      {
+        fail("that archive holds no PlayStation 3 disc: nothing in it is named PS3_DISC.SFB. "
+             "A disc dumped as a folder has PS3_DISC.SFB beside a PS3_GAME directory, and the "
+             "archive should hold that folder or its contents.");
+        return 0;
+      }
+
+      const std::shared_ptr<const chimera::zip_index> shared = index;
+      for (size_t i = 0; i < index->entries.size(); i++)
+      {
+        const auto& e = index->entries[i];
+        chimera::memfs_graft_zip_entry("game/disc/" + e.path, shared, i, e.size);
+      }
+
+      const std::string eboot = prefix + "PS3_GAME/USRDIR/EBOOT.BIN";
+      bool has_eboot = false;
+      for (const auto& e : index->entries)
+        if (e.path == eboot)
+        {
+          has_eboot = true;
+          break;
+        }
+      if (!has_eboot)
+      {
+        fail("that archive has a PS3_DISC.SFB but no PS3_GAME/USRDIR/EBOOT.BIN beside it, so "
+             "there is no game in it to boot.");
+        return 0;
+      }
+
+      chimera_log.notice("disc archive: %zu files, booting %s", index->entries.size(), eboot);
+      game = root + "game/disc/" + eboot;
+    }
+    else
+    {
+      if (!chimera::memfs_graft(std::string("game/") + base, game_path))
+      {
+        fail(std::string("cannot open the game: ") + game_path);
+        return 0;
+      }
+      game = root + "game/" + base;
+    }
     // a Redump disc key rides next to the ISO as "<stem>.dkey", where rpcs3's
     // ISO loader looks first (Loader/ISO.cpp: the path minus its extension)
-    if (dkey_path && *dkey_path)
+    if (dkey_path && *dkey_path && !ends_with_ci(base, ".zip"))
     {
       std::string stem = base;
       const size_t dot = stem.rfind('.');
@@ -840,8 +943,9 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     {
       fail("EBOOT.BIN, and no disc. This executable is one file of a PlayStation 3 disc, and "
            "its data, its libraries and its modules are the rest of that disc; alone it boots "
-           "and then waits forever. Give the core the whole disc as a single .iso image "
-           "instead - a disc dumped as a folder is not something a project can carry.");
+           "and then waits forever. Give the core the whole disc instead: either a single "
+           ".iso image, or the dumped folder packed into one .zip, which is read without "
+           "being unpacked.");
       return 0;
     }
   }

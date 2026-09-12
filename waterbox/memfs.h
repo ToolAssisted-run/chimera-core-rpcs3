@@ -7,10 +7,14 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <cstddef>
+#include <memory>
 #include <string>
 
 namespace chimera
 {
+  struct zip_index;
+
   // The device's root path as rpcs3 sees it. Everything under it is ours.
   // (The shape is prescribed by fs::get_virtual_device: "/vfsv0_" + 22
   // characters + "_" at index 29, and set_virtual_device is keyed by the
@@ -28,6 +32,11 @@ namespace chimera
   // Graft a host-visible file into the tree, read-only, read lazily
   // through C stdio (a native path, or a name in the sandbox's file list).
   bool memfs_graft(const std::string& rel, const std::string& host_path);
+
+  // Graft one entry of a zip archive, read-only, decompressed on demand. The
+  // archive is never unpacked: a disc dumped as a folder is tens of gigabytes
+  // and the sandbox has nowhere to put that.
+  void memfs_graft_zip_entry(const std::string& rel, std::shared_ptr<const zip_index> index, size_t entry, unsigned long long size);
 
   // Put bytes in a file (created, truncated).
   void memfs_put(const std::string& rel, const void* data, size_t size);

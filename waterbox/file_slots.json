@@ -1,5 +1,5 @@
 {
-  "_comment": "The core-declared file form for chimera's project wizard: a PS3 project is one game, either a homebrew executable booted directly or a disc image with its key.",
+  "_comment": "The core-declared file form for chimera's project wizard: a PS3 project is one game - a homebrew executable booted directly, a disc image, or a dumped disc folder as one .zip.",
   "slots": [
     {
       "id": "game",
@@ -10,9 +10,10 @@
         "elf",
         "self",
         "bin",
-        "iso"
+        "iso",
+        "zip"
       ],
-      "help": "A PS3 executable (.elf, .self) booted directly the way a modded console would, or a disc image (.iso): a decrypted image, or a Redump image with its disc key in the Disc key slot. A disc game's own EBOOT.BIN is not enough by itself, because the rest of that disc is where its data is: a disc dumped as a folder has to be made into a single .iso first."
+      "help": "A PS3 executable (.elf, .self) booted directly the way a modded console would, a disc image (.iso): a decrypted image, or a Redump image with its disc key in the Disc key slot, or a disc dumped as a FOLDER packed into a single .zip. The archive is read where it lies and never unpacked, so it may be as large as the disc; store its files rather than compressing them and the game's big files stay seekable. A disc game's own EBOOT.BIN is not enough by itself, because the rest of that disc is where its data is."
     },
     {
       "id": "dkey",

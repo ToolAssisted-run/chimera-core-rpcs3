@@ -58,7 +58,7 @@ g++ -specs "$sr/lib/musl-gcc.specs" -mcmodel=large -fno-pic -fno-pie \
 	-Wl,-u,pthread_once -Wl,-u,pthread_cond_wait -Wl,-u,pthread_cond_broadcast -Wl,-u,pthread_key_create \
 	-Wl,-u,pthread_mutexattr_init -Wl,-u,pthread_mutexattr_settype -Wl,-u,pthread_mutexattr_destroy \
 	-o "$out/core.wbx" \
-	"$here"/obj-guest/wbx-entry.o "$here"/obj-guest/rpcs3-driver.o "$here"/obj-guest/memfs.o \
+	"$here"/obj-guest/wbx-entry.o "$here"/obj-guest/rpcs3-driver.o "$here"/obj-guest/memfs.o "$here"/obj-guest/archive.o \
 	"$here"/obj-guest/host-stubs.o "$here"/obj-guest/host-plumbing.o "$here"/obj-guest/guest-syscalls.o "$here"/obj-guest/vsched.o \
 	"$here"/obj-guest/upstream/Input/pad_thread.o "$here"/obj-guest/upstream/Input/product_info.o \
 	"$here"/obj-guest/upstream/Input/ps_move_tracker.o "$here"/obj-guest/upstream/Input/ps_move_config.o \

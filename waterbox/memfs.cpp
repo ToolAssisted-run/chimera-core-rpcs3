@@ -13,6 +13,8 @@
 
 #include "memfs.h"
 
+#include "archive.h"
+
 namespace chimera
 {
   namespace
@@ -23,6 +25,8 @@ namespace chimera
       std::vector<u8> data;                              // memory file
       std::string host_path;                             // grafted file (read-only)
       u64 host_size = 0;
+      std::shared_ptr<const zip_index> arch;             // zip entry (read-only)
+      size_t arch_entry = 0;
       std::map<std::string, std::shared_ptr<node>> children;
       s64 mtime = 0;
     };
@@ -115,8 +119,8 @@ namespace chimera
     {
       st.is_directory = n.dir;
       st.is_symlink = false;
-      st.is_writable = n.host_path.empty();
-      st.size = n.dir ? 0 : (n.host_path.empty() ? n.data.size() : n.host_size);
+      st.is_writable = n.host_path.empty() && !n.arch;
+      st.size = n.dir ? 0 : ((n.host_path.empty() && !n.arch) ? n.data.size() : n.host_size);
       st.atime = st.mtime = st.ctime = n.mtime;
     }
 
@@ -128,10 +132,14 @@ namespace chimera
       bool append;
       FILE* host = nullptr;
 
+      std::unique_ptr<zip_stream> zip;
+
       mem_file(std::shared_ptr<node> n_, bool w, bool a) : n(std::move(n_)), writable(w), append(a)
       {
         if (!n->host_path.empty())
           host = std::fopen(n->host_path.c_str(), "rb");
+        else if (n->arch)
+          zip = std::make_unique<zip_stream>(n->arch, n->arch_entry);
       }
       ~mem_file() override
       {
@@ -146,7 +154,7 @@ namespace chimera
       }
       bool trunc(u64 length) override
       {
-        if (!writable || host)
+        if (!writable || host || zip)
           return false;
         n->data.resize(length);
         n->mtime = static_cast<s64>(g_clock++);
@@ -154,6 +162,8 @@ namespace chimera
       }
       u64 read_at(u64 offset, void* buffer, u64 size) override
       {
+        if (zip)
+          return zip->read_at(offset, buffer, size);
         if (host)
         {
           if (offset >= n->host_size)
@@ -176,7 +186,7 @@ namespace chimera
       }
       u64 write(const void* buffer, u64 size) override
       {
-        if (!writable || host)
+        if (!writable || host || zip)
           return 0;
         if (append)
           pos = n->data.size();
@@ -197,7 +207,7 @@ namespace chimera
       }
       u64 size() override
       {
-        return host ? n->host_size : n->data.size();
+        return (host || zip) ? n->host_size : n->data.size();
       }
     };
 
@@ -333,7 +343,7 @@ namespace chimera
       bool trunc(const std::string& path, u64 length) override
       {
         auto n = lookup(strip_root(path));
-        if (!n || n->dir || !n->host_path.empty())
+        if (!n || n->dir || !n->host_path.empty() || n->arch)
         {
           fs::g_tls_error = fs::error::noent;
           return false;
@@ -377,7 +387,7 @@ namespace chimera
           fs::g_tls_error = fs::error::isdir;
           return nullptr;
         }
-        if (want_write && !n->host_path.empty())
+        if (want_write && (!n->host_path.empty() || n->arch))
         {
           fs::g_tls_error = fs::error::readonly;
           return nullptr;
@@ -442,6 +452,25 @@ namespace chimera
     n->mtime = static_cast<s64>(g_clock++);
     d->children[parts.back()] = n;
     return true;
+  }
+
+  void memfs_graft_zip_entry(const std::string& rel, std::shared_ptr<const zip_index> index, size_t entry, unsigned long long size)
+  {
+    auto parts = split(rel);
+    if (parts.empty())
+      return;
+    std::string dir;
+    for (size_t i = 0; i + 1 < parts.size(); i++)
+      dir += parts[i] + "/";
+    auto d = mkdirs(dir);
+    if (!d)
+      return;
+    auto n = std::make_shared<node>();
+    n->arch = std::move(index);
+    n->arch_entry = entry;
+    n->host_size = size;
+    n->mtime = static_cast<s64>(g_clock++);
+    d->children[parts.back()] = n;
   }
 
   void memfs_put(const std::string& rel, const void* data, size_t size)
