@@ -737,6 +737,24 @@ optimisation. No user interface, no networking, no real audio or input devices.
   (15.32 GB). flip needs the firmware, which the gate always passes; with it,
   it peaks at 5.7 GB and finishes. Not a regression, and not USF4.
 
+- **A cold precompile of a big game died after about thirty modules (2026-09-15, chimera
+  issue #74): patch 0020 undid itself.** Dark Souls [BLUS30782], eight sessions, a fresh
+  cache: every session stopped with miniBox "arena exhausted: 768 MiB wanted" and
+  0xC000001D, while a second attempt on the warm cache worked. A 4 GiB sbrk heap changed
+  nothing (no heap exhaustion at all, the same module count), so the heap overflow in
+  the first run was a symptom. `MINIBOX_TRACE_SYSCALLS` on one session settled it: after
+  29 modules, 30 live 768 MiB mappings (23 GiB), and every `~MemoryManager1` doing
+  `munmap(range) -> 0` with the very next syscall `mmap(range, PROT_NONE)`. Patch 0020's
+  `memory_release` ran BEFORE upstream's `memory_decommit`, and on POSIX a decommit is
+  `mmap(MAP_FIXED, PROT_NONE)` over the range: it put the whole reservation straight back.
+  0020 now releases under CHIMERA_CORE INSTEAD of decommitting. Warm caches hid it
+  because they compile a handful of modules per session; USF4's 114 objects spread over
+  eight sessions stayed under thirty each. Verified on the real game (Windows, GTX 1060,
+  a fresh cache): all eight sessions finished, 31 to 45 objects stored each, 316 in all -
+  the count the report showed for its successful second attempt - with no arena
+  exhaustion and no crash. The "sbrk heap exhausted" lines remain and are harmless: the
+  heap spills into the arena, which no longer fills.
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but
