@@ -3,7 +3,7 @@
  * digests in run-native's exact format, so the sandboxed build can be
  * diffed against the native reference.
  *
- * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F]
+ * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F]
  *        [--log-trace CHANS] [--debug-at N]
  *        [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>
  *
@@ -109,7 +109,24 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--debug-at") && i + 1 < argc) debugAt = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--firmware") && i + 1 < argc) firmware = argv[++i];
 		else if (!strcmp(argv[i], "--dkey") && i + 1 < argc) dkey = argv[++i];
-		else if (!strcmp(argv[i], "--settings") && i + 1 < argc) settingsJson = argv[++i];
+		else if (!strcmp(argv[i], "--settings") && i + 1 < argc) {
+			if (settingsJson) { fprintf(stderr, "--ports and --settings: say the ports in the settings\n"); return 2; }
+			settingsJson = argv[++i];
+		}
+		else if (!strcmp(argv[i], "--ports") && i + 1 < argc) {
+			/* run-native's port mask ("1100000": ports 1 and 2), sent the way the
+			 * frontend sends it - as the port1..port7 settings - so one gate
+			 * invocation plugs in the same pads in both runners */
+			const char *mask = argv[++i];
+			static char portsJson[256];
+			int at = snprintf(portsJson, sizeof portsJson, "{");
+			for (int pi = 0; pi < 7; pi++)
+				at += snprintf(portsJson + at, sizeof portsJson - at, "%s\"port%d\":\"%s\"", pi ? "," : "", pi + 1,
+				               (mask[0] && (int)strlen(mask) > pi && mask[pi] == '1') ? "dualshock3" : "none");
+			snprintf(portsJson + at, sizeof portsJson - at, "}");
+			if (settingsJson) { fprintf(stderr, "--ports and --settings: say the ports in the settings\n"); return 2; }
+			settingsJson = portsJson;
+		}
 		else if (!strcmp(argv[i], "--cache") && i + 1 < argc) cacheDir = argv[++i];
 		else if (!strcmp(argv[i], "--precompile") && i + 1 < argc) preSpec = argv[++i];
 		else if (!strcmp(argv[i], "--ram-out") && i + 1 < argc) ramOut = argv[++i];
@@ -127,7 +144,7 @@ int main(int argc, char **argv)
 		else game = argv[i];
 	}
 	if (!core || !game) {
-		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>\n");
+		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>\n");
 		return 2;
 	}
 

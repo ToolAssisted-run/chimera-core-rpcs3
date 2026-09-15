@@ -91,6 +91,19 @@ ECL_EXPORT int Init(void)
   char ppuDecoder[16] = "interpreter";
   wbx_setting_str("ppu_decoder", ppuDecoder, sizeof ppuDecoder);
   chimera_rpcs3_set_ppu_decoder(ppuDecoder);
+  // which controller ports have a pad in them (port1..port7): before the pad
+  // handler binds, which is at boot, and before the frontend asks which
+  // controls exist, which is after Init
+  for (int port = 0; port < 7; port++)
+  {
+    char key[8];
+    snprintf(key, sizeof key, "port%d", port + 1);
+    char device[16] = "none";
+    if (port == 0)
+      strcpy(device, "dualshock3");
+    wbx_setting_str(key, device, sizeof device);
+    chimera_rpcs3_set_port(port, strcmp(device, "none") != 0);
+  }
 
   // A disc is a retail game, and a retail game links against the system
   // software: without the firmware it boots into nothing, a machine that runs

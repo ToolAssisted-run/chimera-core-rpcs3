@@ -11,6 +11,10 @@
 #   input:press            padtest.elf (cellPad through the firmware) reports a
 #                          scripted Cross exactly on the pressed frames, in both
 #                          flavors alike; a program that never polls is all lag
+#   input:port2            padtest2.elf reads the SECOND pad: with --ports
+#                          1100000 (the port2 setting) a Cross pressed on it
+#                          shows on exactly the pressed frames, and with only
+#                          port 1 plugged in it never shows
 #   video:flip             flip.elf (PSL1GHT, tests/ps3) draws with the CPU and
 #                          flips with the RSX: a new image every frame, the
 #                          program's own account of its flips on the TTY, and
@@ -176,6 +180,24 @@ if [ "$pressed" = 5 ] && [ "$first" = 11 ] && grep -q ' lag 0 ' "$work/pad-nativ
 	fi
 else
 	failed "input:press - expected 5 pressed lines starting at line 11 with lag 0, got $pressed from line ${first:-none} ($(tail -1 "$work/pad-native.txt"))"
+fi
+# ---- input:port2 (the port settings plug a second pad in) ---------------
+pad2rom="$root/tests/roms/padtest2.elf"
+[ -f "$pad2rom" ] || python3 "$root/tests/asm/ppc.py" "$root/tests/asm/padtest2.s" "$pad2rom" >/dev/null
+# Cross on port 2 is wire index 17 + 10
+run_both pad2 40 40 "$pad2rom" --ports 1100000 --press 10:5:27
+pressed2="$(grep -c ' 00000040 ' "$work/tty-pad2-native.txt")"
+first2="$(grep -n ' 00000040 ' "$work/tty-pad2-native.txt" | head -1 | cut -d: -f1)"
+run_both pad2off 40 40 "$pad2rom" --ports 1000000 --press 10:5:27
+pressedoff="$(grep -c ' 00000040 ' "$work/tty-pad2off-native.txt")"
+if [ "$pressed2" = 5 ] && [ "$first2" = 11 ] && [ "$pressedoff" = 0 ]; then
+	if same_both pad2 && same_both pad2off; then
+		pass "input:port2 - Cross on a plugged-in second pad seen on exactly the 5 pressed frames, and on an empty port never; native == sandbox"
+	else
+		failed "input:port2 - the sandbox's second-pad trace differs from native (diff $work/tty-pad2-native.txt $work/tty-pad2-wbx.txt)"
+	fi
+else
+	failed "input:port2 - expected 5 pressed lines from line 11 with port 2 plugged in and 0 without, got $pressed2 from line ${first2:-none} and $pressedoff"
 fi
 # a program that never polls the pad is lag on every frame
 if grep -q " lag $((frames / 3)) " "$work/fw-native.txt"; then

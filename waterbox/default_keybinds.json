@@ -7,7 +7,10 @@
 		"The face buttons follow the pad's own geometry: Cross bottom, Circle right, Square",
 		"left, Triangle top. The keyboard arrows drive the d-pad; the left stick takes WASD",
 		"as an analog pair, the right stick IJKL. Shoulders Q/E, triggers 1/3, stick clicks",
-		"R/Y, Select is Backspace, Start is Enter, PS is Home."
+		"R/Y, Select is Backspace, Start is Enter, PS is Home.",
+		"",
+		"Players 2 to 7 are on the second to seventh gamepads only (J2..J7, X2..X7), with",
+		"nothing on the keyboard - plug their ports in with the port2..port7 settings."
 	],
 	"AllTrollers": {
 		"PlayStation 3 Controller": {
@@ -27,7 +30,109 @@
 			"P1 R1": "E, J1 B6, X1 RightShoulder",
 			"P1 L2": "1, J1 B7, X1 LeftTrigger",
 			"P1 R2": "3, J1 B8, X1 RightTrigger",
-			"P1 PS": "Home, J1 B13, X1 Guide"
+			"P1 PS": "Home, J1 B13, X1 Guide",
+			"P2 Up": "J2 POV1U, X2 DpadUp",
+			"P2 Down": "J2 POV1D, X2 DpadDown",
+			"P2 Left": "J2 POV1L, X2 DpadLeft",
+			"P2 Right": "J2 POV1R, X2 DpadRight",
+			"P2 Select": "J2 B9, X2 Back",
+			"P2 Start": "J2 B10, X2 Start",
+			"P2 L3": "J2 B11, X2 LeftThumb",
+			"P2 R3": "J2 B12, X2 RightThumb",
+			"P2 Triangle": "J2 B4, X2 Y",
+			"P2 Circle": "J2 B3, X2 B",
+			"P2 Cross": "J2 B2, X2 A",
+			"P2 Square": "J2 B1, X2 X",
+			"P2 L1": "J2 B5, X2 LeftShoulder",
+			"P2 R1": "J2 B6, X2 RightShoulder",
+			"P2 L2": "J2 B7, X2 LeftTrigger",
+			"P2 R2": "J2 B8, X2 RightTrigger",
+			"P2 PS": "J2 B13, X2 Guide",
+			"P3 Up": "J3 POV1U, X3 DpadUp",
+			"P3 Down": "J3 POV1D, X3 DpadDown",
+			"P3 Left": "J3 POV1L, X3 DpadLeft",
+			"P3 Right": "J3 POV1R, X3 DpadRight",
+			"P3 Select": "J3 B9, X3 Back",
+			"P3 Start": "J3 B10, X3 Start",
+			"P3 L3": "J3 B11, X3 LeftThumb",
+			"P3 R3": "J3 B12, X3 RightThumb",
+			"P3 Triangle": "J3 B4, X3 Y",
+			"P3 Circle": "J3 B3, X3 B",
+			"P3 Cross": "J3 B2, X3 A",
+			"P3 Square": "J3 B1, X3 X",
+			"P3 L1": "J3 B5, X3 LeftShoulder",
+			"P3 R1": "J3 B6, X3 RightShoulder",
+			"P3 L2": "J3 B7, X3 LeftTrigger",
+			"P3 R2": "J3 B8, X3 RightTrigger",
+			"P3 PS": "J3 B13, X3 Guide",
+			"P4 Up": "J4 POV1U, X4 DpadUp",
+			"P4 Down": "J4 POV1D, X4 DpadDown",
+			"P4 Left": "J4 POV1L, X4 DpadLeft",
+			"P4 Right": "J4 POV1R, X4 DpadRight",
+			"P4 Select": "J4 B9, X4 Back",
+			"P4 Start": "J4 B10, X4 Start",
+			"P4 L3": "J4 B11, X4 LeftThumb",
+			"P4 R3": "J4 B12, X4 RightThumb",
+			"P4 Triangle": "J4 B4, X4 Y",
+			"P4 Circle": "J4 B3, X4 B",
+			"P4 Cross": "J4 B2, X4 A",
+			"P4 Square": "J4 B1, X4 X",
+			"P4 L1": "J4 B5, X4 LeftShoulder",
+			"P4 R1": "J4 B6, X4 RightShoulder",
+			"P4 L2": "J4 B7, X4 LeftTrigger",
+			"P4 R2": "J4 B8, X4 RightTrigger",
+			"P4 PS": "J4 B13, X4 Guide",
+			"P5 Up": "J5 POV1U, X5 DpadUp",
+			"P5 Down": "J5 POV1D, X5 DpadDown",
+			"P5 Left": "J5 POV1L, X5 DpadLeft",
+			"P5 Right": "J5 POV1R, X5 DpadRight",
+			"P5 Select": "J5 B9, X5 Back",
+			"P5 Start": "J5 B10, X5 Start",
+			"P5 L3": "J5 B11, X5 LeftThumb",
+			"P5 R3": "J5 B12, X5 RightThumb",
+			"P5 Triangle": "J5 B4, X5 Y",
+			"P5 Circle": "J5 B3, X5 B",
+			"P5 Cross": "J5 B2, X5 A",
+			"P5 Square": "J5 B1, X5 X",
+			"P5 L1": "J5 B5, X5 LeftShoulder",
+			"P5 R1": "J5 B6, X5 RightShoulder",
+			"P5 L2": "J5 B7, X5 LeftTrigger",
+			"P5 R2": "J5 B8, X5 RightTrigger",
+			"P5 PS": "J5 B13, X5 Guide",
+			"P6 Up": "J6 POV1U, X6 DpadUp",
+			"P6 Down": "J6 POV1D, X6 DpadDown",
+			"P6 Left": "J6 POV1L, X6 DpadLeft",
+			"P6 Right": "J6 POV1R, X6 DpadRight",
+			"P6 Select": "J6 B9, X6 Back",
+			"P6 Start": "J6 B10, X6 Start",
+			"P6 L3": "J6 B11, X6 LeftThumb",
+			"P6 R3": "J6 B12, X6 RightThumb",
+			"P6 Triangle": "J6 B4, X6 Y",
+			"P6 Circle": "J6 B3, X6 B",
+			"P6 Cross": "J6 B2, X6 A",
+			"P6 Square": "J6 B1, X6 X",
+			"P6 L1": "J6 B5, X6 LeftShoulder",
+			"P6 R1": "J6 B6, X6 RightShoulder",
+			"P6 L2": "J6 B7, X6 LeftTrigger",
+			"P6 R2": "J6 B8, X6 RightTrigger",
+			"P6 PS": "J6 B13, X6 Guide",
+			"P7 Up": "J7 POV1U, X7 DpadUp",
+			"P7 Down": "J7 POV1D, X7 DpadDown",
+			"P7 Left": "J7 POV1L, X7 DpadLeft",
+			"P7 Right": "J7 POV1R, X7 DpadRight",
+			"P7 Select": "J7 B9, X7 Back",
+			"P7 Start": "J7 B10, X7 Start",
+			"P7 L3": "J7 B11, X7 LeftThumb",
+			"P7 R3": "J7 B12, X7 RightThumb",
+			"P7 Triangle": "J7 B4, X7 Y",
+			"P7 Circle": "J7 B3, X7 B",
+			"P7 Cross": "J7 B2, X7 A",
+			"P7 Square": "J7 B1, X7 X",
+			"P7 L1": "J7 B5, X7 LeftShoulder",
+			"P7 R1": "J7 B6, X7 RightShoulder",
+			"P7 L2": "J7 B7, X7 LeftTrigger",
+			"P7 R2": "J7 B8, X7 RightTrigger",
+			"P7 PS": "J7 B13, X7 Guide"
 		}
 	},
 	"AllTrollersAutoFire": {
@@ -52,6 +157,126 @@
 			},
 			"P1 Right Stick Y": {
 				"Value": "J1 RotationZ Axis, X1 RStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P2 Left Stick X": {
+				"Value": "J2 X Axis, X2 LStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P2 Left Stick Y": {
+				"Value": "J2 Y Axis, X2 LStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P2 Right Stick X": {
+				"Value": "J2 Z Axis, X2 RStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P2 Right Stick Y": {
+				"Value": "J2 RotationZ Axis, X2 RStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P3 Left Stick X": {
+				"Value": "J3 X Axis, X3 LStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P3 Left Stick Y": {
+				"Value": "J3 Y Axis, X3 LStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P3 Right Stick X": {
+				"Value": "J3 Z Axis, X3 RStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P3 Right Stick Y": {
+				"Value": "J3 RotationZ Axis, X3 RStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P4 Left Stick X": {
+				"Value": "J4 X Axis, X4 LStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P4 Left Stick Y": {
+				"Value": "J4 Y Axis, X4 LStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P4 Right Stick X": {
+				"Value": "J4 Z Axis, X4 RStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P4 Right Stick Y": {
+				"Value": "J4 RotationZ Axis, X4 RStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P5 Left Stick X": {
+				"Value": "J5 X Axis, X5 LStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P5 Left Stick Y": {
+				"Value": "J5 Y Axis, X5 LStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P5 Right Stick X": {
+				"Value": "J5 Z Axis, X5 RStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P5 Right Stick Y": {
+				"Value": "J5 RotationZ Axis, X5 RStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P6 Left Stick X": {
+				"Value": "J6 X Axis, X6 LStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P6 Left Stick Y": {
+				"Value": "J6 Y Axis, X6 LStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P6 Right Stick X": {
+				"Value": "J6 Z Axis, X6 RStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P6 Right Stick Y": {
+				"Value": "J6 RotationZ Axis, X6 RStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P7 Left Stick X": {
+				"Value": "J7 X Axis, X7 LStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P7 Left Stick Y": {
+				"Value": "J7 Y Axis, X7 LStickY",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P7 Right Stick X": {
+				"Value": "J7 Z Axis, X7 RStickX",
+				"Mult": 1.0,
+				"Deadzone": 0.1
+			},
+			"P7 Right Stick Y": {
+				"Value": "J7 RotationZ Axis, X7 RStickY",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			}

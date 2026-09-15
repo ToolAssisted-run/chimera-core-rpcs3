@@ -205,7 +205,7 @@ int main(int argc, char** argv)
   for (long f = 1; f <= frames; f++)
   {
     for (int pi = 0; pi < presses; pi++)
-      chimera_rpcs3_set_button(0, press[pi].index, f >= press[pi].first && f < press[pi].first + press[pi].count);
+      chimera_rpcs3_set_button(press[pi].index / 17, press[pi].index % 17, f >= press[pi].first && f < press[pi].first + press[pi].count);  // the wire index, as SetButton takes it
     chimera_rpcs3_frame();
     if (!chimera_rpcs3_input_was_read())
       lag++;
