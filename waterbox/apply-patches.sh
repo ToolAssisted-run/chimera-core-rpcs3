@@ -53,6 +53,17 @@ while IFS= read -r f; do
 	fi
 done < "$scratch/touched"
 
+# The series is tried on the scratch copy FIRST, whichever state the tree is in:
+# a series that does not apply in order must be found out here, and not half
+# way through applying it to the real tree.
+for p in "$root"/patches/*.patch; do
+	(cd "$scratch/tree" && git apply "$p") || {
+		echo "the series does not apply to the submodule's HEAD at $(basename "$p") - was rpcs3 moved without rebasing the patches?" >&2
+		exit 1
+	}
+done
+
+
 if [ "$pristine" -eq 1 ]; then
 	for p in "$root"/patches/*.patch; do
 		git -C "$rpcs3" apply "$p"
@@ -62,13 +73,6 @@ if [ "$pristine" -eq 1 ]; then
 fi
 
 # not pristine: it must then be EXACTLY what the whole series leaves behind
-for p in "$root"/patches/*.patch; do
-	(cd "$scratch/tree" && git apply "$p") || {
-		echo "the series does not apply to the submodule's HEAD at $(basename "$p") - was rpcs3 moved without rebasing the patches?" >&2
-		exit 1
-	}
-done
-
 wrong=0
 while IFS= read -r f; do
 	if [ -e "$scratch/tree/$f" ]; then
