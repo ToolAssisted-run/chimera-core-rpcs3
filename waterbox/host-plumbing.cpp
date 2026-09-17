@@ -28,7 +28,15 @@ int socketpair(int, int, int, int*)
 }
 int socket(int, int, int)
 {
-  errno = ENOSYS;
+  // Not ENOSYS: RPCS3 hands a failed socket's errno straight to
+  // sys_net's convert_error, whose switch knows only the errnos a real
+  // socket layer returns. An unmapped one is a thrown exception, which
+  // kills the PPU thread and leaves every other thread waiting on it -
+  // a whole-core deadlock from a call that merely had no answer
+  // (chimera issue #84, Prince of Persia's libnet thread at frame 647).
+  // ENETDOWN is in that map and is the truth about this machine: there
+  // is no network here. The game gets a failed socket and carries on.
+  errno = ENETDOWN;
   return -1;
 }
 int eventfd(unsigned, int)
