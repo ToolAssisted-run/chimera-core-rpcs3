@@ -89,8 +89,8 @@ $(O)/gl-shim.o: gl-shim.cpp
 	@mkdir -p $(O)
 	g++ $(SPECS) $(WBFLAGS) -DCHIMERA_GUEST $(GLINCS) $(CXXINCS) -c -o $@ $<
 
-generated-assets.cpp: gen-assets.py $(shell find $(ROOT)/extern/rpcs3/bin/Icons/ui -name "*.png")
-	python3 gen-assets.py $(ROOT)/extern/rpcs3/bin/Icons/ui $@
+generated-assets.cpp: gen-assets.py $(ROOT)/extern/rpcs3/rpcs3/Emu/localized_string_id.h $(ROOT)/extern/rpcs3/rpcs3/rpcs3qt/localized_emu.h $(shell find $(ROOT)/extern/rpcs3/bin/Icons/ui -name "*.png")
+	python3 gen-assets.py $(ROOT)/extern/rpcs3/bin/Icons/ui $@ $(ROOT)/extern/rpcs3/rpcs3/Emu/localized_string_id.h $(ROOT)/extern/rpcs3/rpcs3/rpcs3qt/localized_emu.h
 
 $(O)/generated-assets.o: generated-assets.cpp chimera-assets.h
 	@mkdir -p $(O)

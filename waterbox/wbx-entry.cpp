@@ -80,6 +80,9 @@ ECL_EXPORT int Init(void)
       dkey = "dkey";
     }
   }
+  // the saves to start from: the savedata slot ({"savedata":["name"]}), optional
+  char savedataName[256] = "";
+  chimera_rpcs3_set_savedata(wbx_slot_first("savedata", savedataName, sizeof savedataName) ? savedataName : nullptr);
   // which renderer the project asked for; "opengl-hw" only draws when the
   // host also handed over a GPU bridge (SetGpuBridge, before Init)
   char renderer[32] = "null";
@@ -328,6 +331,27 @@ ECL_EXPORT int GetThreadCount(void)
 ECL_EXPORT uint64_t GetMachineTimeNs(void)
 {
   return chimera_rpcs3_machine_time_ns();
+}
+
+// ---- save data export (chimera docs/save-data.md) ---------------------------
+ECL_EXPORT int32_t GetSaveDataFileCount(void)
+{
+  return chimera_rpcs3_savedata_count();
+}
+
+ECL_EXPORT const char* GetSaveDataFileName(int32_t index)
+{
+  return chimera_rpcs3_savedata_name(index);
+}
+
+ECL_EXPORT int64_t GetSaveDataFileSize(int32_t index)
+{
+  return chimera_rpcs3_savedata_size(index);
+}
+
+ECL_EXPORT const uint8_t* GetSaveDataFileBuffer(int32_t index)
+{
+  return chimera_rpcs3_savedata_data(index);
 }
 
 ECL_EXPORT int IsRunning(void)

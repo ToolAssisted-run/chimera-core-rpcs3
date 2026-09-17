@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace chimera
 {
@@ -46,6 +47,17 @@ namespace chimera
 
   // Put bytes in a file (created, truncated).
   void memfs_put(const std::string& rel, const void* data, size_t size);
+
+  // Every in-memory file under a directory (path relative to the root), in name
+  // order, with a pointer to its bytes. For the save-data export: the pointers
+  // are the files themselves and hold only until the machine runs again.
+  struct memfs_file
+  {
+    std::string rel; // relative to the directory asked for, '/' separated
+    const unsigned char* data;
+    size_t size;
+  };
+  void memfs_list(const std::string& rel_dir, std::vector<memfs_file>& out);
 
   // Diagnostics: total bytes held in memory files.
   size_t memfs_bytes();

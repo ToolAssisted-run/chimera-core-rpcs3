@@ -19,6 +19,8 @@ import os
 import sys
 
 src, out = sys.argv[1], sys.argv[2]
+# the two files the system messages are generated from (see below)
+ids_header, strings_header = sys.argv[3], sys.argv[4]
 # relative to <icons dir>, forward slashes, so the table's paths are the ones
 # rpcs3 asks for: "Icons/ui/<name>" and "Icons/ui/home/32/<name>" alike
 names = sorted(
@@ -39,4 +41,24 @@ with open(out, "w") as f:
         f.write(f'  {{"Icons/ui/{n}", asset_{i}, sizeof asset_{i}}},\n')
     f.write("};\n")
     f.write(f"const size_t chimera_asset_count = {len(names)};\n")
+
+    # THE CONSOLE'S OWN MESSAGES. "Do you want to overwrite the saved data?", the
+    # trophy notices, every system dialog: rpcs3 asks the FRONTEND for their
+    # text, and its English lives in the Qt frontend (rpcs3qt/localized_emu.h),
+    # which this build has no part of. A driver that answers with nothing draws
+    # a confirmation that is two button icons and no question - which is what a
+    # save over an existing one looked like (chimera issue 86). So the English is
+    # lifted out at build time, by enum name, into a table indexed by the enum's
+    # value: nothing to keep in step when rpcs3 adds a message.
+    import re
+    ids = re.findall(r"^\s*([A-Z][A-Z0-9_]*)\s*,?\s*$", open(ids_header).read(), re.M)
+    text = dict(re.findall(r'case localized_string_id::(\w+):\s*return (?:tr\()?"((?:[^"\\]|\\.)*)"', open(strings_header, encoding="utf-8").read()))
+    missing = [n for n in ids if n not in text and n != "INVALID"]
+    f.write("\n// index = localized_string_id's value; \"\" where rpcs3 has no text\n")
+    f.write("const char* const chimera_localized_text[] = {\n")
+    for n in ids:
+        f.write('  "%s", // %s\n' % (text.get(n, ""), n))
+    f.write("};\n")
+    f.write(f"const size_t chimera_localized_text_count = {len(ids)};\n")
+    print(f"{len(text)} system messages ({len(missing)} ids without text)")
 print(f"{len(names)} icons embedded")

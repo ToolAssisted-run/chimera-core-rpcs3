@@ -14,3 +14,9 @@ struct chimera_asset
 
 extern const chimera_asset chimera_assets[];
 extern const size_t chimera_asset_count;
+
+// The console's system messages in English, indexed by localized_string_id's
+// value (generated from rpcs3's own table, see gen-assets.py). A "%0" in one is
+// where the argument goes.
+extern const char* const chimera_localized_text[];
+extern const size_t chimera_localized_text_count;

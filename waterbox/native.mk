@@ -65,8 +65,8 @@ $(O)/gl-traps.o: generated-gl/gl-traps.cpp
 	@mkdir -p $(O)
 	g++ -O1 -c -o $@ $<
 
-generated-assets.cpp: gen-assets.py $(wildcard $(ROOT)/extern/rpcs3/bin/Icons/ui/*.png)
-	python3 gen-assets.py $(ROOT)/extern/rpcs3/bin/Icons/ui $@
+generated-assets.cpp: gen-assets.py $(ROOT)/extern/rpcs3/rpcs3/Emu/localized_string_id.h $(ROOT)/extern/rpcs3/rpcs3/rpcs3qt/localized_emu.h $(wildcard $(ROOT)/extern/rpcs3/bin/Icons/ui/*.png)
+	python3 gen-assets.py $(ROOT)/extern/rpcs3/bin/Icons/ui $@ $(ROOT)/extern/rpcs3/rpcs3/Emu/localized_string_id.h $(ROOT)/extern/rpcs3/rpcs3/rpcs3qt/localized_emu.h
 
 $(O)/generated-assets.o: generated-assets.cpp chimera-assets.h
 	@mkdir -p $(O)

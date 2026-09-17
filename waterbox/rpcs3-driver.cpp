@@ -368,6 +368,18 @@ namespace
     }
   };
 
+  // One message, with its argument where the "%0" is - which is all the
+  // arguments rpcs3 ever passes through this callback.
+  std::string localized_text(localized_string_id id, const char* args)
+  {
+    const size_t index = static_cast<size_t>(id);
+    std::string text = index < chimera_localized_text_count ? chimera_localized_text[index] : "";
+    const std::string arg = args ? args : "";
+    for (size_t at = text.find("%0"); at != std::string::npos; at = text.find("%0", at + arg.size()))
+      text.replace(at, 2, arg);
+    return text;
+  }
+
   EmuCallbacks make_callbacks()
   {
     EmuCallbacks cb{};
@@ -457,8 +469,26 @@ namespace
     cb.update_emu_settings = []() {};
     cb.save_emu_settings = []() {};
 
-    cb.get_localized_string = [](localized_string_id, const char*) -> std::string { return {}; };
-    cb.get_localized_u32string = [](localized_string_id, const char*) -> std::u32string { return {}; };
+    // the console's own messages, in English, from rpcs3's table (gen-assets.py)
+    cb.get_localized_string = [](localized_string_id id, const char* args) -> std::string { return localized_text(id, args); };
+    cb.get_localized_u32string = [](localized_string_id id, const char* args) -> std::u32string
+    {
+      // the table is rpcs3's English: UTF-8, of which every byte below 0x80 is
+      // its own code point and the few above it (a trade mark sign) are decoded
+      const std::string utf8 = localized_text(id, args);
+      std::u32string out;
+      for (size_t i = 0; i < utf8.size();)
+      {
+        const unsigned char c = static_cast<unsigned char>(utf8[i]);
+        const int extra = c < 0x80 ? 0 : c < 0xE0 ? 1 : c < 0xF0 ? 2 : 3;
+        char32_t cp = extra == 0 ? c : c & (0x3F >> extra);
+        for (int k = 1; k <= extra && i + k < utf8.size(); k++)
+          cp = (cp << 6) | (static_cast<unsigned char>(utf8[i + k]) & 0x3F);
+        out.push_back(cp);
+        i += extra + 1;
+      }
+      return out;
+    };
     cb.get_localized_setting = [](const cfg::_base*, u32) -> std::string { return {}; };
     cb.get_photo_path = [](std::string_view) -> std::string { return {}; };
     cb.play_sound = [](const std::string&, std::optional<f32>) {};
@@ -663,6 +693,90 @@ const char* chimera_rpcs3_error(void)
   return g_error.c_str();
 }
 
+// ---- save data ---------------------------------------------------------------
+namespace
+{
+  // where the console's user keeps saves, in the memory filesystem; the user is
+  // fixed (Emu.SetUsr below), so the path is
+  const std::string k_user_home = "config/dev_hdd0/home/00000001/";
+  const std::string k_savedata_prefix = "savedata/";
+
+  std::string g_savedata_zip;
+  std::vector<chimera::memfs_file> g_savedata_snapshot;
+
+  // Unpacks the seed zip under the user's home. False, with g_error set, when
+  // the zip is not one this core wrote.
+  bool seed_savedata()
+  {
+    if (g_savedata_zip.empty())
+      return true;
+    auto index = std::make_shared<chimera::zip_index>();
+    std::string error;
+    if (!chimera::zip_open(g_savedata_zip, *index, error))
+    {
+      g_error = "the save data could not be read as a zip: " + error;
+      return false;
+    }
+    size_t files = 0;
+    for (size_t i = 0; i < index->entries.size(); i++)
+    {
+      const auto& e = index->entries[i];
+      if (e.path.empty() || e.path.back() == '/')
+        continue; // a directory entry: the files under it make it
+      if (e.path.compare(0, k_savedata_prefix.size(), k_savedata_prefix) != 0 || e.path.find("..") != std::string::npos)
+      {
+        g_error = "the save data holds '" + e.path + "', which is not PS3 save data (every entry is savedata/<save>/<file>, as Export Save Data writes them)";
+        return false;
+      }
+      std::vector<u8> bytes(e.size);
+      chimera::zip_stream stream(index, i);
+      if (stream.read_at(0, bytes.data(), e.size) != e.size)
+      {
+        g_error = "the save data's '" + e.path + "' could not be unpacked";
+        return false;
+      }
+      chimera::memfs_put(k_user_home + e.path, bytes.data(), bytes.size());
+      files++;
+    }
+    if (files == 0)
+    {
+      g_error = "the save data zip holds no files";
+      return false;
+    }
+    return true;
+  }
+}
+
+void chimera_rpcs3_set_savedata(const char* zip_path)
+{
+  g_savedata_zip = zip_path ? zip_path : "";
+}
+
+int chimera_rpcs3_savedata_count(void)
+{
+  g_savedata_snapshot.clear();
+  chimera::memfs_list(k_user_home + "savedata", g_savedata_snapshot);
+  for (auto& f : g_savedata_snapshot)
+    f.rel = k_savedata_prefix + f.rel;
+  std::sort(g_savedata_snapshot.begin(), g_savedata_snapshot.end(), [](const auto& a, const auto& b) { return a.rel < b.rel; });
+  return static_cast<int>(g_savedata_snapshot.size());
+}
+
+const char* chimera_rpcs3_savedata_name(int index)
+{
+  return index >= 0 && static_cast<size_t>(index) < g_savedata_snapshot.size() ? g_savedata_snapshot[index].rel.c_str() : nullptr;
+}
+
+int64_t chimera_rpcs3_savedata_size(int index)
+{
+  return index >= 0 && static_cast<size_t>(index) < g_savedata_snapshot.size() ? static_cast<int64_t>(g_savedata_snapshot[index].size) : 0;
+}
+
+const uint8_t* chimera_rpcs3_savedata_data(int index)
+{
+  return index >= 0 && static_cast<size_t>(index) < g_savedata_snapshot.size() ? g_savedata_snapshot[index].data : nullptr;
+}
+
 int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* firmware_path, const char* dkey_path)
 {
   g_error.clear();
@@ -681,6 +795,9 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   chimera::memfs_mkdirs("config/Icons/ui");
   for (size_t i = 0; i < chimera_asset_count; i++)
     chimera::memfs_put(std::string("config/") + chimera_assets[i].path, reinterpret_cast<const char*>(chimera_assets[i].data), chimera_assets[i].size);
+  // the saves this run starts from, before anything can look for them
+  if (!seed_savedata())
+    return 0;
   const bool have_firmware = firmware_path && *firmware_path;
   if (!have_firmware)
   {

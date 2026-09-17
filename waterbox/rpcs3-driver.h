@@ -15,6 +15,24 @@ const char* chimera_rpcs3_error(void);
 // before it boots; without it only HLE-only executables run.
 // dkey_path: an optional Redump disc key for an encrypted ISO (M4)
 int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* firmware_path, const char* dkey_path);
+
+// SAVE DATA (chimera docs/save-data.md). What the console keeps under
+// /dev_hdd0/home/<user>/savedata - one directory per save, PARAM.SFO, icons and
+// the game's own files - lives in the memory filesystem, so it is machine state:
+// savestates and rewinds carry it. These take it OUT and put it back IN.
+//
+// _set_savedata names a zip to seed from, before _init: the very zip an export
+// writes (entries "savedata/<save>/<file>"), unpacked before the machine starts
+// so it lands in the sealed baseline. An entry that is not save data fails the
+// load: progress that is silently ignored is worse than a project that will
+// not start.
+void chimera_rpcs3_set_savedata(const char* zip_path);
+// The export: a snapshot of every file, names as the zip above has them. The
+// pointers are the files themselves and hold until the machine runs again.
+int chimera_rpcs3_savedata_count(void);
+const char* chimera_rpcs3_savedata_name(int index);
+int64_t chimera_rpcs3_savedata_size(int index);
+const uint8_t* chimera_rpcs3_savedata_data(int index);
 // One vblank period of machine time.
 void chimera_rpcs3_frame(void);
 void chimera_rpcs3_shutdown(void);

@@ -26,6 +26,16 @@
         "key"
       ],
       "help": "The 32-character disc key that decrypts a Redump PS3 image (the .dkey file distributed alongside it). Not needed for a decrypted image or a homebrew executable."
+    },
+    {
+      "id": "savedata",
+      "title": "Save data",
+      "min": 0,
+      "max": 1,
+      "formats": [
+        "zip"
+      ],
+      "help": "What the console starts with already saved: the zip that Emulator > Export Save Data... writes, put back as it is. Inside it is the user's savedata folder - one directory per save (BLUS30007-SAVE-..., with PARAM.SFO, icons and the game's own files) - and it is unpacked onto the console's hard disk before the machine starts, so a run can continue from where another left off. It is mounted read-only and pinned by hash, and the movie cites it, so a movie that starts from a saved game is as reproducible as one that starts from an empty disk. Leave it empty and the console has no saves. A zip that holds anything else is refused."
     }
   ]
 }

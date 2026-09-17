@@ -514,6 +514,36 @@ namespace chimera
     d->children[parts.back()] = n;
   }
 
+  void memfs_list(const std::string& rel_dir, std::vector<memfs_file>& out)
+  {
+    auto start = lookup(rel_dir);
+    if (!start || !start->dir)
+      return;
+    // depth first in name order (std::map): the same list every time, which is
+    // what makes an export comparable with another
+    struct frame { std::shared_ptr<node> n; std::string prefix; };
+    std::vector<frame> stack{{start, ""}};
+    while (!stack.empty())
+    {
+      auto [n, prefix] = stack.back();
+      stack.pop_back();
+      for (auto it = n->children.rbegin(); it != n->children.rend(); ++it)
+      {
+        const auto& [name, child] = *it;
+        if (child->dir)
+          stack.push_back({child, prefix + name + "/"});
+      }
+      for (auto& [name, child] : n->children)
+      {
+        // a grafted file is the host's, read-only: it is not something the
+        // machine saved
+        if (child->dir || !child->host_path.empty() || child->arch || child->sz)
+          continue;
+        out.push_back({prefix + name, child->data.data(), child->data.size()});
+      }
+    }
+  }
+
   size_t memfs_bytes()
   {
     size_t total = 0;
