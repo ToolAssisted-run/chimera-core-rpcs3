@@ -1,0 +1,21 @@
+--- a/rpcs3/Emu/RSX/Overlays/overlay_video.cpp
++++ b/rpcs3/Emu/RSX/Overlays/overlay_video.cpp
+@@ -60,7 +60,18 @@
+ 		{
+ 			if (video_path.empty()) return;
+ 
++#ifdef CHIMERA_CORE
++			// chimera: an animated icon (a save's ICON1.PAM) is played by a video
++			// decoder on the HOST side, which a headless core has not got - and
++			// asking for one is fatal, so the first game to open the save list
++			// killed its own save thread here. The still icon is what is shown. A
++			// host decoder would also be a clock outside the machine.
++			if (!Emu.GetCallbacks().make_video_source) return;
++			m_video_source = Emu.GetCallbacks().make_video_source();
++			if (!m_video_source) return;
++#else
+ 			m_video_source = ensure(Emu.GetCallbacks().make_video_source());
++#endif
+ 			m_video_source->set_update_callback([this]()
+ 			{
+ 				if (m_video_active)

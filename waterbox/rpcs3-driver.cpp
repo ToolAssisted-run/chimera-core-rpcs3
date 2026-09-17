@@ -45,6 +45,9 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 #include "Emu/Cell/Modules/cellMsgDialog.h"
 #include "Emu/Cell/Modules/cellOskDialog.h"
 #include "Emu/Cell/Modules/cellSaveData.h"
+#include "Emu/Cell/Modules/cellSysutil.h"
+#include "Emu/RSX/Overlays/overlay_manager.h"
+#include "Emu/RSX/Overlays/overlay_save_dialog.h"
 #include "Emu/Cell/Modules/sceNpTrophy.h"
 #include "Input/pad_thread.h"
 #include "Emu/Io/PadHandler.h"
@@ -327,6 +330,44 @@ namespace
     void update_title(double) override {}
   };
 
+  // The PS3's own "choose a save" list (cellSaveDataListSave/ListLoad and
+  // friends). rpcs3 asks the FRONTEND for it, and a frontend that has none is
+  // answered as "the user cancelled" - silently, because a cancel is not an
+  // error. A game that saves through the list then never saves, and one that
+  // does not expect a cancel there waits for ever on a save that was never
+  // started: Oblivion stopped on its sepia pause screen (chimera issue 86).
+  //
+  // The list rpcs3 draws itself is the native overlay, which is all the Qt
+  // frontend uses too when it is enabled - so this is that branch and nothing
+  // else. It is drawn by the renderer and driven by the PAD, which is the
+  // movie's input: the machine sees a person choosing a slot, every time the
+  // same. With no overlay manager (the null renderer) there is nothing to show
+  // the list on, and the answer stays a cancel - said out loud this time.
+  struct overlay_save_dialog final : SaveDialogBase
+  {
+    s32 ShowSaveDataList(const std::string& base_dir, std::vector<SaveDataEntry>& save_entries, s32 focused, u32 op, vm::ptr<CellSaveDataListSet> listSet, bool enable_overlay) override
+    {
+      const bool use_end = sysutil_send_system_cmd(CELL_SYSUTIL_DRAWING_BEGIN, 0) >= 0;
+      s32 result = -2;
+      if (auto manager = g_fxo->try_get<rsx::overlays::display_manager>())
+      {
+        result = manager->create<rsx::overlays::save_dialog>()->show(base_dir, save_entries, focused, op, listSet, enable_overlay);
+        if (result == rsx::overlays::user_interface::selection_code::error)
+        {
+          fprintf(stderr, "[chimera] the save list could not be shown; the game is told it was cancelled\n");
+          result = -2;
+        }
+      }
+      else
+      {
+        fprintf(stderr, "[chimera] a game asked for the save list and this renderer draws no overlays; it is told the list was cancelled\n");
+      }
+      if (use_end)
+        sysutil_send_system_cmd(CELL_SYSUTIL_DRAWING_END, 0);
+      return result;
+    }
+  };
+
   EmuCallbacks make_callbacks()
   {
     EmuCallbacks cb{};
@@ -391,7 +432,7 @@ namespace
 
     cb.get_msg_dialog = []() -> std::shared_ptr<MsgDialogBase> { return {}; };
     cb.get_osk_dialog = []() -> std::shared_ptr<OskDialogBase> { return {}; };
-    cb.get_save_dialog = []() -> std::unique_ptr<SaveDialogBase> { return {}; };
+    cb.get_save_dialog = []() -> std::unique_ptr<SaveDialogBase> { return std::make_unique<overlay_save_dialog>(); };
     cb.get_sendmessage_dialog = []() -> std::shared_ptr<SendMessageDialogBase> { return {}; };
     cb.get_recvmessage_dialog = []() -> std::shared_ptr<RecvMessageDialogBase> { return {}; };
     cb.get_trophy_notification_dialog = []() -> std::unique_ptr<TrophyNotificationBase> { return {}; };
