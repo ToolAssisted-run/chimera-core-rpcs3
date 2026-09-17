@@ -1,0 +1,20 @@
+--- a/rpcs3/Emu/RSX/Common/texture_cache_utils.h
++++ b/rpcs3/Emu/RSX/Common/texture_cache_utils.h
+@@ -165,8 +165,16 @@
+ 		inline void clear()
+ 		{
+ 			m_size = 0;
+-			m_array_idx = 0;
+ 			m_data_it = m_data.begin();
++			// chimera: a list with no arrays yet must be left as the constructor
++			// leaves it. m_array_idx is unsigned and the constructor's -1 is a
++			// sentinel: it is what makes the first emplace_back call next_array()
++			// and allocate. Setting 0 here left capacity 0 with begin() == end(),
++			// a state the constructor never produces, and the next emplace_back's
++			// own ensure rejected it. Harmless upstream, where clear() only runs
++			// at shutdown; fatal once the renderer rebuilds while the machine
++			// runs on.
++			m_array_idx = m_data.empty() ? size_type(-1) : 0;
+ 		}
+ 
+ 		inline void free()

@@ -1,0 +1,38 @@
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.cpp
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+@@ -1365,6 +1365,8 @@
+ 		rsx_log.warning("chimera: these GL objects came from another context (%llu, now %llu); rebuilding",
+ 			m_chimera_gl_context, live);
+ 		chimera_gl_teardown();
++		// the cache of what the driver has bound describes objects that are gone
++		gl_state.reset();
+ 		chimera_gl_setup();
+ 
+ 		// Nothing the renderer thought was set up still is: the program it had
+--- a/rpcs3/Emu/RSX/GL/glutils/state_tracker.hpp
++++ b/rpcs3/Emu/RSX/GL/glutils/state_tracker.hpp
+@@ -25,6 +25,24 @@
+ 		GLuint current_program = GL_NONE;
+ 		std::array<std::unordered_map<GLenum, GLuint>, 48> bound_textures{ {} };
+ 
++	public:
++		// chimera: forget everything believed about the driver. This cache says
++		// what is ALREADY bound or set so the call can be skipped, and it is only
++		// true of the objects it was filled from. When the renderer builds its
++		// objects again the driver hands the just-freed names straight back, so a
++		// new texture arrives carrying an old one's name, bind_texture finds that
++		// name "already bound" and skips the bind - while deleting the old one
++		// had unbound it. The stream buffers' texture views were exactly that:
++		// vertex fetches read nothing and the frame came out black.
++		void reset()
++		{
++			properties.clear();
++			indexed_properties.clear();
++			current_program = GL_NONE;
++			for (auto& unit : bound_textures) unit.clear();
++		}
++
++	private:
+ 		bool test_and_set_property(GLenum property, u64 test)
+ 		{
+ 			auto found = properties.find(property);
