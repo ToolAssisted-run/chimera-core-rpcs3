@@ -4,6 +4,7 @@
 
 #include "Utilities/File.h"
 #include "util/shared_ptr.hpp"
+#include "vsched.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -46,7 +47,12 @@ namespace chimera
     u64 logical_size(const node& n) { return n.mirror ? n.mirrorLen : n.data.size(); }
 
     std::shared_ptr<node> g_root;
-    u64 g_clock = 1;  // a monotonically increasing "mtime", never the wall clock
+    // A file's mtime is the machine's own clock: the frozen date miniBox
+    // answers clock_gettime with (2017-05-27) plus the virtual seconds the
+    // machine has run. A save made at frame N carries the same date on every
+    // run; a counter would have shown every save as made in January 1970.
+    constexpr s64 kEpoch = 1495889068;
+    s64 now_mtime() { return kEpoch + static_cast<s64>(vsched_now_ns() / 1000000000ull); }
 
     std::vector<std::string> split(const std::string& rel)
     {
@@ -120,7 +126,7 @@ namespace chimera
         {
           child = std::make_shared<node>();
           child->dir = true;
-          child->mtime = static_cast<s64>(g_clock++);
+          child->mtime = now_mtime();
         }
         if (!child->dir)
           return nullptr;
@@ -324,7 +330,7 @@ namespace chimera
           return false;
         materialise(*n);
         n->data.resize(length);
-        n->mtime = static_cast<s64>(g_clock++);
+        n->mtime = now_mtime();
         return true;
       }
       u64 read_at(u64 offset, void* buffer, u64 size) override
@@ -386,7 +392,7 @@ namespace chimera
           {
             n->mirrorLen = pos + size;
             pos += size;
-            n->mtime = static_cast<s64>(g_clock++);
+            n->mtime = now_mtime();
             return size;
           }
           if (atEnd && !n->mirror && n->data.empty() && size >= MIRROR_MIN_START)
@@ -399,7 +405,7 @@ namespace chimera
               n->mirrorAt = at;
               n->mirrorLen = size;
               pos = size;
-              n->mtime = static_cast<s64>(g_clock++);
+              n->mtime = now_mtime();
               return size;
             }
           }
@@ -409,7 +415,7 @@ namespace chimera
           n->data.resize(pos + size);
         std::memcpy(n->data.data() + pos, buffer, size);
         pos += size;
-        n->mtime = static_cast<s64>(g_clock++);
+        n->mtime = now_mtime();
         return size;
       }
       u64 seek(s64 offset, fs::seek_mode whence) override
@@ -512,7 +518,7 @@ namespace chimera
         }
         auto d = std::make_shared<node>();
         d->dir = true;
-        d->mtime = static_cast<s64>(g_clock++);
+        d->mtime = now_mtime();
         parent->children[leaf] = d;
         return true;
       }
@@ -539,7 +545,7 @@ namespace chimera
         }
         from_parent->children.erase(from_leaf);
         to_parent->children[to_leaf] = n;
-        n->mtime = static_cast<s64>(g_clock++);
+        n->mtime = now_mtime();
         return true;
       }
       bool remove(const std::string& path) override
@@ -565,7 +571,7 @@ namespace chimera
         }
         materialise(*n);
         n->data.resize(length);
-        n->mtime = static_cast<s64>(g_clock++);
+        n->mtime = now_mtime();
         return true;
       }
       bool utime(const std::string& path, s64, s64 mtime) override
@@ -590,7 +596,7 @@ namespace chimera
             return nullptr;
           }
           n = std::make_shared<node>();
-          n->mtime = static_cast<s64>(g_clock++);
+          n->mtime = now_mtime();
           parent->children[leaf] = n;
         }
         else if (mode & fs::excl)
@@ -614,7 +620,7 @@ namespace chimera
           n->mirrorLen = 0;
           n->mirrorAt = 0;
           n->data.clear();
-          n->mtime = static_cast<s64>(g_clock++);
+          n->mtime = now_mtime();
         }
         return std::make_unique<mem_file>(n, want_write, !!(mode & fs::append));
       }
@@ -668,7 +674,7 @@ namespace chimera
     auto n = std::make_shared<node>();
     n->host_path = host_path;
     n->host_size = size < 0 ? 0 : static_cast<u64>(size);
-    n->mtime = static_cast<s64>(g_clock++);
+    n->mtime = now_mtime();
     d->children[parts.back()] = n;
     return true;
   }
@@ -688,7 +694,7 @@ namespace chimera
     n->sz = std::move(index);
     n->sz_entry = entry;
     n->host_size = size;
-    n->mtime = static_cast<s64>(g_clock++);
+    n->mtime = now_mtime();
     d->children[parts.back()] = n;
   }
 
@@ -707,7 +713,7 @@ namespace chimera
     n->arch = std::move(index);
     n->arch_entry = entry;
     n->host_size = size;
-    n->mtime = static_cast<s64>(g_clock++);
+    n->mtime = now_mtime();
     d->children[parts.back()] = n;
   }
 
@@ -720,7 +726,7 @@ namespace chimera
     auto d = mkdirs(dir);
     auto n = std::make_shared<node>();
     n->data.assign(static_cast<const u8*>(data), static_cast<const u8*>(data) + size);
-    n->mtime = static_cast<s64>(g_clock++);
+    n->mtime = now_mtime();
     d->children[parts.back()] = n;
   }
 
