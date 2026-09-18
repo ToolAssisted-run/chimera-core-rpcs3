@@ -1,0 +1,36 @@
+--- a/rpcs3/Emu/RSX/Overlays/HomeMenu/overlay_home_menu_main_menu.cpp
++++ b/rpcs3/Emu/RSX/Overlays/HomeMenu/overlay_home_menu_main_menu.cpp
+@@ -34,7 +34,17 @@ namespace rsx
+ 				return page_navigation::exit;
+ 			});
+ 
++#ifndef CHIMERA_CORE
++			// chimera: this menu is the emulator's, and most of it acts on the
++			// emulator rather than on the game - settings that would change the
++			// machine under a movie, savestates and screenshots that want a host
++			// filesystem the sandbox has not (asking for one froze the frontend,
++			// chimera issue 99), a restart and an exit that end the machine the
++			// movie is describing, a recording and a fullscreen the frontend owns.
++			// Chimera does all of that itself, deterministically. What is left is
++			// what the GAME's player could do on a console: resume, and trophies.
+ 			add_page(home_menu::fa_icon::settings, std::make_shared<home_menu_settings>(x, y, width, height, use_separators, this));
++#endif
+ 
+ 			if (rsx::overlays::friends_list_dialog::rpcn_configured())
+ 			{
+@@ -88,6 +98,7 @@ namespace rsx
+ 				});
+ 			}
+ 
++#ifndef CHIMERA_CORE
+ 			add_item(home_menu::fa_icon::screenshot, get_localized_string(localized_string_id::HOME_MENU_SCREENSHOT), [](pad_button btn) -> page_navigation
+ 			{
+ 				if (btn != pad_button::cross) return page_navigation::stay;
+@@ -143,6 +154,7 @@ namespace rsx
+ 				});
+ 				return page_navigation::stay;
+ 			});
++#endif // CHIMERA_CORE
+ 
+ 			apply_layout();
+ 		}
