@@ -27,6 +27,10 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
 // load: progress that is silently ignored is worse than a project that will
 // not start.
 void chimera_rpcs3_set_savedata(const char* zip_path);
+// A .pkg the project carries (the pkg slot, any number), installed by rpcs3's
+// own package reader onto /dev_hdd0 before _init seals the machine: DLC,
+// patches, unlocks. One that will not install fails the load.
+void chimera_rpcs3_add_package(const char* pkg_path);
 // The export: a snapshot of every file, names as the zip above has them. The
 // pointers are the files themselves and hold until the machine runs again.
 int chimera_rpcs3_savedata_count(void);

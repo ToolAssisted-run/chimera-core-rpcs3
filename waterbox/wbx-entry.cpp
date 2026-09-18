@@ -83,6 +83,16 @@ ECL_EXPORT int Init(void)
   // the saves to start from: the savedata slot ({"savedata":["name"]}), optional
   char savedataName[256] = "";
   chimera_rpcs3_set_savedata(wbx_slot_first("savedata", savedataName, sizeof savedataName) ? savedataName : nullptr);
+  // the packages to install first: the pkg slot ({"pkg":["name", ...]}), any number
+  {
+    const int packages = wbx_slot_count("pkg");
+    for (int i = 0; i < packages; i++)
+    {
+      char pkgName[256] = "";
+      if (wbx_slot_name("pkg", i, pkgName, sizeof pkgName))
+        chimera_rpcs3_add_package(pkgName);
+    }
+  }
   // which renderer the project asked for; "opengl-hw" only draws when the
   // host also handed over a GPU bridge (SetGpuBridge, before Init)
   char renderer[32] = "null";

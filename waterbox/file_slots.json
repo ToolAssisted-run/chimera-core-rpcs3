@@ -28,6 +28,16 @@
       "help": "The 32-character disc key that decrypts a Redump PS3 image (the .dkey file distributed alongside it). Not needed for a decrypted image or a homebrew executable."
     },
     {
+      "id": "pkg",
+      "title": "Packages",
+      "min": 0,
+      "max": -1,
+      "formats": [
+        "pkg"
+      ],
+      "help": "PS3 package files (.pkg) installed onto the console's hard disk before the machine starts, the way the console's own XMB installs them: downloadable content, game patches, unlock packages. Any number, installed in the order listed. Encrypted content (EDAT) also needs its licence: a .rap comes as a package of its own, or a package repacked to need none installs and works alone. Each package is pinned by hash and cited by the movie, so a movie that plays a game with its DLC is as reproducible as one without. A file that is not a PS3 package, or a patch for another version of the game, refuses to load rather than leaving the content silently missing."
+    },
+    {
       "id": "savedata",
       "title": "Save data",
       "min": 0,

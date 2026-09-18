@@ -56,6 +56,7 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/RSX/rsx_utils.h"
 #include "Loader/PUP.h"
+#include "Crypto/unpkg.h"
 #include "Loader/TAR.h"
 #include "Crypto/unself.h"
 #include "Crypto/key_vault.h"
@@ -752,6 +753,82 @@ void chimera_rpcs3_set_savedata(const char* zip_path)
   g_savedata_zip = zip_path ? zip_path : "";
 }
 
+// ---- packages ----------------------------------------------------------------
+namespace
+{
+  // The .pkg files the project carries (the pkg slot), installed onto the
+  // console's hard disk before the machine starts. A PS3 gets its DLC, its
+  // patches and its unlocks as packages; on the console the XMB installs them
+  // to /dev_hdd0/game/<content> (a licence to the user's exdata), and here
+  // rpcs3's own package_reader does exactly that, into the memory filesystem,
+  // before the seal - so what a package installed is baseline, never a
+  // savestate's, and the same in both flavours. A package that will not
+  // install fails the load: a DLC silently missing is a different game.
+  //
+  // What a package needs beyond itself: real DLC is encrypted content (EDAT)
+  // that the game decrypts with a licence (.rap in exdata, itself a package of
+  // the licence type); a package repacked to need none ("fix" packages, the
+  // debug type) installs and works alone. The reader installs either kind;
+  // whether the game then accepts the content is between the game and its
+  // licence, and the log says so.
+  std::vector<std::string> g_packages;
+
+  bool install_packages(const std::string& root)
+  {
+    if (g_packages.empty())
+      return true;
+    chimera::memfs_mkdirs("packages");
+    std::deque<package_reader> readers;
+    for (const std::string& name : g_packages)
+    {
+      const char* base = strrchr(name.c_str(), '/');
+      const std::string rel = "packages/" + std::string(base ? base + 1 : name.c_str());
+      if (!chimera::memfs_graft(rel, name))
+      {
+        g_error = "cannot open the package " + name;
+        return false;
+      }
+      readers.emplace_back(root + rel);
+      if (!readers.back().is_valid())
+      {
+        g_error = "the file is not a PS3 package: " + name;
+        return false;
+      }
+      const auto& meta = readers.back().get_metadata();
+      // the title id is a fixed field, NUL-padded: cut it, or the line ends there
+      chimera_log.notice("package %s: title %s, install dir %s, content type 0x%x, %u entries", name, meta.title_id.c_str(),
+                         meta.install_dir.c_str(), static_cast<u32>(meta.content_type), static_cast<u32>(readers.back().get_header().file_count));
+    }
+    // one thread, in order: the sandbox's threads are cooperative, and an
+    // installation is a sequence, not a race
+    std::deque<std::string> bootable;
+    const package_install_result r = package_reader::extract_data(readers, bootable, true);
+    if (r.error != package_install_result::error_type::no_error)
+    {
+      g_error = r.error == package_install_result::error_type::app_version
+                    ? fmt::format("a package wants the game at version %s (it is %s): it is a patch for another version", r.version.expected, r.version.installed)
+                    : "a package could not be installed (the log says which file)";
+      return false;
+    }
+    for (package_reader& reader : readers)
+    {
+      if (reader.get_result() != package_reader::result::success)
+      {
+        g_error = "a package could not be installed (the log says which file)";
+        return false;
+      }
+    }
+    chimera_log.notice("%zu package(s) installed into the machine (%zu bytes of memory files)", readers.size(), chimera::memfs_bytes());
+    return true;
+  }
+}
+
+void chimera_rpcs3_add_package(const char* pkg_path)
+{
+  if (pkg_path && *pkg_path)
+    g_packages.emplace_back(pkg_path);
+}
+
 int chimera_rpcs3_savedata_count(void)
 {
   g_savedata_snapshot.clear();
@@ -1061,6 +1138,9 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
       return 0;
     chimera_log.notice("firmware %s installed into the machine (%zu bytes of memory files)", g_firmware_version, chimera::memfs_bytes());
   }
+  // the project's packages, onto the console's hard disk, before the seal
+  if (!install_packages(root))
+    return 0;
   Emulator::SaveSettings(g_cfg.to_string(), "");
 
   g_tty_path = g_android_cache_dir + "TTY.log";

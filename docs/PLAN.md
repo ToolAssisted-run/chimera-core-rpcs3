@@ -831,6 +831,37 @@ optimisation. No user interface, no networking, no real audio or input devices.
   wait address and caller, a frame trigger, a pad-poll counter, the mutex's
   last-writer record - are kept beside the session as patches.
 
+- **Packages install onto the console's hard disk (2026-09-18).** A PS3 gets
+  its downloadable content, its patches and its unlocks as `.pkg` files, which
+  the console's XMB installs to `/dev_hdd0/game/<title>` (a licence to the
+  user's `exdata`). The project now carries them: a `pkg` slot in
+  `file_slots.json` (any number, `.pkg`), each file pinned by hash and cited
+  by the movie like the disc is. The driver (`chimera_rpcs3_add_package`,
+  `install_packages` in rpcs3-driver.cpp) grafts each one into the memory
+  filesystem at `packages/<name>` and hands the whole list to rpcs3's own
+  `package_reader::extract_data` right after the firmware install, before
+  `Emu.Init` seals the machine - so what a package installed is baseline, the
+  same in both flavours, never something a savestate carries or loses. The
+  reader runs single-threaded (`from_optical_drive = true`: the sandbox's
+  threads are cooperative, and an installation is a sequence). A file that is
+  not a package, or a patch for another version of the game
+  (`check_target_app_version`), fails the load with a sentence; DLC and
+  anything else the reader accepts installs. `run-native --pkg F` repeats it
+  for the harness. Verified on the GTX 1060 with a 100 KB DLC-unlock package
+  for a disc game (the debug package type, 15 entries): the log shows
+  rpcs3 creating `/dev_hdd0/game/<title>/USRDIR/dlc/*.edat` plus the
+  package's PARAM.SFO and icon, the game then boots as without the package,
+  asks to install its 3.8 GB of game data (its own first-boot behaviour,
+  Cross at 1550 answers it, complete by 2400), and a state at 2600 weighs
+  23 MB compressed because the copied game data is a mirror of the disc
+  (the not-carrying-the-disc-twice mechanism). What a real DLC needs beyond
+  its package - its licence (`.rap`, a package of the licence type) for the
+  encrypted content - is the game's business and rpcs3's log says so; a
+  package repacked to need none works alone. Open: a package of gigabytes
+  copies its content into memory files at install (the reader decrypts and
+  writes; a mirror cannot describe decrypted bytes), so the state grows by
+  the package's size - measure before caring.
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but

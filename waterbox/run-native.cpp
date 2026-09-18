@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 #include "rpcs3-driver.h"
 
@@ -67,6 +68,7 @@ int main(int argc, char** argv)
   const char* tty_out = nullptr;
   const char* firmware = nullptr;
   const char* dkey = nullptr;
+  std::vector<const char*> pkgs;
   const char* videoOut = nullptr;
   const char* cacheDir = nullptr;
   int preIndex = -1, preCount = 0, preFirmware = 1;
@@ -86,6 +88,8 @@ int main(int argc, char** argv)
       firmware = argv[++i];
     else if (!strcmp(argv[i], "--dkey") && i + 1 < argc)
       dkey = argv[++i];
+    else if (!strcmp(argv[i], "--pkg") && i + 1 < argc)
+      pkgs.push_back(argv[++i]);
     else if (!strcmp(argv[i], "--video-out") && i + 1 < argc)
       videoOut = argv[++i];
     else if (!strcmp(argv[i], "--precompile") && i + 1 < argc)
@@ -153,7 +157,7 @@ int main(int argc, char** argv)
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -173,6 +177,8 @@ int main(int argc, char** argv)
     sa.sa_flags = SA_SIGINFO | SA_NODEFER;
     sigaction(SIGSEGV, &sa, nullptr);
   }
+  for (const char* pkg : pkgs)
+    chimera_rpcs3_add_package(pkg);
   if (!chimera_rpcs3_init(work, game, firmware, dkey))
   {
     fprintf(stderr, "init failed: %s\n", chimera_rpcs3_error());
