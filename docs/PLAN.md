@@ -862,6 +862,70 @@ optimisation. No user interface, no networking, no real audio or input devices.
   writes; a mirror cannot describe decrypted bytes), so the state grows by
   the package's size - measure before caring.
 
+- **A save carries the console's date (2026-09-18, issue #96).** The memory
+  filesystem stamped every file with a counter that started at 1, so the
+  game's own save list showed January 1970. A file's mtime is now the
+  machine's clock: the frozen date miniBox answers `clock_gettime` with
+  (1495889068, 2017-05-27) plus the virtual seconds the machine has run
+  (`vsched_now_ns`), which is also what `sys_time_get_current_time` tells
+  the game. The same movie stamps the same save with the same date on every
+  run; a counter was as deterministic but a lie. Verified on the GTX 1060:
+  the three Oblivion saves the movie makes export as before (12 files).
+
+- **Color buffers are written back to memory (2026-09-18, issue #97).** A
+  PS3 game reads its own picture whenever it likes - Oblivion draws the
+  save's thumbnail from the screen - and rpcs3 does not write finished
+  render targets into the console's memory unless "Write Color Buffers" is
+  on, so the icon was black. `writeColorBuffers` is a project setting,
+  default on (`g_cfg.video.write_color_buffers`, pinned in
+  `pin_configuration`), a bool like xemu's `idleSkip`. It costs a readback
+  when the game reads its picture; a movie is unaffected either way, only
+  pixels move. Measured on the GTX 1060: the 3800-frame Oblivion leg 4m41
+  off, 5m06 on (+9 percent); the exported ICON0.PNG 70 KB of prison cell
+  where it was 187 bytes of black; the game's own save list shows the
+  thumbnail and "Sat May 27 12:45:06 2017", the console's clock. The
+  setting exposed the two stalls below, which were there all along.
+
+- **The RSX reads through the pages it locked (2026-09-18, patch 0029).**
+  With write-back on, Oblivion's third frame stopped the machine: every
+  thread waiting, the RSX on the texture cache's own `m_cache_mutex`
+  (value 0x4001: one reader in, one writer waiting - both the RSX). Found
+  with a ring of every shared_mutex operation (mutex, op, vthread, return
+  address) printed from a frame-triggered thread dump: `GLGSRender::end`
+  takes the cache's reader lock for a texture search, the search asks a
+  surface to load its contents from memory (`memory_barrier` under
+  `get_merged_texture_memory_region`), the read lands on a page the cache
+  locked (no access, so that a CPU write is seen), faults, and the fault
+  handler asks for the writer lock. Upstream that read goes through the
+  super pointer, a second mapping of guest memory that no protection
+  reaches; this core has one mapping (patch 0007). Patch 0027 fixed one
+  instance of this (libresc's copy, one level down, inside the handler
+  itself); the general rule replaces guessing at sites: a fault the RSX
+  takes while it is inside its cache (`chimera_texture_cache_busy`, the
+  mutex not free), on a page the emulator itself locked, is served as the
+  super pointer would have served the access - the page is opened (rw) and
+  the access retried - and put back to what the emulator believes it is
+  before any other thread runs. The belief is the last protection the
+  emulator asked for, noted per page in `utils::memory_protect`; the moment
+  is the RSX giving the machine away (vsched's new leave hook, run on the
+  thread that switches out), exact because the scheduler is cooperative.
+  A whole locked run of pages opens at the first fault, so a 720p surface
+  costs one fault, not nine hundred. `GetWindowCount` (run-native, run-wbx)
+  counts the faults served this way: two or three a frame on Oblivion, a
+  few hundred pages, no measurable cost.
+
+- **A thread waiting for the RSX's flush gives way (2026-09-18, patch
+  0030).** Past that, the machine stopped again at frame ~1450, burning a
+  core with the frame counter frozen: the CPU reading its picture faults on
+  the locked buffer, and a fault from a thread that is not the RSX becomes
+  a deferred flush the RSX performs - the faulting thread waits for it in
+  `work_item::producer_wait`, `utils::spin_wait`, a pure spin. The
+  machine's threads are cooperative, so the spinner never let the RSX run.
+  `CHIMERA_YIELD()` in the loop, the rule of patch 0011 applied to the one
+  spin it had missed (the only `spin_wait` user in the tree). A frozen frame
+  counter with a busy process is this shape: a spin that never reaches
+  vsched; a quiet process with every thread parked is the other (a lock).
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but
