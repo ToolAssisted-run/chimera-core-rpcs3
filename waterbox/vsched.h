@@ -43,6 +43,11 @@ void vsched_advance(uint64_t ns);
 // Charge virtual time and give way to the next runnable thread, if any.
 void vsched_yield(uint64_t cost_ns);
 
+// A function run on the thread that is about to hand the machine to another,
+// every time it does (null: none). What a thread must finish before anyone
+// else runs goes here - see the RSX's page windows in the driver.
+void vsched_set_leave_hook(void (*fn)(void));
+
 // Park until one of the addresses is notified, its value already differs
 // from `old`, or the timeout elapses. Returns 1 on timeout, 0 otherwise;
 // callers re-check their condition either way (futex semantics).

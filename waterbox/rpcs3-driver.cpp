@@ -1523,6 +1523,104 @@ extern "C" int chimera_rpcs3_gpu_active(void)
   return s_gpu ? 1 : 0;
 }
 
+// ---- pages the RSX reads through the ones it locked ----
+// Upstream, the RSX thread reads and writes guest memory through the super
+// pointer: a second mapping of the same memory that no page protection
+// reaches, so the texture cache can lock a section (no access, so that a CPU
+// write is seen) and still read it back itself while holding its own mutex.
+// This core has one mapping (patch 0007), so that read faults - on the RSX
+// thread, inside the cache - and the handler would take the cache's mutex,
+// which this very thread holds: the RSX waits on itself for good. Oblivion's
+// third frame with writeColorBuffers on (a surface loading its contents from
+// memory during a texture search, under the cache's reader lock); Arcana
+// Heart 3's libresc copy (patch 0027) was the same deadlock one level down.
+// So a fault the RSX takes while it is inside its cache is served the way
+// the super pointer would have served the access: the page is opened (rw),
+// the access retried, and the page put back to what the emulator believes it
+// is - the last protection it asked for, noted by memory_protect - before any
+// other thread runs. The scheduler is cooperative, so that moment is exact:
+// the RSX giving the machine away (vsched's leave hook). Nothing else can
+// touch the page in between, and the cache's belief is never wrong.
+namespace
+{
+  // what the emulator last asked for each page of the guest's 4 GiB view:
+  // 0 = never asked (rw), else utils::protection + 1
+  uint8_t s_page_belief[1u << 20];
+  bool s_noting = true;  // false while a window opens or closes a page itself
+  u32 s_window_pages[4096];
+  unsigned s_window_count = 0;
+  uint64_t s_windows_opened = 0;
+
+  void protect_pages(u32 page, u32 count, utils::protection prot)
+  {
+    s_noting = false;
+    utils::memory_protect(vm::g_base_addr + page * 4096ull, count * 4096ull, prot);
+    s_noting = true;
+  }
+
+  utils::protection believed(u32 page)
+  {
+    return s_page_belief[page] ? static_cast<utils::protection>(s_page_belief[page] - 1) : utils::protection::rw;
+  }
+
+  // the windows are runs of pages; a run is put back in one call per belief
+  void close_windows()
+  {
+    for (unsigned i = 0; i < s_window_count;)
+    {
+      const u32 first = s_window_pages[i];
+      const uint8_t belief = s_page_belief[first];
+      unsigned n = 1;
+      while (i + n < s_window_count && s_window_pages[i + n] == first + n && s_page_belief[first + n] == belief)
+        n++;
+      protect_pages(first, n, believed(first));
+      i += n;
+    }
+    s_window_count = 0;
+  }
+
+  // The faulting page, and the run of pages after it the emulator asked the
+  // same thing of (a locked section is one such run): a surface loads whole,
+  // and one fault per page would be a thousand for a 720p buffer.
+  void open_window(u32 page)
+  {
+    static bool hooked = false;
+    if (!hooked)
+    {
+      vsched_set_leave_hook(close_windows);
+      hooked = true;
+    }
+    const uint8_t belief = s_page_belief[page];
+    u32 n = 0;
+    while (n < 256 && page + n < (1u << 20) && s_page_belief[page + n] == belief && s_window_count + n < std::size(s_window_pages))
+    {
+      s_window_pages[s_window_count + n] = page + n;
+      n++;
+    }
+    s_window_count += n;
+    protect_pages(page, n, utils::protection::rw);
+    s_windows_opened++;
+  }
+}
+
+extern "C" void chimera_rpcs3_note_protect(const void* pointer, usz size, int prot)
+{
+  if (!s_noting)
+    return;
+  const uint64_t base = reinterpret_cast<uint64_t>(vm::g_base_addr);
+  const uint64_t p = reinterpret_cast<uint64_t>(pointer);
+  if (p < base || p - base >= 0x1'0000'0000ull)
+    return;
+  const uint64_t first = (p - base) / 4096;
+  const uint64_t last = std::min<uint64_t>((p - base + size - 1) / 4096, (1u << 20) - 1);
+  memset(&s_page_belief[first], static_cast<uint8_t>(prot + 1), last - first + 1);
+}
+
+extern "C" uint64_t chimera_rpcs3_window_count(void)
+{
+  return s_windows_opened;
+}
+
 // A fault on a guest page: the renderer's caches protect pages of guest memory
 // to learn of CPU writes, and this is how they learn. Natively the runner's
 // SIGSEGV handler calls it; in the sandbox miniBox does (GuestFaultHandler).
@@ -1564,6 +1662,13 @@ extern "C" int chimera_rpcs3_on_fault(uint64_t addr, int is_write)
     return decline("the renderer has installed no handler");
   if (!vm::check_addr(vaddr))
     return decline("the machine says that address is not mapped");
+  if (const auto rsx = rsx::get_current_renderer(); rsx && rsx->is_current_thread() && rsx->chimera_texture_cache_busy() && believed(vaddr / 4096) != utils::protection::rw)
+  {
+    // the RSX inside its own cache, on a page the emulator itself locked:
+    // the super pointer's access, see above
+    open_window(vaddr / 4096);
+    return 1;
+  }
   const auto cpu = get_current_cpu_thread();
   bool state_changed = false;
   if (cpu)

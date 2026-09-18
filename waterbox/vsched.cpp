@@ -145,12 +145,21 @@ static void advance_to_next_deadline(void)
   wake_expired();
 }
 
+static void (*g_leave_hook)(void) = nullptr;
+
+void vsched_set_leave_hook(void (*fn)(void))
+{
+  g_leave_hook = fn;
+}
+
 // Hand the machine to `t` and park until scheduled again.
 static void switch_to(vthread* t)
 {
   vthread* self = g_cur;
   if (t == self)
     return;
+  if (g_leave_hook)
+    g_leave_hook();
   fpu_save(self);
   g_cur = t;
   g_switches++;

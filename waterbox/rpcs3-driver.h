@@ -90,6 +90,9 @@ int chimera_rpcs3_gpu_active(void);
 int chimera_rpcs3_on_fault(uint64_t addr, int is_write);
 // how many such faults the renderer handled (diagnostic, never machine state)
 uint64_t chimera_rpcs3_fault_count(void);
+// how many of the RSX's own faults, taken inside its cache, were served by
+// opening the pages for it instead (diagnostic, never machine state)
+uint64_t chimera_rpcs3_window_count(void);
 // the compile cache bridge (cache-bridge.h): the host's dispatcher, before init
 void chimera_rpcs3_install_cache_bridge(uint64_t addr);
 uint64_t chimera_rpcs3_cache_fetched(void);

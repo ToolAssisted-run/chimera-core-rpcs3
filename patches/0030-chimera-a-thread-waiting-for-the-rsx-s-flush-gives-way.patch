@@ -1,0 +1,24 @@
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.h
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.h
+@@ -52,10 +52,21 @@
+ 
+ 		void producer_wait()
+ 		{
++#ifdef CHIMERA_CORE
++			// chimera: the RSX does the flush, and it runs only when this
++			// thread gives way (the machine's threads are cooperative); a spin
++			// here would wait for it forever - Oblivion reading its own picture
++			// for the save's thumbnail
++			while (!processed)
++			{
++				CHIMERA_YIELD();
++			}
++#else
+ 			utils::spin_wait(processed, [](auto v)
+ 			{
+ 				return v;
+ 			});
++#endif
+ 
+ 			received = true;
+ 		}

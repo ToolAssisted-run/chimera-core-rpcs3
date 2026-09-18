@@ -235,6 +235,8 @@ int main(int argc, char** argv)
     fprintf(stderr, "compile cache: %llu stored, %llu fetched (%s)\n", (unsigned long long)chimera_rpcs3_cache_stored(), (unsigned long long)chimera_rpcs3_cache_fetched(), chimera_cache_host_description());
   if (chimera_rpcs3_fault_count())
     fprintf(stderr, "page faults served by the renderer: %llu\n", (unsigned long long)chimera_rpcs3_fault_count());
+  if (chimera_rpcs3_window_count())
+    fprintf(stderr, "faults of the RSX's own served by opening the page: %llu\n", (unsigned long long)chimera_rpcs3_window_count());
   if (videoOut)
   {
     // the last frame's picture: two little-endian u32 (width, height), then

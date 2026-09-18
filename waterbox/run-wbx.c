@@ -392,6 +392,9 @@ int main(int argc, char **argv)
 		u64fn GetFaultCount = (u64fn)proc(h, "GetFaultCount");
 		if (GetFaultCount && GetFaultCount())
 			fprintf(stderr, "page faults served by the renderer: %llu\n", (unsigned long long)GetFaultCount());
+		u64fn GetWindowCount = (u64fn)proc(h, "GetWindowCount");
+		if (GetWindowCount && GetWindowCount())
+			fprintf(stderr, "faults of the RSX's own served by opening the page: %llu\n", (unsigned long long)GetWindowCount());
 	}
 
 	if (ramOut) {

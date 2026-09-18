@@ -160,6 +160,12 @@ ECL_EXPORT uint64_t GetFaultCount(void)
   return chimera_rpcs3_fault_count();
 }
 
+// how many faults of the RSX's own were served by opening the page (diagnostic)
+ECL_EXPORT uint64_t GetWindowCount(void)
+{
+  return chimera_rpcs3_window_count();
+}
+
 // Diagnosis, never machine state: every CPU thread, where it is and what it
 // last called, to the host's stderr. For a machine that has gone quiet - a
 // PPU parked in an lv2 wait names the HLE function it is parked in.

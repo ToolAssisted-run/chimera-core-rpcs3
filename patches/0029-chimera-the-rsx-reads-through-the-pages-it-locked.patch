@@ -1,0 +1,72 @@
+--- a/rpcs3/Emu/RSX/Common/texture_cache.h
++++ b/rpcs3/Emu/RSX/Common/texture_cache.h
+@@ -643,6 +643,17 @@
+ 			}
+ 		};
+ 
++#ifdef CHIMERA_CORE
++	public:
++		// chimera: whether this thread is inside the cache (m_cache_mutex held,
++		// as reader or writer) - the fault handler in the driver asks, because a
++		// fault it takes from inside cannot be served by the cache (it would
++		// take the same mutex) and is a read through the super pointer upstream
++		bool chimera_busy() const
++		{
++			return !m_cache_mutex.is_free();
++		}
++#endif
+ 
+ 	protected:
+ 
+--- a/rpcs3/Emu/RSX/RSXThread.h
++++ b/rpcs3/Emu/RSX/RSXThread.h
+@@ -363,6 +363,11 @@
+ 		virtual void flip(const display_flip_info_t& info) = 0;
+ 		virtual u64 timestamp();
+ 		virtual bool on_access_violation(u32 /*address*/, bool /*is_writing*/) { return false; }
++#ifdef CHIMERA_CORE
++		// chimera: whether the RSX thread is inside its texture cache right now
++		// (see chimera_rpcs3_on_fault in the driver)
++		virtual bool chimera_texture_cache_busy() const { return false; }
++#endif
+ 		virtual void on_invalidate_memory_range(const address_range32 & /*range*/, rsx::invalidation_cause) {}
+ 		virtual void notify_tile_unbound(u32 /*tile*/) {}
+ 
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.h
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.h
+@@ -248,6 +248,9 @@
+ 	void do_local_task(rsx::FIFO::state state) override;
+ 
+ 	bool on_access_violation(u32 address, bool is_writing) override;
++#ifdef CHIMERA_CORE
++	bool chimera_texture_cache_busy() const override { return m_gl_texture_cache.chimera_busy(); }
++#endif
+ 	void on_invalidate_memory_range(const utils::address_range32 &range, rsx::invalidation_cause cause) override;
+ 	void notify_tile_unbound(u32 tile) override;
+ 	void on_semaphore_acquire_wait() override;
+--- a/rpcs3/util/vm_native.cpp
++++ b/rpcs3/util/vm_native.cpp
+@@ -425,6 +425,10 @@
+ #endif
+ 	}
+ 
++#ifdef CHIMERA_CORE
++	extern "C" void chimera_rpcs3_note_protect(const void* pointer, usz size, int prot);
++#endif
++
+ 	void memory_protect(void* pointer, usz size, protection prot)
+ 	{
+ 		if (!size)
+@@ -432,6 +436,12 @@
+ 			return;
+ 		}
+ 
++#ifdef CHIMERA_CORE
++		// chimera: the driver keeps what the emulator believes each guest page's
++		// protection is, so a page it opens for the RSX can be put back
++		chimera_rpcs3_note_protect(pointer, size, static_cast<int>(prot));
++#endif
++
+ #ifdef _WIN32
+ 
+ 		DWORD old;
