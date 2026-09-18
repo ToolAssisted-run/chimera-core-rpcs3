@@ -5,7 +5,9 @@
 #include "Utilities/File.h"
 #include "util/shared_ptr.hpp"
 
+#include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <string>
@@ -32,7 +34,16 @@ namespace chimera
       size_t sz_entry = 0;
       std::map<std::string, std::shared_ptr<node>> children;
       s64 mtime = 0;
+      // A MIRROR: a writable file whose bytes, so far, are exactly the first
+      // mirrorLen bytes of a read-only file (a disc file), so those bytes are
+      // not kept - see "not carrying the disc twice" below.
+      std::shared_ptr<node> mirror;
+      u64 mirrorLen = 0;
+      u64 mirrorAt = 0;  // where in the source the mirror's first byte lies
     };
+
+    bool readOnly(const node& n) { return !n.host_path.empty() || n.arch || n.sz; }
+    u64 logical_size(const node& n) { return n.mirror ? n.mirrorLen : n.data.size(); }
 
     std::shared_ptr<node> g_root;
     u64 g_clock = 1;  // a monotonically increasing "mtime", never the wall clock
@@ -124,8 +135,152 @@ namespace chimera
       st.is_symlink = false;
       const bool in_memory = n.host_path.empty() && !n.arch && !n.sz;
       st.is_writable = in_memory;
-      st.size = n.dir ? 0 : (in_memory ? n.data.size() : n.host_size);
+      st.size = n.dir ? 0 : (in_memory ? logical_size(n) : n.host_size);
       st.atime = st.mtime = st.ctime = n.mtime;
+    }
+
+    // ---- not carrying the disc twice ------------------------------------------
+    //
+    // A game installs itself: Oblivion's caching thread reads 41 files, 4.30 GiB,
+    // off the disc and writes them to the console's hard disk, which is this
+    // filesystem, which is the machine's memory, which is every savestate. Four
+    // fifths of a 5.45 GiB state were a second copy of files the project already
+    // has in its ISO - already compressed by their authors, so zstd gave back
+    // 1.27x and no more (chimera design log, 2026-09-17).
+    //
+    // The copy is the game's own loop of reads and writes through the kernel, so
+    // this filesystem never sees "copy": it sees a read from a read-only file and,
+    // a moment later, a write of the same bytes to a fresh one. The read-only
+    // file is the ISO itself: rpcs3's ISO layer serves /dev_bdvd out of it with
+    // read_at, so a disc file is a stretch of the ISO node and the game's file
+    // offset 0 is that stretch's start. So this filesystem REMEMBERS the last
+    // few reads from read-only files (source and offset). A big write into a
+    // fresh empty file whose bytes equal a remembered read's start makes that
+    // file a mirror of the source from that offset; a write at the end of a
+    // mirror whose bytes equal the source at the matching offset extends it;
+    // neither stores anything. The bytes are compared, not assumed: a mirror is
+    // only ever a file whose contents are provably the source's. Any other write
+    // - elsewhere in the file, with other bytes, a truncation - materialises the
+    // file first (the source's stretch is copied in) and goes ahead as it always
+    // did, so nothing a game can do reads differently.
+    //
+    // Deterministic: the decision depends only on the sequence of reads and
+    // writes, which is the machine's, so native and sandbox agree.
+    struct recent_read
+    {
+      std::weak_ptr<node> source;
+      u64 offset = 0, size = 0;
+    };
+    constexpr unsigned RECENT_READS = 64;
+    recent_read g_recentReads[RECENT_READS];
+    unsigned g_recentNext = 0;
+    // a write smaller than this starts no mirror: comparing every little write
+    // against the disc is not worth what a little file weighs
+    constexpr u64 MIRROR_MIN_START = 4096;
+
+    void remember_read(const std::shared_ptr<node>& source, u64 offset, u64 size)
+    {
+      if (size == 0)
+        return;
+      g_recentReads[g_recentNext % RECENT_READS] = {source, offset, size};
+      g_recentNext++;
+    }
+
+    // Reads a read-only node without a file object of the game's: one reader per
+    // source, kept, because a copy loop compares tens of thousands of chunks and
+    // a reopen per chunk (or a restart of a compressed stream) would be its cost.
+    struct source_reader
+    {
+      std::FILE* host = nullptr;
+      std::unique_ptr<zip_stream> zip;
+      std::unique_ptr<sz_stream> sevenz;
+      const node* n = nullptr;
+      explicit source_reader(const node& src) : n(&src)
+      {
+        if (!src.host_path.empty())
+          host = std::fopen(src.host_path.c_str(), "rb");
+        else if (src.arch)
+          zip = std::make_unique<zip_stream>(src.arch, src.arch_entry);
+        else if (src.sz)
+          sevenz = std::make_unique<sz_stream>(src.sz, src.sz_entry);
+      }
+      ~source_reader()
+      {
+        if (host)
+          std::fclose(host);
+      }
+      u64 read_at(u64 offset, void* buffer, u64 size)
+      {
+        if (zip)
+          return zip->read_at(offset, buffer, size);
+        if (sevenz)
+          return sevenz->read_at(offset, buffer, size);
+        if (!host || offset >= n->host_size)
+          return 0;
+        if (std::fseek(host, static_cast<long>(offset), SEEK_SET) != 0)
+          return 0;
+        return std::fread(buffer, 1, static_cast<size_t>(std::min<u64>(size, n->host_size - offset)), host);
+      }
+    };
+    std::map<const node*, std::unique_ptr<source_reader>> g_sourceReaders;
+
+    source_reader& reader_for(const std::shared_ptr<node>& source)
+    {
+      auto& r = g_sourceReaders[source.get()];
+      if (!r)
+        r = std::make_unique<source_reader>(*source);
+      return *r;
+    }
+
+    // Whether `buffer` is exactly what `source` holds at [offset, offset + size).
+    bool source_holds(const std::shared_ptr<node>& source, u64 offset, const void* buffer, u64 size)
+    {
+      static std::vector<u8> scratch;
+      if (scratch.size() < size)
+        scratch.resize(static_cast<size_t>(size));
+      if (reader_for(source).read_at(offset, scratch.data(), size) != size)
+        return false;
+      return std::memcmp(scratch.data(), buffer, static_cast<size_t>(size)) == 0;
+    }
+
+    // The source and offset, if any, of a recent read that begins with exactly
+    // these bytes: the start of a disc file the game is copying out.
+    bool recently_read_start(const void* buffer, u64 size, std::shared_ptr<node>& source, u64& at)
+    {
+      for (unsigned i = 0; i < RECENT_READS; i++)
+      {
+        const recent_read& r = g_recentReads[(g_recentNext + RECENT_READS - 1 - i) % RECENT_READS];
+        if (r.size < size)
+          continue;
+        auto src = r.source.lock();
+        // the first few bytes first: most writes are not copies of anything
+        if (!src || !source_holds(src, r.offset, buffer, std::min<u64>(size, 64)) || !source_holds(src, r.offset, buffer, size))
+          continue;
+        source = std::move(src);
+        at = r.offset;
+        return true;
+      }
+      return false;
+    }
+
+    // The mirror's bytes become its own: the source's prefix is copied in.
+    void materialise(node& n)
+    {
+      if (!n.mirror)
+        return;
+      n.data.resize(static_cast<size_t>(n.mirrorLen));
+      auto& r = reader_for(n.mirror);
+      u64 at = 0;
+      while (at < n.mirrorLen)
+      {
+        const u64 got = r.read_at(n.mirrorAt + at, n.data.data() + at, n.mirrorLen - at);
+        if (got == 0)
+          break; // a source that came up short: what is missing reads as zero, which is what an unmirrored short read would have left
+        at += got;
+      }
+      n.mirror.reset();
+      n.mirrorLen = 0;
+      n.mirrorAt = 0;
     }
 
     struct mem_file final : fs::file_base
@@ -138,6 +293,10 @@ namespace chimera
 
       std::unique_ptr<zip_stream> zip;
       std::unique_ptr<sz_stream> sevenz;
+      // a mirror is read through a reader of THIS handle's own, so two handles
+      // reading two places do not drag one compressed stream back and forth
+      std::unique_ptr<source_reader> mirrorReader;
+      const node* mirrorReaderOf = nullptr;
 
       mem_file(std::shared_ptr<node> n_, bool w, bool a) : n(std::move(n_)), writable(w), append(a)
       {
@@ -163,29 +322,47 @@ namespace chimera
       {
         if (!writable || host || zip || sevenz)
           return false;
+        materialise(*n);
         n->data.resize(length);
         n->mtime = static_cast<s64>(g_clock++);
         return true;
       }
       u64 read_at(u64 offset, void* buffer, u64 size) override
       {
-        if (zip)
-          return zip->read_at(offset, buffer, size);
-        if (sevenz)
-          return sevenz->read_at(offset, buffer, size);
-        if (host)
+        if (zip || sevenz || host)
         {
-          if (offset >= n->host_size)
+          const u64 got = read_source_at(offset, buffer, size);
+          remember_read(n, offset, got);
+          return got;
+        }
+        if (n->mirror)
+        {
+          if (offset >= n->mirrorLen)
             return 0;
-          if (std::fseek(host, static_cast<long>(offset), SEEK_SET) != 0)
-            return 0;
-          return std::fread(buffer, 1, static_cast<size_t>(std::min<u64>(size, n->host_size - offset)), host);
+          if (!mirrorReader || mirrorReaderOf != n->mirror.get())
+          {
+            mirrorReader = std::make_unique<source_reader>(*n->mirror);
+            mirrorReaderOf = n->mirror.get();
+          }
+          return mirrorReader->read_at(n->mirrorAt + offset, buffer, std::min<u64>(size, n->mirrorLen - offset));
         }
         if (offset >= n->data.size())
           return 0;
         const u64 got = std::min<u64>(size, n->data.size() - offset);
         std::memcpy(buffer, n->data.data() + offset, got);
         return got;
+      }
+      u64 read_source_at(u64 offset, void* buffer, u64 size)
+      {
+        if (zip)
+          return zip->read_at(offset, buffer, size);
+        if (sevenz)
+          return sevenz->read_at(offset, buffer, size);
+        if (offset >= n->host_size)
+          return 0;
+        if (std::fseek(host, static_cast<long>(offset), SEEK_SET) != 0)
+          return 0;
+        return std::fread(buffer, 1, static_cast<size_t>(std::min<u64>(size, n->host_size - offset)), host);
       }
       u64 read(void* buffer, u64 size) override
       {
@@ -198,7 +375,36 @@ namespace chimera
         if (!writable || host || zip || sevenz)
           return 0;
         if (append)
-          pos = n->data.size();
+          pos = logical_size(*n);
+        if (size != 0)
+        {
+          // a write at the very end of a mirror, of the bytes the source holds at
+          // the matching offset: the mirror grows. A big write into a fresh empty
+          // file, of the bytes a recent read began with: a mirror starts.
+          const bool atEnd = pos == logical_size(*n);
+          if (atEnd && n->mirror && source_holds(n->mirror, n->mirrorAt + pos, buffer, size))
+          {
+            n->mirrorLen = pos + size;
+            pos += size;
+            n->mtime = static_cast<s64>(g_clock++);
+            return size;
+          }
+          if (atEnd && !n->mirror && n->data.empty() && size >= MIRROR_MIN_START)
+          {
+            std::shared_ptr<node> src;
+            u64 at = 0;
+            if (recently_read_start(buffer, size, src, at))
+            {
+              n->mirror = std::move(src);
+              n->mirrorAt = at;
+              n->mirrorLen = size;
+              pos = size;
+              n->mtime = static_cast<s64>(g_clock++);
+              return size;
+            }
+          }
+          materialise(*n);
+        }
         if (pos + size > n->data.size())
           n->data.resize(pos + size);
         std::memcpy(n->data.data() + pos, buffer, size);
@@ -216,7 +422,7 @@ namespace chimera
       }
       u64 size() override
       {
-        return (host || zip || sevenz) ? n->host_size : n->data.size();
+        return (host || zip || sevenz) ? n->host_size : logical_size(*n);
       }
     };
 
@@ -357,6 +563,7 @@ namespace chimera
           fs::g_tls_error = fs::error::noent;
           return false;
         }
+        materialise(*n);
         n->data.resize(length);
         n->mtime = static_cast<s64>(g_clock++);
         return true;
@@ -403,6 +610,9 @@ namespace chimera
         }
         if ((mode & fs::trunc) && want_write)
         {
+          n->mirror.reset();
+          n->mirrorLen = 0;
+          n->mirrorAt = 0;
           n->data.clear();
           n->mtime = static_cast<s64>(g_clock++);
         }
@@ -537,7 +747,11 @@ namespace chimera
       {
         // a grafted file is the host's, read-only: it is not something the
         // machine saved
-        if (child->dir || !child->host_path.empty() || child->arch || child->sz)
+        if (child->dir || readOnly(*child))
+          continue;
+        // a mirror of a disc file is the game's own installation, not something it
+        // saved; and it has no bytes of its own to point at
+        if (child->mirror)
           continue;
         out.push_back({prefix + name, child->data.data(), child->data.size()});
       }

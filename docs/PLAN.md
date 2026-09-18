@@ -755,6 +755,43 @@ optimisation. No user interface, no networking, no real audio or input devices.
   exhaustion and no crash. The "sbrk heap exhausted" lines remain and are harmless: the
   heap spills into the arena, which no longer fills.
 
+- **Not carrying the disc twice (2026-09-18).** A PS3 state of Oblivion at
+  frame 2400 weighed 5.45 GiB and zstd gave back 1.27x, because four fifths
+  of it was the game's own installation: its caching thread copies 41 files,
+  4.30 GiB, from the disc to /dev_hdd0, and /dev_hdd0 is memfs, which is the
+  machine's memory, which is every state (chimera design log, 2026-09-17).
+
+  memfs now holds such a file as a MIRROR: a reference (source node, offset,
+  length) into the read-only file the project already has, with no bytes of
+  its own. The copy is the game's loop of reads and writes, so memfs sees a
+  read from a read-only node and, a moment later, a write of the same bytes
+  to a fresh one. It remembers the last 64 reads from read-only nodes; a
+  write of 4 KiB or more into a fresh empty file whose bytes equal a
+  remembered read's start makes the file a mirror from that offset, and a
+  write at the end of a mirror whose bytes equal the source at the matching
+  offset extends it. Compared, never assumed. Any other write, a truncation
+  included, materialises the file (the source's stretch is copied in) and
+  goes ahead as before, so a game can do nothing that reads differently.
+
+  Two facts cost a wrong first version. The game reads the disc through
+  rpcs3's ISO layer, which serves /dev_bdvd out of the ISO node with
+  `read_at` (never `read`), so the recorder has to sit in `read_at`. And the
+  write offset is the DESTINATION file's, 0 for a fresh file, while the
+  source offset is where that file lies inside the ISO - a mirror carries
+  its own source offset, established by the first write. A Redump ISO with a
+  .dkey is decrypted by that layer, so its bytes never match and nothing is
+  mirrored: correct, and no gain, for encrypted discs.
+
+  Measured on the GTX 1060 (`CHIMERA_STATE_RAW=1`, `--save-state-file`):
+  frame 2400 raw 5,850,939,984 -> 1,233,338,966 bytes, save 12.7 s -> 1.7 s,
+  load 4.1 s -> 1.0 s. MainRAM at 2400 byte-identical to the control core,
+  also after a state-file round trip at 1800. The whole 4200-frame movie (the
+  world loaded out of the cache, the game saved) with a round trip at 2800:
+  MainRAM at the end byte-identical to the control, the state at 3700 raw
+  1,238,860,318 bytes, save 1.4 s, load 0.8 s. Every greenzone anchor of the
+  machine shrinks by the same four gigabytes. Not covered: a game that writes
+  its copy through a path other than a fresh file written front to back.
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but
