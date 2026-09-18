@@ -1,0 +1,56 @@
+--- a/rpcs3/Emu/RSX/Common/texture_cache_utils.h
++++ b/rpcs3/Emu/RSX/Common/texture_cache_utils.h
+@@ -1540,10 +1540,53 @@ namespace rsx
+ 		 * Flush
+ 		 */
+ 	private:
++#ifdef CHIMERA_CORE
++		// chimera: the flush writes the readback into guest memory through the
++		// super pointer, which upstream is a second mapping of guest memory that
++		// no page protection reaches. This core has no such mapping (patch 0007:
++		// g_sudo_addr is g_base_addr), so the write lands on the very pages the
++		// section has locked, and faults - on the RSX thread, inside the fault
++		// handler that is doing the flush, with m_cache_mutex held as writer.
++		// The nested handler then asks for that mutex as reader and the RSX
++		// waits on itself for good: Arcana Heart 3's third frame, libresc's
++		// NV3089 copy of a locked render target. So for the copy the pages of
++		// this section that it lands on are made writable, and put back to what
++		// the section says they are the moment it is done; the cache's own
++		// idea of their protection is never wrong.
++		struct chimera_flush_window
++		{
++			address_range32 range;
++			utils::protection prot;
++			chimera_flush_window(const buffered_section& s, const address_range32& copy)
++				: prot(s.get_protection())
++			{
++				if (prot == utils::protection::rw || !s.is_locked())
++				{
++					return;
++				}
++				range = copy.to_page_range().get_intersect(s.get_locked_range());
++				if (range.valid())
++				{
++					memory_protect(range, utils::protection::rw);
++				}
++			}
++			~chimera_flush_window()
++			{
++				if (range.valid())
++				{
++					memory_protect(range, prot);
++				}
++			}
++		};
++#endif
++
+ 		void imp_flush_memcpy(u32 vm_dst, u8* src, u32 len) const
+ 		{
+ 			u8 *dst = get_ptr<u8>(vm_dst);
+ 			address_range32 copy_range = address_range32::start_length(vm_dst, len);
++#ifdef CHIMERA_CORE
++			const chimera_flush_window window(*this, copy_range);
++#endif
+ 
+ 			if (flush_exclusions.empty() || !copy_range.overlaps(flush_exclusions))
+ 			{

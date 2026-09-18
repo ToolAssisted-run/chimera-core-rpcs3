@@ -792,6 +792,45 @@ optimisation. No user interface, no networking, no real audio or input devices.
   machine shrinks by the same four gigabytes. Not covered: a game that writes
   its copy through a path other than a fresh file written front to back.
 
+- **A flush that faults on the pages it is flushing to (2026-09-18).** Arcana
+  Heart 3 (BLUS31424) booted, drew two frames and stopped: black screen, the
+  pad polled once in six hundred frames, the main thread waiting forever in
+  cellRescGetFlipStatus for a flip the RSX never made. The RSX thread was
+  parked at frame 3 inside libresc's full-screen NV3089_IMAGE_IN blit, waiting
+  on the texture cache's own `m_cache_mutex` - a value of two writers, and the
+  last writer was itself.
+
+  The chain, read off the RSX thread's stack: the blit reads a page the GL
+  texture cache has locked; the fault handler runs `invalidate_address`, which
+  takes the cache mutex as writer and flushes the section - reads the texture
+  back and writes it into guest memory through the "super pointer"
+  `g_sudo_addr`. Upstream that pointer is a SECOND mapping of guest memory that
+  no page protection reaches. This core has no such mapping (patch 0007 makes
+  `g_sudo_addr` the base address itself - miniBox memory does not alias), so
+  the write lands on the very pages the section locked and faults again, on
+  the same thread, inside the handler. The nested handler asks for the mutex
+  as reader and waits on its own writer lock for good. Other GPU titles
+  survive because their flushes come from PPU faults and are done later from
+  the RSX's work queue, with no handler frame on the stack; this is the first
+  title seen to fault from within the RSX's own blit and then need a flush
+  write to a page still protected. The Linux null renderer never protects a
+  page, which is why the headless leg flipped every frame.
+
+  Patch 0027: for the copy, the pages of the flushing section that the copy
+  lands on are made writable and put back to the section's protection the
+  moment it is done (`chimera_flush_window` around `imp_flush_memcpy`,
+  Emu/RSX/Common/texture_cache_utils.h). The cache's own idea of their
+  protection is never wrong, and only this section's pages are touched.
+  Verified on the GTX 1060: the game reaches its first dialog ("no save data")
+  by frame 200, answers the movie's Cross at 2001 with its second dialog, the
+  picture changing with the input where before it was 533 pixels of OSD;
+  Oblivion's MainRAM at 2400 byte-identical to the control with the same raw
+  state size; Prince of Persia after three rewinds 12.34% near-black, 44,375
+  colours - the known-good picture. The core gate could not be run here (no
+  native build); the diagnostics that found this - a vsched thread dump with
+  wait address and caller, a frame trigger, a pad-poll counter, the mutex's
+  last-writer record - are kept beside the session as patches.
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but
