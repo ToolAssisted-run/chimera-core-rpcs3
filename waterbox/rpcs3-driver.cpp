@@ -382,6 +382,64 @@ namespace
     return text;
   }
 
+  // Why a package would not install, in a sentence: a boot result on its own
+  // says only "Game install failed".
+  std::string g_install_error;
+
+  // Reads a list of packages the emulator can already open and installs them
+  // onto the console's hard disk, in one thread and in order: the sandbox's
+  // threads are cooperative, and an installation is a sequence, not a race.
+  // Two lists reach it - the project's own .pkg files, grafted into the memory
+  // filesystem (install_packages, below), and the ones a disc carries for the
+  // console to install before it runs (INSDIR, PKGDIR, PS3_EXTRA), which
+  // Emulator::Load hands to the on_install_pkgs callback. The second kind
+  // arrives as emulator paths into the disc itself, so the reader decrypts
+  // them where they lie; both write their content into memory files. `whence`
+  // names the list for the log and for the sentence a failure leaves behind,
+  // and `names` is what to call each file in that sentence: a project's own
+  // packages are grafted first, so the path the reader is handed is a memory
+  // file's and the name the person chose is the other one.
+  bool install_pkg_paths(const std::vector<std::string>& paths, const std::vector<std::string>& names, const char* whence)
+  {
+    if (paths.empty())
+      return true;
+    std::deque<package_reader> readers;
+    for (size_t i = 0; i < paths.size(); i++)
+    {
+      readers.emplace_back(paths[i]);
+      if (!readers.back().is_valid())
+      {
+        g_install_error = "the file is not a PS3 package: " + names[i];
+        return false;
+      }
+      const auto& meta = readers.back().get_metadata();
+      // the title id is a fixed field, NUL-padded: cut it, or the line ends there
+      chimera_log.notice("package %s (from %s): title %s, install dir %s, content type 0x%x, %u entries", names[i], whence,
+                         meta.title_id.c_str(), meta.install_dir.c_str(), static_cast<u32>(meta.content_type),
+                         static_cast<u32>(readers.back().get_header().file_count));
+    }
+    std::deque<std::string> bootable;
+    const package_install_result r = package_reader::extract_data(readers, bootable, true);
+    if (r.error != package_install_result::error_type::no_error)
+    {
+      g_install_error = r.error == package_install_result::error_type::app_version
+                            ? fmt::format("a package wants the game at version %s (it is %s): it is a patch for another version", r.version.expected, r.version.installed)
+                            : "a package could not be installed (the log says which file)";
+      return false;
+    }
+    for (package_reader& reader : readers)
+    {
+      if (reader.get_result() != package_reader::result::success)
+      {
+        g_install_error = "a package could not be installed (the log says which file)";
+        return false;
+      }
+    }
+    chimera_log.notice("%zu package(s) from %s installed into the machine (%zu bytes of memory files)", readers.size(), whence,
+                       chimera::memfs_bytes());
+    return true;
+  }
+
   EmuCallbacks make_callbacks()
   {
     EmuCallbacks cb{};
@@ -497,7 +555,16 @@ namespace
     cb.get_image_info = [](const std::string&, std::string&, s32&, s32&, s32&) { return false; };
     cb.get_scaled_image = [](const std::string&, s32, s32, s32&, s32&, u8*, bool) { return false; };
     cb.get_font_dirs = []() -> std::vector<std::string> { return {}; };
-    cb.on_install_pkgs = [](const std::vector<std::string>&, bool) { return false; };
+    // The content a disc carries for the console to INSTALL before it runs the
+    // game: PS3_GAME/INSDIR, PS3_GAME/PKGDIR and PS3_EXTRA hold .pkg files, and
+    // a real PS3 installs them to /dev_hdd0/game the first time the disc goes
+    // in. Emulator::Load finds them, hands the list here, and a refusal is the
+    // whole of "Game install failed" - which is what a stub returning false
+    // made of every such disc (chimera#108). They install exactly as the
+    // project's own packages do, into the memory filesystem: the paths are
+    // already the emulator's (the ISO's virtual device, or the memory files a
+    // disc archive was grafted into), so the reader reads them where they lie.
+    cb.on_install_pkgs = [](const std::vector<std::string>& pkgs, bool) { return install_pkg_paths(pkgs, pkgs, "the disc"); };
     cb.add_breakpoint = [](u32) {};
     cb.display_sleep_control_supported = []() { return false; };
     cb.enable_display_sleep = [](bool) {};
@@ -788,7 +855,7 @@ namespace
     if (g_packages.empty())
       return true;
     chimera::memfs_mkdirs("packages");
-    std::deque<package_reader> readers;
+    std::vector<std::string> paths;
     for (const std::string& name : g_packages)
     {
       const char* base = strrchr(name.c_str(), '/');
@@ -798,37 +865,13 @@ namespace
         g_error = "cannot open the package " + name;
         return false;
       }
-      readers.emplace_back(root + rel);
-      if (!readers.back().is_valid())
-      {
-        g_error = "the file is not a PS3 package: " + name;
-        return false;
-      }
-      const auto& meta = readers.back().get_metadata();
-      // the title id is a fixed field, NUL-padded: cut it, or the line ends there
-      chimera_log.notice("package %s: title %s, install dir %s, content type 0x%x, %u entries", name, meta.title_id.c_str(),
-                         meta.install_dir.c_str(), static_cast<u32>(meta.content_type), static_cast<u32>(readers.back().get_header().file_count));
+      paths.push_back(root + rel);
     }
-    // one thread, in order: the sandbox's threads are cooperative, and an
-    // installation is a sequence, not a race
-    std::deque<std::string> bootable;
-    const package_install_result r = package_reader::extract_data(readers, bootable, true);
-    if (r.error != package_install_result::error_type::no_error)
+    if (!install_pkg_paths(paths, g_packages, "the project"))
     {
-      g_error = r.error == package_install_result::error_type::app_version
-                    ? fmt::format("a package wants the game at version %s (it is %s): it is a patch for another version", r.version.expected, r.version.installed)
-                    : "a package could not be installed (the log says which file)";
+      g_error = g_install_error;
       return false;
     }
-    for (package_reader& reader : readers)
-    {
-      if (reader.get_result() != package_reader::result::success)
-      {
-        g_error = "a package could not be installed (the log says which file)";
-        return false;
-      }
-    }
-    chimera_log.notice("%zu package(s) installed into the machine (%zu bytes of memory files)", readers.size(), chimera::memfs_bytes());
     return true;
   }
 }
@@ -1199,7 +1242,13 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   run_main_queue();
   if (r != game_boot_result::no_errors)
   {
-    fail(fmt::format("boot failed: %s", r));
+    // "Game install failed" is the whole of what the boot result says about a
+    // disc whose content would not install; the reason is the sentence the
+    // installer left behind.
+    if (r == game_boot_result::install_failed && !g_install_error.empty())
+      fail("the content this disc installs onto the console could not be installed: " + g_install_error);
+    else
+      fail(fmt::format("boot failed: %s", r));
     return 0;
   }
   if (!Emu.IsReady())

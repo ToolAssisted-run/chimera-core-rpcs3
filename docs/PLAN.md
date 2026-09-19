@@ -948,6 +948,31 @@ optimisation. No user interface, no networking, no real audio or input devices.
   `LdrShutdownProcess` is the CLR tearing down after the real event, not
   the event.
 
+- **A disc installs its own content too (2026-09-19, chimera#108).** A PS3
+  disc can carry packages the console must INSTALL before it runs the game:
+  `PS3_GAME/INSDIR`, `PS3_GAME/PKGDIR` and `PS3_EXTRA`, which a real console
+  unpacks onto `/dev_hdd0/game` the first time the disc goes in. Emulator::Load
+  finds them and hands the list to the `on_install_pkgs` callback; this driver
+  answered `return false`, and that one word is the whole of the boot result
+  "Game install failed" that Resident Evil 5 Gold Edition and Strider Hiryuu
+  stopped on. The callback now installs them exactly as the project's own
+  `.pkg` files are installed - `install_pkg_paths` is the reader loop both
+  share, one thread and in order - and the paths need no grafting because they
+  are already the emulator's own, into the ISO's virtual device or into the
+  memory files a disc archive was read into, so the reader decrypts them where
+  they lie. It runs inside `BootGame`, which is inside the load, so what the
+  disc installed is baseline like a project package's is, the same in both
+  flavours. A failure now says WHY: the boot result alone names no file, so
+  the installer's sentence is what the core reports.
+  Proved on a disc built for it - Bejeweled 3 dumped to a folder with a
+  15-entry package dropped into `PS3_GAME/INSDIR` and repacked as a .zip: the
+  core before the change stops at "boot failed: Game install failed", the core
+  after it logs `Found INSDIR`, `1 package(s) from the disc installed into the
+  machine (313054 bytes of memory files)`, and runs 300 frames with RAM moving
+  every report. A synthetic ISO is NOT a way to test this leg: rpcs3's ISO
+  loader wants a real PS3 disc image (region information in the header) and
+  refuses a plain ISO 9660 one built with xorrisofs as "Corrupt ISO file".
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but
