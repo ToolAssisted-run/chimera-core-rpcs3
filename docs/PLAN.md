@@ -980,6 +980,14 @@ optimisation. No user interface, no networking, no real audio or input devices.
   .arc resources, 210 MB of memory files, about 45 seconds. That disc then
   stops for a reason of its own: it is a Redump image and its key was not
   given (below).
+  And proved to a PICTURE on the 1060, because Bejeweled 3 still never draws
+  (the open item above): Oblivion's disc dumped to a folder with the same
+  package in `PS3_GAME/INSDIR`, repacked as a 4.99 GB stored .zip, played
+  through `chimera-run --gpu --draw-every-frame` with that project's own input
+  log. The 2026-09-16 core refuses the disc outright ("boot failed: Game
+  install failed", no frames); this one installs the package and draws - the
+  screenshot at frame 600 is Oblivion's character-creation screen, the same
+  picture the unmodified disc gives at that frame.
 
 - **A Redump image says it needs its key (2026-09-19).** A Redump PS3 disc
   image keeps the disc's filesystem in the clear and its DATA regions
