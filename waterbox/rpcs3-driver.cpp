@@ -589,6 +589,11 @@ namespace
     // (overlay_audio.cpp ensure()s the callback) - which is how a game with a
     // SND0.AT3 on it killed the core before it drew a frame.
     g_cfg.misc.play_music_during_boot.set(false);
+    // "Mouse and keyboard are now used as pad": an overlay hint for a desktop
+    // user who toggled which device the pointer drives. Here nothing toggles -
+    // the frontend is the pad - and the hint was drawn over every game's first
+    // frames (chimera#104).
+    g_cfg.misc.show_mouse_and_keyboard_toggle_hint.set(false);
     // no firmware yet: the two startup libraries are HLE, nothing is loaded
     // from dev_flash (M3 turns this around)
     g_cfg.core.libraries_control.set_set({"liblv2.sprx:hle", "libsysmodule.sprx:hle"});
