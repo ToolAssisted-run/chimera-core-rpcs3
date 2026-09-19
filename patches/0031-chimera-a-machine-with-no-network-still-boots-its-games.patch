@@ -1,0 +1,135 @@
+diff --git a/rpcs3/Emu/Cell/lv2/sys_net/nt_p2p_port.cpp b/rpcs3/Emu/Cell/lv2/sys_net/nt_p2p_port.cpp
+--- a/rpcs3/Emu/Cell/lv2/sys_net/nt_p2p_port.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_net/nt_p2p_port.cpp
+@@ -50,7 +50,16 @@
+ #else
+ 	if (p2p_socket == -1)
+ #endif
+-		fmt::throw_exception("Failed to create DGRAM socket for P2P socket: %s!", get_last_error(true));
++	{
++		// chimera: a machine with no network cannot open a socket, and that is
++		// an answer for the GAME (its bind fails with ENETDOWN, see
++		// p2p_thread::create_p2p_port), not a reason to end the PPU thread
++		// that asked - which took every other thread with it and left the
++		// whole core waiting (chimera#109, Dragon Ball Z Burst Limit's
++		// NpMatching thread at boot).
++		sys_net.warning("Failed to create DGRAM socket for P2P socket: %s - the port stays unbound", get_last_error(true));
++		return;
++	}
+ 
+ 	np::set_socket_non_blocking(p2p_socket);
+ 
+diff --git a/rpcs3/Emu/Cell/lv2/sys_net/network_context.h b/rpcs3/Emu/Cell/lv2/sys_net/network_context.h
+--- a/rpcs3/Emu/Cell/lv2/sys_net/network_context.h
++++ b/rpcs3/Emu/Cell/lv2/sys_net/network_context.h
+@@ -38,7 +38,8 @@
+ 
+ 	p2p_thread();
+ 
+-	void create_p2p_port(u16 p2p_port);
++	// chimera: false when the port could not get a socket (no network here)
++	bool create_p2p_port(u16 p2p_port);
+ 
+ 	void bind_sce_np_port();
+ 	void operator()();
+diff --git a/rpcs3/Emu/Cell/lv2/sys_net/network_context.cpp b/rpcs3/Emu/Cell/lv2/sys_net/network_context.cpp
+--- a/rpcs3/Emu/Cell/lv2/sys_net/network_context.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_net/network_context.cpp
+@@ -250,17 +250,29 @@
+ }
+ 
+ // Must be used under list_p2p_ports_mutex lock!
+-void p2p_thread::create_p2p_port(u16 p2p_port)
++bool p2p_thread::create_p2p_port(u16 p2p_port)
+ {
+ 	if (!list_p2p_ports.contains(p2p_port))
+ 	{
+-		list_p2p_ports.emplace(std::piecewise_construct, std::forward_as_tuple(p2p_port), std::forward_as_tuple(p2p_port));
++		auto it = list_p2p_ports.emplace(std::piecewise_construct, std::forward_as_tuple(p2p_port), std::forward_as_tuple(p2p_port)).first;
++		// chimera: a port that got no socket is no port; the caller answers the
++		// game with ENETDOWN instead of handing it a socket of -1
++#ifdef _WIN32
++		if (it->second.p2p_socket == INVALID_SOCKET)
++#else
++		if (it->second.p2p_socket == -1)
++#endif
++		{
++			list_p2p_ports.erase(it);
++			return false;
++		}
+ 		const u32 prev_value = num_p2p_ports.fetch_add(1);
+ 		if (!prev_value)
+ 		{
+ 			num_p2p_ports.notify_one();
+ 		}
+ 	}
++	return true;
+ }
+ 
+ void p2p_thread::operator()()
+diff --git a/rpcs3/Emu/Cell/lv2/sys_net/lv2_socket_p2p.cpp b/rpcs3/Emu/Cell/lv2/sys_net/lv2_socket_p2p.cpp
+--- a/rpcs3/Emu/Cell/lv2/sys_net/lv2_socket_p2p.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_net/lv2_socket_p2p.cpp
+@@ -124,7 +124,8 @@
+ 	{
+ 		std::lock_guard list_lock(nc.list_p2p_ports_mutex);
+ 
+-		nc.create_p2p_port(p2p_port);
++		if (!nc.create_p2p_port(p2p_port))
++			return -SYS_NET_ENETDOWN; // chimera: no network on this machine
+ 		auto& pport = ::at32(nc.list_p2p_ports, p2p_port);
+ 		real_socket = pport.p2p_socket;
+ 
+diff --git a/rpcs3/Emu/Cell/lv2/sys_net/lv2_socket_p2ps.cpp b/rpcs3/Emu/Cell/lv2/sys_net/lv2_socket_p2ps.cpp
+--- a/rpcs3/Emu/Cell/lv2/sys_net/lv2_socket_p2ps.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_net/lv2_socket_p2ps.cpp
+@@ -686,7 +686,8 @@
+ 	{
+ 		std::lock_guard list_lock(nc.list_p2p_ports_mutex);
+ 
+-		nc.create_p2p_port(p2p_port);
++		if (!nc.create_p2p_port(p2p_port))
++			return -SYS_NET_ENETDOWN; // chimera: no network on this machine
+ 		auto& pport = ::at32(nc.list_p2p_ports, p2p_port);
+ 		real_socket = pport.p2p_socket;
+ 
+@@ -784,7 +785,8 @@
+ 	auto& nc = g_fxo->get<p2p_context>();
+ 	std::lock_guard list_lock(nc.list_p2p_ports_mutex);
+ 
+-	nc.create_p2p_port(port);
++	if (!nc.create_p2p_port(port))
++		return -SYS_NET_ENETDOWN; // chimera: no network on this machine
+ 	auto& pport = ::at32(nc.list_p2p_ports, port);
+ 
+ 	std::lock_guard vport_lock(pport.bound_p2p_vports_mutex);
+diff --git a/rpcs3/Emu/Cell/lv2/sys_ss.cpp b/rpcs3/Emu/Cell/lv2/sys_ss.cpp
+--- a/rpcs3/Emu/Cell/lv2/sys_ss.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_ss.cpp
+@@ -142,6 +142,26 @@
+ 	{
+ 		fmt::throw_exception("sys_ss_random_number_generator(): BCryptGenRandom failed (0x%08x)", ret);
+ 	}
++#elif defined(CHIMERA_CORE)
++	// chimera: the sandbox has no /dev/urandom, and would not want one - a
++	// number drawn from the host is a number the movie cannot replay. The
++	// console's random numbers come from a generator INSIDE the machine
++	// (xoshiro256**, seeded once), whose state lives in the guest's memory
++	// like everything else and so travels with every savestate. A game that
++	// asked for entropy at boot (chimera#109, Injustice) gets numbers instead
++	// of a dead PPU thread.
++	{
++		static u64 s[4] = { 0x9E3779B97F4A7C15ull, 0xBF58476D1CE4E5B9ull, 0x94D049BB133111EBull, 0x2545F4914F6CDD1Dull };
++		auto rotl = [](u64 x, int k) { return (x << k) | (x >> (64 - k)); };
++		for (u64 i = 0; i < size; i += 8)
++		{
++			const u64 result = rotl(s[1] * 5, 7) * 9;
++			const u64 t = s[1] << 17;
++			s[2] ^= s[0]; s[3] ^= s[1]; s[1] ^= s[2]; s[0] ^= s[3];
++			s[2] ^= t; s[3] = rotl(s[3], 45);
++			std::memcpy(temp.get() + i, &result, std::min<u64>(8, size - i));
++		}
++	}
+ #else
+ 	fs::file rnd{"/dev/urandom"};
+ 

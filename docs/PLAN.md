@@ -926,6 +926,28 @@ optimisation. No user interface, no networking, no real audio or input devices.
   counter with a busy process is this shape: a spin that never reaches
   vsched; a quiet process with every thread parked is the other (a lock).
 
+- **A machine with no network still boots its games (2026-09-19, patch
+  0031, chimera#109).** Two of three boot crashes read straight off the
+  crash notes players attached. Dragon Ball Z Burst Limit: its NpMatching
+  thread binds a P2P socket at boot; `nt_p2p_port`'s constructor threw when
+  `socket()` failed (it always fails here: host-plumbing answers ENETDOWN),
+  and a thrown exception on a PPU thread ends it and leaves every other
+  thread waiting - the deadlock miniBox reported. The port now stays
+  unbound and `create_p2p_port` says so, so the game's bind returns
+  ENETDOWN, the answer the #84 socket fix already gave plain sockets.
+  Injustice: `sys_ss_random_number_generator` read `/dev/urandom`, which
+  the sandbox has not got, and threw; it now draws from a xoshiro256**
+  inside the machine, seeded once - a host's entropy is a number a movie
+  cannot replay anyway, and the generator's state lives in guest memory,
+  so a savestate carries it. The third (Mortal Kombat Komplete) is a
+  `memcmp(NULL, heap, 65)` in guest code at 0x36f052f15c1 of the 09-19
+  core; without its minidump the caller is unknown - asked for.
+  How to read such a note: `rip` inside `0x36f00000000 + core.wbx` resolves
+  with `addr2line -e core.wbx` on the package's own core.wbx (not
+  stripped); a fault "in host code" at process exit in `RtlFreeHeap` under
+  `LdrShutdownProcess` is the CLR tearing down after the real event, not
+  the event.
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but
