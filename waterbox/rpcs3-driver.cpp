@@ -56,6 +56,7 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/RSX/rsx_utils.h"
 #include "Loader/PUP.h"
+#include "Loader/ISO.h"
 #include "Crypto/unpkg.h"
 #include "Loader/TAR.h"
 #include "Crypto/unself.h"
@@ -385,6 +386,26 @@ namespace
   // Why a package would not install, in a sentence: a boot result on its own
   // says only "Game install failed".
   std::string g_install_error;
+
+  // Whether this disc image's DATA never decrypted. A Redump image is a PS3
+  // disc with its filesystem in the clear and its data regions encrypted, and
+  // the key is a separate file (the Disc key slot); handed over without one,
+  // the disc reads as a disc whose executable is not an executable, and the
+  // boot result for that is the unhelpful "Invalid file or folder". Every
+  // bootable PS3 disc begins its EBOOT.BIN with an SCE header, so anything
+  // else there is an image whose data is still locked.
+  bool iso_data_is_locked(const std::string& iso_path)
+  {
+    iso_archive arc(iso_path);
+    const char* eboot = "PS3_GAME/USRDIR/EBOOT.BIN";  // relative: iso_archive walks from the disc root
+    if (!arc.is_valid() || !arc.is_file(eboot))
+      return false;
+    std::unique_ptr<fs::file_base> f = arc.open(eboot);
+    u8 magic[4] = {};
+    if (!f || f->read_at(0, magic, sizeof magic) != sizeof magic)
+      return false;
+    return std::memcmp(magic, "SCE\0", 4) != 0 && std::memcmp(magic, "\177ELF", 4) != 0;
+  }
 
   // Reads a list of packages the emulator can already open and installs them
   // onto the console's hard disk, in one thread and in order: the sandbox's
@@ -936,6 +957,9 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     chimera::memfs_put("config/dev_flash/sys/external/liblv2.sprx", "", 0);
   }
   std::string game = game_path;
+  // whether the game is a disc IMAGE, which is the only shape that can arrive
+  // with its data still encrypted (see iso_data_is_locked)
+  bool game_is_iso = false;
   {
     const char* base = strrchr(game_path, '/');
     base = base ? base + 1 : game_path;
@@ -1083,6 +1107,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
         return 0;
       }
       game = root + "game/" + base;
+      game_is_iso = ends_with_ci(base, ".iso");
     }
     // a Redump disc key rides next to the ISO as "<stem>.dkey", where rpcs3's
     // ISO loader looks first (Loader/ISO.cpp: the path minus its extension)
@@ -1247,6 +1272,15 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     // installer left behind.
     if (r == game_boot_result::install_failed && !g_install_error.empty())
       fail("the content this disc installs onto the console could not be installed: " + g_install_error);
+    else if (game_is_iso && iso_data_is_locked(game))
+      fail(dkey_path && *dkey_path
+               ? "this disc image is still encrypted with the disc key given: the image's data does not decrypt "
+                 "with it, so the key belongs to another disc. A Redump image's key is the .dkey distributed "
+                 "beside that exact image."
+               : "this disc image is a Redump image: its filesystem is in the clear but the disc's DATA is "
+                 "encrypted, and the game's executable reads as noise without the key. Give the image's disc "
+                 "key - the .dkey (or .key) file distributed beside it - in the Disc key slot, or use an "
+                 "already decrypted image.");
     else
       fail(fmt::format("boot failed: %s", r));
     return 0;

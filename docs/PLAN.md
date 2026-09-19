@@ -972,6 +972,29 @@ optimisation. No user interface, no networking, no real audio or input devices.
   every report. A synthetic ISO is NOT a way to test this leg: rpcs3's ISO
   loader wants a real PS3 disc image (region information in the header) and
   refuses a plain ISO 9660 one built with xorrisofs as "Corrupt ISO file".
+  Proved again on the disc the issue names, Resident Evil 5 Gold Edition (USA)
+  v02.00, 14.4 GB: the 2026-09-16 core stops at "boot failed: Game install
+  failed" and this one reads `PS3_GAME/INSDIR/DATA000.PKG` (15.7 MB, 22
+  entries) straight off the ISO's virtual device and installs it - the Gold
+  Edition's own update, `/dev_hdd0/game/BLUS30491/USRDIR/EBOOT.BIN` and its
+  .arc resources, 210 MB of memory files, about 45 seconds. That disc then
+  stops for a reason of its own: it is a Redump image and its key was not
+  given (below).
+
+- **A Redump image says it needs its key (2026-09-19).** A Redump PS3 disc
+  image keeps the disc's filesystem in the clear and its DATA regions
+  encrypted; the key is a separate file (`<image>.dkey`, the Disc key slot,
+  which this core already mounts where rpcs3's loader looks). Handed over
+  without one, the image reads as a disc whose executable is not an
+  executable - rpcs3 logs `Invalid or unsupported file format ... Not an ELF`
+  and the boot result is "Invalid file or folder", which names neither the
+  cause nor the cure. The core now tells the two apart: every bootable PS3
+  disc begins `PS3_GAME/USRDIR/EBOOT.BIN` with an SCE header, so when a boot
+  of a disc IMAGE fails and that file starts with neither SCE nor ELF, the
+  data never decrypted - the core says so, and says to give the .dkey (and
+  says it differently when a key was given and did not fit). The test costs
+  nothing on a good disc, because it runs only after a failed boot, and a
+  decrypted image (Bejeweled 3) still boots untouched.
 
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
