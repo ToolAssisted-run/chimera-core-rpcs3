@@ -9,9 +9,17 @@ name: chimera waterbox core
 # one - over the small PPC programs in tests/, which are assembled here from
 # source rather than shipped as binaries.
 #
-# This is the expensive core. It builds LLVM twice (host and guest), which is
-# hours on a runner and changes only when the pin does - hence its own cache key,
-# restored last so it wins.
+# This is the expensive core. It builds LLVM twice (host and guest) and rpcs3's
+# emulator library twice, which is hours on a runner and changes only when the
+# pin does - hence the two build-tree caches below.
+#
+# Until 2026-09-20 that cost was dodged by not building the native reference at
+# all, and the "Core gate" step echoed a SKIP in place of waterbox/run-gate.sh.
+# Nothing then ran the gate but a developer who remembered: waterbox/native.mk
+# went eight days without linking and no run anywhere said so. What made it
+# affordable is that build/llvm-native was already a cache path and the job
+# already builds its table generator - only the rest of that flavor, ffmpeg and
+# a second rpcs3_emu were missing. See docs/PLAN.md, "What CI runs".
 
 on:
   pull_request:
@@ -112,41 +120,84 @@ jobs:
           [ -f "$mb/build/meson-cpp/build.ninja" ] || meson setup "$mb/build/meson-cpp" "$mb" -Dguest_cpp=true
           meson compile -C "$mb/build/meson-cpp"
 
-      - name: Which LLVM this build pins
-        # The key below has to change when the LLVM SOURCE changes, and the
-        # source is a submodule of a submodule: .gitmodules only names the
-        # remote, so bumping extern/rpcs3 to a newer LLVM would leave the key
-        # identical and the job would restore, and ship, the old one. The
-        # pinned commit is the honest key.
+      - name: Which upstream and which LLVM this build pins
+        # The keys below have to change when the SOURCE changes, and the source
+        # is a submodule (and, for LLVM, a submodule of a submodule):
+        # .gitmodules only names the remote, so bumping extern/rpcs3 to a newer
+        # LLVM would leave the key identical and the job would restore, and
+        # ship, the old one. hashFiles cannot see a gitlink either. The pinned
+        # commits are the honest keys.
         id: llvm-pin
-        run: echo "sha=$(git -C extern/rpcs3 rev-parse HEAD:3rdparty/llvm/llvm)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "sha=$(git -C extern/rpcs3 rev-parse HEAD:3rdparty/llvm/llvm)" >> "$GITHUB_OUTPUT"
+          echo "rpcs3=$(git -C extern/rpcs3 rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Cache LLVM (hours to build; changes only when the pin does)
+        # The v2 in the key is load-bearing. Caches under the old key hold a
+        # build/llvm-native with ONLY llvm-tblgen in it, because that was all
+        # this job ever built; actions/cache re-saves nothing on an exact key
+        # hit, so restoring one of those and then building the rest would have
+        # paid the whole native LLVM on every push, for ever, and stored none
+        # of it. Bumping the key makes the first run store the full tree.
         uses: actions/cache@v4
         with:
           path: |
             build/llvm-native
             build/llvm-guest
-          key: rpcs3-llvm-${{ runner.os }}-${{ hashFiles('waterbox/build-llvm.sh') }}-${{ steps.llvm-pin.outputs.sha }}
+          key: rpcs3-llvm-v2-${{ runner.os }}-${{ hashFiles('waterbox/build-llvm.sh') }}-${{ steps.llvm-pin.outputs.sha }}
+
+      - name: Cache the native reference's CMake tree
+        # rpcs3_emu built a second time for the HOST. Unlike LLVM this one
+        # moves with the patch series, so it is keyed on what actually changes
+        # it and falls back through restore-keys to the nearest older tree -
+        # ninja then rebuilds only the translation units that moved, which for
+        # a push that touches waterbox/*.cpp alone is none of them.
+        uses: actions/cache@v4
+        with:
+          path: build/native
+          key: rpcs3-native-${{ runner.os }}-${{ steps.llvm-pin.outputs.rpcs3 }}-${{ steps.llvm-pin.outputs.sha }}-${{ hashFiles('patches/*.patch', 'waterbox/configure-flags.sh', 'waterbox/*.h') }}
+          restore-keys: |
+            rpcs3-native-${{ runner.os }}-${{ steps.llvm-pin.outputs.rpcs3 }}-${{ steps.llvm-pin.outputs.sha }}-
+            rpcs3-native-${{ runner.os }}-
 
       - name: Build the waterbox core
-        # The GUEST only. The native reference needs LLVM and ffmpeg built for
-        # the host as well, on top of rpcs3_emu twice - hours beyond this - and
-        # without firmware it would prove nothing the guest build does not.
-        # native == sandbox is run by hand, against the developer's own content.
+        # The GUEST: what actually ships, so it is built first and fails first.
+        # It also generates waterbox/generated-gl, which the native reference's
+        # makefile consumes and does not produce - so this step has to come
+        # before the next one, and not only because it matters more.
         run: |
           mb="$PWD/chimera-checkout/extern/chimera-common-minibox"
           MINIBOX_DIR="$mb" ./waterbox/build-package.sh -m "$mb" -r "$PWD/chimera-checkout"
 
+      - name: Build the native reference the gate compares against
+        # The other half of "native == sandbox": rpcs3 built with the host
+        # toolchain, plus the run-native driver. build-llvm.sh native finishes
+        # the flavor whose table generator build-package.sh already built, so
+        # on a warm LLVM cache this whole step is ninja finding nothing to do.
+        run: |
+          sh waterbox/build-ffmpeg.sh native
+          sh waterbox/build-llvm.sh native
+          sh waterbox/build-native.sh
+          # -C first, then -f relative to it: make chdirs before it looks for
+          # the makefile, so `-f waterbox/native.mk -C waterbox` goes looking
+          # for waterbox/waterbox/native.mk. MB is not optional either - the
+          # makefile's default is under $HOME, which on a runner is not the
+          # checkout.
+          make -C waterbox -f native.mk -j"$(nproc)" \
+            MB="$PWD/chimera-checkout/extern/chimera-common-minibox"
+
       - name: Core gate
         run: |
-          # run-gate.sh compares against the native reference, which is not built
-          # here (see above). What CI holds the guest to is that the sandbox will
-          # accept it: no thread-local storage, no forbidden imports, the layout
-          # the host maps.
           mb="$PWD/chimera-checkout/extern/chimera-common-minibox"
           sh "$mb/source/guest/check-wbx.sh" waterbox/bin/core.wbx
-          echo "SKIP emulation legs: no PS3 firmware on a public runner (waterbox/run-gate.sh, by hand)"
+          # The gate itself, at last. There is no PS3UPDAT.PUP and no disc on a
+          # public runner, so twenty-one of the twenty-five legs SKIP - by name,
+          # one line each, counted in the summary the script prints. The four
+          # that run need no content at all, and they are exactly the four that
+          # would have caught the native reference failing to link. Which legs
+          # those are, and who owns running the other twenty-one, is the table
+          # in docs/PLAN.md under "What CI runs".
+          sh waterbox/run-gate.sh
 
       - name: Build and install the waterbox core package
         # The commit is the core's authoritative version: this build is the one
@@ -178,11 +229,18 @@ jobs:
           if-no-files-found: error
 
       - name: Upload the gate work dir on failure
+        # waterbox/work/gate is where run-gate.sh puts its frame lines, TTY
+        # captures and stderr - about 600 KB for the legs that run here. The
+        # tests/work path below it is run-frontend.sh's, which this job does
+        # not run; it was the only path named until the gate itself did, so a
+        # failing gate uploaded an empty directory.
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: core-gate-work
-          path: waterbox/tests/work/
+          path: |
+            waterbox/work/gate/
+            waterbox/tests/work/
 
   publish:
     # What the gate passed, published as this core's own release: a rolling

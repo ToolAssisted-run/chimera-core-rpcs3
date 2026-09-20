@@ -69,9 +69,21 @@ core="$here/bin/core.wbx"
 pup="$root/tests/roms-local/PS3UPDAT.PUP"
 fail=0
 
-pass() { echo "PASS: $*"; }
-failed() { echo "FAIL: $*"; fail=1; }
-skip() { echo "SKIP: $*"; }
+npass=0
+nfail=0
+nskip=0
+pass() { echo "PASS: $*"; npass=$((npass + 1)); }
+failed() { echo "FAIL: $*"; nfail=$((nfail + 1)); fail=1; }
+skip() { echo "SKIP: $*"; nskip=$((nskip + 1)); }
+
+# Every exit goes through this. A skipped leg has to be COUNTED or a run that
+# did four legs of twenty-five reads exactly like a run that did all of them:
+# the same green tick, the same silence. (chimera docs/gates.md, mode G.)
+summary() {
+	echo "---"
+	echo "gate: $npass passed, $nfail failed, $nskip skipped"
+	exit $fail
+}
 
 rm -rf "$work"
 mkdir -p "$work"
@@ -163,9 +175,19 @@ fi
 
 # ---- everything below needs the user's PS3UPDAT.PUP ---------------------
 if [ ! -f "$pup" ]; then
+	# EVERY leg below this line, one SKIP each, by the name it would have
+	# printed. Without the firmware none of them says anything at all, and a
+	# leg that says nothing is a leg nobody can ask "when did that last
+	# actually run?" about - which is how a whole gate goes unnoticed.
 	skip "firmware:lle - no tests/roms-local/PS3UPDAT.PUP (would prove: the PUP installs in the box and liblv2 runs LLE)"
-	skip "input:press, video:flip, audio:tone, disc:boot - the same firmware"
-	exit $fail
+	for leg in input:press input:port2 input:lag video:flip audio:tone \
+		disc:boot pkg:boot pkg:content pkg:licence ppu:llvm \
+		cache:objects cache:warm cache:precompile \
+		spu:interpreter spu:asmjit spu:agree \
+		gpu:flip gpu:disc gpu:rewind gpu:context; do
+		skip "$leg - the same firmware"
+	done
+	summary
 fi
 
 # ---- firmware:lle -------------------------------------------------------
@@ -566,4 +588,4 @@ else
 	fi
 fi
 
-exit $fail
+summary

@@ -1234,3 +1234,208 @@ optimisation. No user interface, no networking, no real audio or input devices.
    product. The recompiler milestone is the product.
 6. **Firmware in the box**: 200 MB of PUP decrypt per init; if it costs a minute,
    cache the decrypted tree as a frontend-side derived file.
+
+## What CI runs, and what it does not (2026-09-20)
+
+Chimera's `docs/gates.md` calls this failure mode G: *whatever CI does not run
+is not gated, whatever the script says.* The rule it sets is that the gap is
+kept as a table rather than discovered, and that **if CI cannot run a leg,
+somebody owns running it, and the PLAN.md says who and when.** This section is
+that record. Where it proposes rather than states, it says so.
+
+Why the rule was needed here: until today `.github/workflows/chimera.yml` ran
+`check-wbx.sh` and then `echo "SKIP emulation legs"` in place of
+`waterbox/run-gate.sh`. The gate was run by nobody but a developer who
+remembered - and that is the structural reason `waterbox/native.mk` could go
+eight days without the native reference linking at all (it had never been
+taught about `archive.cpp`, `sevenzip.cpp` and the 7-Zip decoder) with every
+push green. The first leg in the table below catches that on the first push.
+
+### The table
+
+Twenty-five legs in `waterbox/run-gate.sh` (569 lines), six in
+`waterbox/tests/run-frontend.sh` (316 lines). CI now runs four of the
+thirty-one; before today it ran none.
+
+| Leg | CI | Needs |
+| --- | --- | --- |
+| native:deterministic | RUNS | nothing (lv2test.elf is assembled from `tests/asm`) |
+| sandbox:equivalent | RUNS | nothing |
+| sandbox:rewind | RUNS | nothing |
+| sandbox:rerecord | RUNS | nothing |
+| firmware:lle | SKIP | PS3UPDAT.PUP |
+| input:press | SKIP | the PUP |
+| input:port2 | SKIP | the PUP |
+| input:lag | SKIP | the PUP |
+| video:flip | SKIP | the PUP |
+| audio:tone | SKIP | the PUP |
+| ppu:llvm | SKIP | the PUP |
+| cache:objects | SKIP | the PUP |
+| cache:warm | SKIP | the PUP |
+| cache:precompile | SKIP | the PUP |
+| spu:interpreter | SKIP | the PUP |
+| spu:asmjit | SKIP | the PUP |
+| spu:agree | SKIP | the PUP |
+| disc:boot | SKIP | the PUP + a decrypted .iso |
+| gpu:flip | SKIP | the PUP + a host EGL context |
+| gpu:disc | SKIP | the PUP + a disc + an EGL context |
+| gpu:rewind | SKIP | the PUP + a disc + an EGL context |
+| gpu:context | SKIP | the PUP + a disc + an EGL context |
+| pkg:boot | SKIP | the PUP + a digital-only game .pkg |
+| pkg:content | SKIP | the PUP + a .pkg that is DLC or an update |
+| pkg:licence | SKIP | the PUP + a REQUIRE_LICENSE .pkg and its .rap |
+| game:frontend | no | **nothing** - see below |
+| keybinds | no | **nothing** - see below |
+| precompile:frontend | no | the PUP |
+| disc:frontend | no | the PUP + a disc |
+| gpu:frontend | no | the PUP + a disc |
+| project:frontend | no | the PUP + a disc |
+
+The test programs are not a blocker: `flip.elf`, `tone.elf`, `sputest.elf`,
+`padtest.elf` and `padtest2.elf` are committed under `tests/roms`, and
+`lv2test.elf` the gate assembles itself from `tests/asm` when it is absent.
+Sony's firmware is the single condition on seventeen of the twenty-one skipped
+core legs.
+
+Every skipped leg now prints its own SKIP line, by name, and the script ends
+with `gate: N passed, M failed, K skipped`. It used to fold four of them into
+one line and leave seventeen entirely silent, which is how twenty-one missing
+legs look like a handful.
+
+### Why - cost, and what it actually cost
+
+The blocker on the four content-free legs was **cost**, not content: content
+only starts at `firmware:lle`. The cost is that the gate compares the
+sandboxed core against a NATIVE reference, and building that reference means a
+second LLVM and a second ffmpeg for the host, and rpcs3's emulator library
+compiled a second time.
+
+Measured on the dev box (20 cores) from empty build directories at the
+2026-09-20 pin. CPU seconds are the honest figure because they are what
+transfers to a 4-vCPU runner; the last column is CPU/4 and is an ESTIMATE, and
+an optimistic one, because a GitHub core is slower than one of these:
+
+| Step | wall here | CPU s | est. 4-vCPU wall |
+| --- | --- | --- | --- |
+| ffmpeg, native (`-j8`) | 17 s | 88 | 22 s |
+| LLVM native: configure + `llvm-tblgen` (`-j8`) - CI already paid this | 46 s | 317 | 1 min 20 s |
+| LLVM native: the rest (`-j8`) | 11 min 36 s | 5314 | 22 min |
+| rpcs3_emu + Fusion, native (`-j6`) | 4 min 55 s | 1747 | 7 min 17 s |
+| the adapter and the 124 MB link, `native.mk` (`-j6`) | 16 s | 36 | 9 s |
+| **new cost, cold cache** | | **7201 (2.0 CPU-hours)** | **about 30 min** |
+
+And the gate itself, once the binaries exist - measured with the real
+`run-native` and `core.wbx`, no firmware, `FRAMES=600`:
+
+| Leg | wall |
+| --- | --- |
+| native:deterministic (two native runs) | 2.6 s |
+| sandbox:equivalent | 14.3 s |
+| sandbox:rewind | 11.4 s |
+| sandbox:rerecord (200 frames) plus its plain comparison run | 38 s |
+| **the whole runnable gate** | **about 67 s** |
+
+So the gate is nearly free and the reference is not, which is why the answer
+is caching rather than either brute force or giving up:
+
+- **`build/llvm-native` was already a cache path**, and the job already built
+  its `llvm-tblgen` because the guest cross-build needs it. Only the rest of
+  that flavor was missing - 22 estimated runner-minutes, paid when the LLVM
+  pin moves and not otherwise. The cache key gained a `v2`, and that is
+  load-bearing: `actions/cache` re-saves nothing on an exact key hit, so a
+  cache stored under the old key - holding a `build/llvm-native` with only the
+  table generator in it - would be restored half-built for ever, the rest
+  rebuilt on every push and stored never.
+- **`build/native` is cached as a build TREE**, keyed on the rpcs3 pin, the
+  LLVM pin, `patches/*.patch`, `configure-flags.sh` and `waterbox/*.h`, with
+  `restore-keys` falling back to the nearest older tree. Unlike LLVM it moves
+  with the patch series, and ninja is what knows which translation units
+  actually need rebuilding. A push touching only `waterbox/*.cpp` rebuilds
+  nothing in it: the adapter objects are `native.mk`'s, not CMake's.
+- **ffmpeg is rebuilt every run** rather than cached. At 88 CPU seconds it is
+  not worth a cache entry, and a stale ffmpeg header set is exactly what a
+  cache key forgets.
+
+So the whole thing lands at roughly **thirty estimated runner-minutes once,
+on an LLVM pin bump**, and on every other push:
+
+| Warm push | est. 4-vCPU |
+| --- | --- |
+| ffmpeg native (not cached, on purpose) | 22 s |
+| both cmake configures, ninja with nothing to do | under 10 s |
+| `native.mk` - only what changed, plus the 124 MB link | 9 s and up |
+| the gate | 67 s |
+| **added to every push** | **under 2 min** |
+
+The remaining risk is GitHub's six-hour job cap, which `timeout-minutes`
+cannot raise (the job asks for 360 because that is the ceiling). Thirty
+minutes is not what will hit it - the guest halves already in the job are the
+bulk - but the margin is thinner than it was. **If a cold run ever does hit
+the cap, the fix is to split the native reference into its own job with its
+own cache, not to stop building it.**
+
+### Two traps found while doing this, both still live
+
+- **`build-native.sh` picks whatever `c++` is, and g++ 14 cannot build it.**
+  On this box the default is g++ 14.2, and it dies with an internal compiler
+  error (SIGSEGV) in abseil's `any_invocable.h` on every translation unit that
+  includes `NP/pb_helpers.h`. The tree in `build/native` here was configured
+  with `g++-13`, which is why nobody had noticed. CI is fine today - Ubuntu
+  24.04's default is 13.3 - but `ubuntu-latest` will move, and when it does
+  this step goes red for a reason that has nothing to do with the core.
+  Locally: `CC=gcc-13 CXX=g++-13 sh waterbox/build-native.sh`. **Decision for
+  Sergio: pin the native reference's compiler, or leave it to follow the
+  runner?** Pinning makes the gate stable; not pinning means the native
+  reference is built by the same compiler as everything else, which is what
+  `cache:objects` is about.
+- **`native.mk` writes `g++` into its rules literally**, so `CXX=` on the
+  command line does nothing and the adapter is always built by the default
+  compiler - even when the CMake tree beside it was built by another one.
+
+### What is still not gated, and why not
+
+**The frontend gate is not run by CI at all**, and two of its six legs -
+`game:frontend` and `keybinds` - need no content either. They are left out of
+this round deliberately, not overlooked: running them means a second job that
+builds `Chimera.sln`, installs Xvfb and drives the real GUI under Mono, which
+is the shape flycast and quickerNES already use and is a change of its own
+size. **Proposal for Sergio: that is the next piece of this work.** It is
+worth doing, because `game:frontend` is the only leg anywhere that holds the
+PACKAGE - the thing users download - to the sandbox reference.
+
+**The four legs CI runs are all on `lv2test.elf`**, which is a stand-in
+(gates.md mode E). They prove the core starts, is deterministic, survives a
+savestate round-trip, and that the sandbox equals the host build ON THAT
+PROGRAM. They do not stand in for a game: issue #120 is precisely a
+native-vs-sandbox divergence that real titles show and these programs do not.
+Green here is not a claim about games.
+
+### Who owns running the other twenty-seven, and when (proposal for Sergio)
+
+By hand, on the development machine that holds `tests/roms-local`, with the
+output pasted into this file under a dated heading - one line per leg, plus
+which disc and which packages. "When did this last actually execute?" should
+be a question with an answer.
+
+```
+FRAMES=600 waterbox/run-gate.sh
+waterbox/tests/run-frontend.sh --chimera-root ~/chimera
+```
+
+Four occasions, chosen because they are when this repo actually moves:
+
+1. **Before an `extern/rpcs3` pin bump lands.** A new upstream is the change
+   most likely to move the machine, and the firmware legs are the only thing
+   that would notice.
+2. **Before a release is cut** - a dated `nightly-*`, or any tag a movie could
+   cite. A movie cites a package by hash; a package nobody ran the gate
+   against is a citation with nothing behind it.
+3. **After any change to vsched, the savestate format, the GPU bridge or the
+   compile cache** - the four subsystems whose faults only the firmware legs
+   catch.
+4. **Whenever a `patches/` number is added or renumbered.** The patch series
+   is what makes this tree different from upstream, and nothing else tests it
+   end to end.
+
+Not "every push": the firmware and the discs are one machine's, and a rule
+nobody can keep is worse than a rule that names its four occasions.
