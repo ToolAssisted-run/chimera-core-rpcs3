@@ -1287,6 +1287,17 @@ optimisation. No user interface, no networking, no real audio or input devices.
   and 4,617,596,644 bytes held as the disc's, nothing copied, and the machine
   byte-identical to a run before the change at every report.
 
+  One thing this direction DEPENDS on, and it is not settled here: a mirror
+  keeps no second copy of the bytes, so it is only as good as the host handle
+  it reads the image through - and a savestate cannot carry that handle
+  (#118, `8dd8727`, which reopens one the sandbox has closed). That plaster
+  heals a descriptor that is GONE; one the sandbox has since handed to another
+  open of another file would read the wrong bytes silently. The cure is for
+  miniBox to carry its open files in a state, which its format already
+  describes and its host does not yet write. Everything above - a game's whole
+  install held as a reference rather than copied - rests on that handle, so it
+  is not a footnote to this work but a condition of it.
+
   Found writing the legs, and it is not this change's: on a real game the two
   flavours are NOT frame-line identical. RE5 Gold ends five frames on
   `time 1083339` natively and `1083353` in the box, with every memory, TTY,
