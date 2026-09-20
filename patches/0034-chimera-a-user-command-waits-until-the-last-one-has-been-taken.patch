@@ -1,0 +1,57 @@
+diff --git a/rpcs3/Emu/Cell/lv2/sys_rsx.cpp b/rpcs3/Emu/Cell/lv2/sys_rsx.cpp
+index d7ec04813..ab752cb19 100644
+--- a/rpcs3/Emu/Cell/lv2/sys_rsx.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_rsx.cpp
+@@ -935,6 +935,52 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
+ 		// 'custom' invalid package id for now
+ 		// as i think we need custom lv1 interrupts to handle this accurately
+ 		// this also should probly be set by rsxthread
++#ifdef CHIMERA_CORE
++		// chimera: a user command's parameter has ONE slot in the driver
++		// info, and the interrupt thread reads it out of that slot when it
++		// gets around to running - so a second command sent before the first
++		// has been handled destroys the first one's parameter. On the console
++		// the RSX and the PPU run side by side and the handler is there long
++		// before the next command; here one thread runs at a time and the RSX
++		// keeps the machine until it gives way, so the RSX always wins the
++		// race and the first parameter is never seen. Injustice: Gods Among
++		// Us sends user command 1 and then user command 2 five microseconds
++		// later, and then has the RSX wait on the label its handler writes
++		// for command 1 - so the wait is only ever ended by the driver
++		// recovery timeout, a second of machine time, and the game crawls
++		// (chimera#125).
++		//
++		// Give way until the interrupt thread is idle again - nothing queued
++		// and itself back in sys_event_queue_receive - before the slot is
++		// written. Bounded: a game whose handler waits on the RSX would
++		// otherwise wait here for ever, and the old behaviour (overwrite and
++		// carry on) is what it gets.
++		if (driverInfo.handlers & SYS_RSX_EVENT_USER_CMD)
++		{
++			const u64 start = get_system_time();
++			const auto handler_idle = [&]
++			{
++				const auto q = idm::get_unlocked<lv2_obj, lv2_event_queue>(+driverInfo.handler_queue);
++				if (!q)
++				{
++					return true;
++				}
++				std::lock_guard lock(q->mutex);
++				return q->events.empty() && q->pq != nullptr;
++			};
++
++			while (!handler_idle())
++			{
++				if (Emu.IsStopped() || get_system_time() - start > 1'000'000)
++				{
++					rsx_log.error("the interrupt thread did not take the last user command within a second; its parameter is lost");
++					break;
++				}
++
++				CHIMERA_YIELD();
++			}
++		}
++#endif
+ 		driverInfo.userCmdParam = static_cast<u32>(a4);
+ 		render->send_event(0, SYS_RSX_EVENT_USER_CMD, 0);
+ 		break;
