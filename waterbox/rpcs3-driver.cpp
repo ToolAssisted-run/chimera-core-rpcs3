@@ -387,6 +387,10 @@ namespace
   // says only "Game install failed".
   std::string g_install_error;
 
+  // the disc image in the memory filesystem, when the game is one: the copy
+  // probe reaches for it to say how the image should be read
+  std::string g_disc_image_rel;
+
   // Whether this disc image's DATA never decrypted. A Redump image is a PS3
   // disc with its filesystem in the clear and its data regions encrypted, and
   // the key is a separate file (the Disc key slot); handed over without one,
@@ -1146,6 +1150,9 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   // console's hard disk and booted from there (install_game_package)
   bool game_is_pkg = false;
   std::string game_name;
+  // the disc image in the memory filesystem, when the game is one: see the
+  // memfs_mark_disc_image below, which waits for the log to exist
+  std::string disc_image_rel;
   {
     const char* base = strrchr(game_path, '/');
     base = base ? base + 1 : game_path;
@@ -1311,6 +1318,10 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
         return 0;
       }
     }
+    // Noted here, with the key beside it; acted on below, where there is a log
+    // to say what the image turned out to be.
+    if (game_is_iso)
+      disc_image_rel = std::string("game/") + base;
   }
 
   // the emulator logs nowhere without a listener
@@ -1334,6 +1345,21 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   static fatal_to_stderr s_fatal;
   static bool s_fatal_added = (logs::listener::add(&s_fatal), true);
   (void)s_fatal_added;
+
+  // With the image and its key both grafted, the filesystem can read the disc
+  // the way the CONSOLE reads it, which is what lets a file this game installs
+  // onto the hard disk be held as a reference to the disc rather than copied
+  // into the machine's memory - see "not carrying the disc twice" in memfs.cpp.
+  // Here rather than beside the graft because working it out has something to
+  // say and the log did not exist yet up there.
+  g_disc_image_rel = disc_image_rel;
+  if (!disc_image_rel.empty())
+  {
+    chimera::memfs_mark_disc_image(disc_image_rel);
+    chimera_log.notice("disc image: %s", chimera::memfs_disc_image_is_encrypted(disc_image_rel)
+                                             ? "its data regions are encrypted, and the filesystem reads it through its key"
+                                             : "in the clear, read as it lies");
+  }
 
   // The channels somebody asked to see, from whichever side could tell us:
   // CHIMERA_LOG_TRACE=chan,chan (or "all") natively, and the same list as a
@@ -1574,6 +1600,11 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   g_booted = true;
   g_frame_base_ns = vsched_now_ns();
   g_frame_index = 0;
+  // The machine is built; what the emulator put in the memory filesystem to
+  // build it is baseline and costs a savestate nothing. From here the figures
+  // are about what the GAME does - which is what a savestate does carry.
+  chimera_log.notice("the machine is built with %zu bytes of memory files", chimera::memfs_bytes());
+  chimera::memfs_mirror_reset();
   return 1;
 }
 
@@ -1929,6 +1960,100 @@ extern "C" void chimera_rpcs3_note_protect(const void* pointer, usz size, int pr
 extern "C" uint64_t chimera_rpcs3_window_count(void)
 {
   return s_windows_opened;
+}
+
+// A game's own data install, in miniature and without the game: read a file off
+// the mounted disc and write it to the console's hard disk in 64 KiB chunks,
+// which is the loop an installer runs and the only thing about an installer the
+// memory filesystem can see. What it costs the machine is then in the figures
+// above: a file whose bytes are the disc's is held as a reference to the disc
+// and costs nothing.
+//
+// `flags`: 1 reads the image AS IT LIES rather than as the console reads it,
+// which is the point of the thing - it is how the mechanism is watched failing,
+// because an encrypted disc's bytes then match nothing and every one of them is
+// kept. 2 skips the copy and only reads back what a previous call wrote, which
+// is how the question is asked of a machine that has been through a savestate
+// and another PROCESS: the state carries the reference, and the handle the host
+// had open on the image does not survive with it.
+//
+// Returns the bytes copied, or a negative number saying what went wrong.
+// Diagnostic: nothing in a normal run calls it.
+extern "C" int64_t chimera_rpcs3_disc_copy_probe(const char* disc_rel, int flags)
+{
+  if (!g_booted)
+    return -1;
+  const bool verify_only = (flags & 2) != 0;
+  if (!verify_only && !g_disc_image_rel.empty())
+    chimera::memfs_set_disc_decryption(g_disc_image_rel, (flags & 1) == 0);
+  chimera::memfs_mirror_reset();
+  const std::string src = vfs::get(std::string("/dev_bdvd/") + disc_rel);
+  if (src.empty())
+    return -2;
+  fs::file in(src);
+  if (!in)
+    return -3;
+  const std::string dir = vfs::get("/dev_hdd0/game/CHIMERAPROBE/");
+  fs::create_path(dir);
+  int64_t total = 0;
+  if (verify_only)
+  {
+    fs::stat_t st{};
+    if (!fs::get_stat(dir + "copy.bin", st) || st.size == 0)
+      return -9;
+    total = static_cast<int64_t>(st.size);
+  }
+  else
+  {
+    fs::file out(dir + "copy.bin", fs::rewrite);
+    if (!out)
+      return -4;
+    std::vector<uint8_t> buf(64 * 1024);
+    for (;;)
+    {
+      const uint64_t got = in.read(buf.data(), buf.size());
+      if (got == 0)
+        break;
+      if (out.write(buf.data(), got) != got)
+        return -5;
+      total += static_cast<int64_t>(got);
+    }
+  }
+  // And then READ IT BACK. A file held as a reference to the disc has no bytes
+  // of its own, so what the machine gets when it opens it comes back out of the
+  // image - and a mirror that answered with anything but what was written would
+  // be a corruption nothing else here would catch. Compared against the disc,
+  // in a second pass, through the same two paths the game uses.
+  std::vector<uint8_t> buf(64 * 1024);
+  fs::file back(dir + "copy.bin");
+  fs::file again(src);
+  if (!back || !again || static_cast<int64_t>(back.size()) != total)
+    return -6;
+  std::vector<uint8_t> want(64 * 1024);
+  for (int64_t at = 0; at < total;)
+  {
+    const uint64_t got = back.read(buf.data(), buf.size());
+    if (got == 0 || again.read(want.data(), got) != got)
+      return -7;
+    if (std::memcmp(buf.data(), want.data(), static_cast<size_t>(got)) != 0)
+      return -8;
+    at += static_cast<int64_t>(got);
+  }
+  return total;
+}
+
+extern "C" uint64_t chimera_rpcs3_memfs_stat(int which)
+{
+  const chimera::memfs_mirror_stats s = chimera::memfs_mirror_report();
+  switch (which)
+  {
+  case 0: return chimera::memfs_bytes();
+  case 1: return s.mirrors;
+  case 2: return s.heldBytes;
+  case 3: return s.copiedBytes;
+  case 4: return s.decryptedBytes;
+  default: return 0;
+  }
 }
 
 // A fault on a guest page: the renderer's caches protect pages of guest memory

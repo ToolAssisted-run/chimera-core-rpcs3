@@ -45,6 +45,23 @@ namespace chimera
   // sevenzip.h on solid blocks.
   void memfs_graft_sz_entry(const std::string& rel, std::shared_ptr<const sz_index> index, size_t entry, unsigned long long size);
 
+  // Say that a grafted file is a PS3 disc IMAGE. The bytes such an image holds
+  // are not always the bytes the console reads from it: a Redump dump keeps the
+  // disc's data regions encrypted and rpcs3's ISO layer decrypts them on the
+  // way past. A file the game copies off the disc therefore matches the image
+  // only once the image is read the way the console reads it, which is what
+  // this enables - see "not carrying the disc twice" in memfs.cpp.
+  void memfs_mark_disc_image(const std::string& rel);
+
+  // Whether that image turned out to need decrypting to be read (for the log).
+  bool memfs_disc_image_is_encrypted(const std::string& rel);
+
+  // Read that image AS IT LIES instead, or through its key again. The gate's
+  // negative control: with this off, a file copied off an encrypted disc
+  // matches nothing and is kept in full, which is the state the fix is for.
+  // Nothing in a normal run touches it.
+  void memfs_set_disc_decryption(const std::string& rel, bool on);
+
   // Put bytes in a file (created, truncated).
   void memfs_put(const std::string& rel, const void* data, size_t size);
 
@@ -61,4 +78,24 @@ namespace chimera
 
   // Diagnostics: total bytes held in memory files.
   size_t memfs_bytes();
+
+  // Diagnostics: how the disc mirror fared, which is the difference between a
+  // game whose own data install costs a savestate nothing and one whose install
+  // costs it several gigabytes. `heldBytes` is what the mirrors stand for and
+  // are not paying for; `copiedBytes` counts the writes big enough to have
+  // started a mirror that matched no disc file and so were kept in full.
+  struct memfs_mirror_stats
+  {
+    unsigned long long mirrors = 0;      // files held as a reference to a source
+    unsigned long long heldBytes = 0;    // what those files would have weighed
+    unsigned long long copiedBytes = 0;  // big writes no mirror could hold
+    unsigned long long decryptedBytes = 0;  // read through a disc's decryption to compare
+  };
+  memfs_mirror_stats memfs_mirror_report();
+
+  // Start the figures again. Said once the machine is built and before it is
+  // sealed, so that what they report is what the MACHINE has done since - which
+  // is what a savestate carries. What the emulator installed before that (the
+  // firmware, a package) is in the baseline and costs a state nothing.
+  void memfs_mirror_reset();
 }

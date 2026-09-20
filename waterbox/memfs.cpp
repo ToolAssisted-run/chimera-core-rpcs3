@@ -3,6 +3,7 @@
 #include "stdafx.h"
 
 #include "Utilities/File.h"
+#include "Loader/ISO.h"
 #include "util/shared_ptr.hpp"
 #include "vsched.h"
 
@@ -11,6 +12,7 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -29,6 +31,13 @@ namespace chimera
       std::vector<u8> data;                              // memory file
       std::string host_path;                             // grafted file (read-only)
       u64 host_size = 0;
+      // How the console reads this image, when reading it raw is not how: a
+      // Redump dump's data regions are encrypted. Set by memfs_mark_disc_image
+      // before the machine runs; plain data (an AES key schedule and a list of
+      // regions), so a savestate carries it as it carries everything else here.
+      std::shared_ptr<iso_file_decryption> disc_dec;
+      std::shared_ptr<iso_file_decryption> disc_dec_off;  // held aside by memfs_set_disc_decryption
+      bool disc_dec_tried = false;
       std::shared_ptr<const zip_index> arch;             // zip entry (read-only)
       size_t arch_entry = 0;
       std::shared_ptr<const sz_index> sz;                // .7z entry (read-only)
@@ -173,6 +182,18 @@ namespace chimera
     //
     // Deterministic: the decision depends only on the sequence of reads and
     // writes, which is the machine's, so native and sandbox agree.
+    //
+    // WHAT THE SOURCE HOLDS IS NOT ALWAYS WHAT IS IN THE FILE. A Redump dump of
+    // a PS3 disc keeps the disc's filesystem in the clear and its DATA regions
+    // encrypted; rpcs3's ISO layer decrypts them on the way past, so the bytes
+    // the game reads - and writes to the hard disk - are nowhere in the image.
+    // Compared raw, such a write matches nothing and every byte of the install
+    // is kept: Resident Evil 5 Gold's own data install is several gigabytes,
+    // which is more than an entire greenzone budget, so the game could not be
+    // TASed at all. So a source that is a disc image is read the way the CONSOLE
+    // reads it (read_through_disc below), and the comparison, the materialise
+    // and the reads of the mirror itself all see the same bytes the machine
+    // does. A decrypted image has no decryption and costs nothing extra.
     struct recent_read
     {
       std::weak_ptr<node> source;
@@ -235,6 +256,8 @@ namespace chimera
       return std::fread(buffer, 1, static_cast<size_t>(want), f);
     }
 
+    memfs_mirror_stats g_mirrorStats;
+
     // Reads a read-only node without a file object of the game's: one reader per
     // source, kept, because a copy loop compares tens of thousands of chunks and
     // a reopen per chunk (or a restart of a compressed stream) would be its cost.
@@ -244,6 +267,7 @@ namespace chimera
       std::unique_ptr<zip_stream> zip;
       std::unique_ptr<sz_stream> sevenz;
       const node* n = nullptr;
+      std::vector<u8> sectors;  // a disc image's scratch: whole sectors, to decrypt in
       explicit source_reader(const node& src) : n(&src)
       {
         if (!src.host_path.empty())
@@ -258,13 +282,43 @@ namespace chimera
         if (host)
           std::fclose(host);
       }
+      u64 read_raw(u64 offset, void* buffer, u64 size)
+      {
+        return host_read_at(host, n->host_path, n->host_size, offset, buffer, size);
+      }
+      // The image as the CONSOLE reads it. Decryption is by sector and takes the
+      // sector's number for its IV, so the window read is the whole sectors the
+      // request falls in and the answer is the slice of them asked for.
+      u64 read_through_disc(u64 offset, void* buffer, u64 size)
+      {
+        constexpr u64 kSector = 2048;  // ISO_SECTOR_SIZE
+        if (offset >= n->host_size)
+          return 0;
+        size = std::min<u64>(size, n->host_size - offset);
+        const u64 first = offset / kSector * kSector;
+        const u64 last = std::min<u64>(n->host_size, (offset + size + kSector - 1) / kSector * kSector);
+        if (sectors.size() < last - first)
+          sectors.resize(static_cast<size_t>(last - first));
+        const u64 got = read_raw(first, sectors.data(), last - first);
+        if (got < offset - first + size)
+          return 0;
+        n->disc_dec->decrypt(first, std::span<u8>(sectors.data(), static_cast<size_t>(got)), n->host_path);
+        g_mirrorStats.decryptedBytes += got;
+        std::memcpy(buffer, sectors.data() + (offset - first), static_cast<size_t>(size));
+        return size;
+      }
       u64 read_at(u64 offset, void* buffer, u64 size)
       {
         if (zip)
           return zip->read_at(offset, buffer, size);
         if (sevenz)
           return sevenz->read_at(offset, buffer, size);
-        return host_read_at(host, n->host_path, n->host_size, offset, buffer, size);
+        // through the disc's own decryption when it has one, and either way
+        // through host_read_at, so a handle a savestate broke is healed on the
+        // path a mirror of an encrypted disc reads by as much as on any other
+        if (n->disc_dec)
+          return read_through_disc(offset, buffer, size);
+        return read_raw(offset, buffer, size);
       }
     };
     std::map<const node*, std::unique_ptr<source_reader>> g_sourceReaders;
@@ -290,12 +344,25 @@ namespace chimera
 
     // The source and offset, if any, of a recent read that begins with exactly
     // these bytes: the start of a disc file the game is copying out.
+    //
+    // How BIG that read was does not come into it. It used to: a remembered read
+    // had to be at least as long as the write, which quietly meant "the layer
+    // that served the disc handed over the whole chunk in one go". A decrypted
+    // image's does - one read of everything asked for - but a Redump image's
+    // does not: rpcs3 reads its first sector, then its middle, then its last, so
+    // for a 64 KiB chunk of the game's the longest read remembered was 61 KiB
+    // and nothing matched. The bytes are what settle it, and they are compared
+    // in full below either way, so the length was never part of the judgement.
+    // What it did do was keep most candidates from being read at all; the
+    // scan is still the same sixty-four, and still gives up on each after
+    // sixty-four bytes, but more of them now get that far. That is the price,
+    // and it is paid once per file the game creates, never per write.
     bool recently_read_start(const void* buffer, u64 size, std::shared_ptr<node>& source, u64& at)
     {
       for (unsigned i = 0; i < RECENT_READS; i++)
       {
         const recent_read& r = g_recentReads[(g_recentNext + RECENT_READS - 1 - i) % RECENT_READS];
-        if (r.size < size)
+        if (r.size == 0)
           continue;
         auto src = r.source.lock();
         // the first few bytes first: most writes are not copies of anything
@@ -313,6 +380,9 @@ namespace chimera
     {
       if (!n.mirror)
         return;
+      g_mirrorStats.mirrors--;
+      g_mirrorStats.heldBytes -= n.mirrorLen;
+      g_mirrorStats.copiedBytes += n.mirrorLen;
       n.data.resize(static_cast<size_t>(n.mirrorLen));
       auto& r = reader_for(n.mirror);
       u64 at = 0;
@@ -426,6 +496,7 @@ namespace chimera
           if (atEnd && n->mirror && source_holds(n->mirror, n->mirrorAt + pos, buffer, size))
           {
             n->mirrorLen = pos + size;
+            g_mirrorStats.heldBytes += size;
             pos += size;
             n->mtime = now_mtime();
             return size;
@@ -439,11 +510,18 @@ namespace chimera
               n->mirror = std::move(src);
               n->mirrorAt = at;
               n->mirrorLen = size;
+              g_mirrorStats.mirrors++;
+              g_mirrorStats.heldBytes += size;
               pos = size;
               n->mtime = now_mtime();
               return size;
             }
           }
+          // a big write onto the end of a file that no mirror could hold: this
+          // one is paid for in full, and a game whose whole install reads like
+          // this is the problem these figures are here to show
+          if (atEnd && size >= MIRROR_MIN_START)
+            g_mirrorStats.copiedBytes += size;
           materialise(*n);
         }
         if (pos + size > n->data.size())
@@ -770,6 +848,59 @@ namespace chimera
     n->host_size = size;
     n->mtime = now_mtime();
     d->children[parts.back()] = n;
+  }
+
+  void memfs_mark_disc_image(const std::string& rel)
+  {
+    auto n = lookup(rel);
+    if (!n || n->dir || n->host_path.empty())
+      return;
+    if (n->disc_dec_tried)
+      return;
+    n->disc_dec_tried = true;
+    // Worked out HERE, with the disc grafted and the machine not yet running:
+    // it reads the image's region table and probes for the key beside it, both
+    // of which are reads of this filesystem, and doing that lazily would mean
+    // doing it in the middle of deciding whether a write is a copy - reads of
+    // nobody's, landing in the ring of recent reads that decision consults.
+    auto dec = std::make_shared<iso_file_decryption>();
+    if (!dec->init(memfs_root + "/" + rel))
+      return;
+    // A plain image reads the same either way: leave it on the cheap path.
+    if (dec->get_enc_type() == iso_encryption_type::NONE)
+      return;
+    n->disc_dec = std::move(dec);
+  }
+
+  bool memfs_disc_image_is_encrypted(const std::string& rel)
+  {
+    auto n = lookup(rel);
+    return n && (n->disc_dec || n->disc_dec_off);
+  }
+
+  void memfs_set_disc_decryption(const std::string& rel, bool on)
+  {
+    auto n = lookup(rel);
+    if (!n)
+      return;
+    if (on && n->disc_dec_off)
+      n->disc_dec = std::move(n->disc_dec_off);
+    else if (!on && n->disc_dec)
+      n->disc_dec_off = std::move(n->disc_dec);
+    // the readers cache nothing of the decision, but they do cache an open
+    // handle and a scratch buffer: start them again so neither is half of one
+    // answer and half of the other
+    g_sourceReaders.clear();
+  }
+
+  memfs_mirror_stats memfs_mirror_report()
+  {
+    return g_mirrorStats;
+  }
+
+  void memfs_mirror_reset()
+  {
+    g_mirrorStats = memfs_mirror_stats{};
   }
 
   void memfs_put(const std::string& rel, const void* data, size_t size)

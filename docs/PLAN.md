@@ -1228,6 +1228,102 @@ optimisation. No user interface, no networking, no real audio or input devices.
   could arrive as an archive. guest.mk had them; the two lists are the same
   list now.
 
+- **A game's install off an ENCRYPTED disc costs the machine nothing either
+  (2026-09-20, chimera#108).** A PS3 game that installs its own data onto
+  /dev_hdd0 writes gigabytes into the memory filesystem, which is the machine's
+  memory and so is every savestate. A state with one in it is larger than the
+  ENTIRE default greenzone budget (4 GB), so such a game holds no frames in its
+  greenzone at all and cannot be TASed. The disc mirror (76b992c, "not carrying
+  the disc twice") removed that for Oblivion, whose image is in the clear; for a
+  Redump image it did nothing, and Resident Evil 5 Gold is a Redump image.
+
+  Two reasons, both measured, both now fixed:
+
+  1. **The comparison read the image, not the disc.** rpcs3's ISO layer serves
+     /dev_bdvd out of the image, and for a Redump dump that means decrypting its
+     DATA regions on the way past. So what the game wrote to the hard disk was
+     nowhere in the file the mirror compared it against. The filesystem now
+     reads a disc IMAGE the way the CONSOLE reads it: `memfs_mark_disc_image`
+     builds rpcs3's own `iso_file_decryption` from the image and the .dkey
+     beside it, once, before the machine runs, and `source_reader` decrypts the
+     whole sectors a request falls in (the IV is the sector's number) before
+     comparing or serving. A decrypted image gets no decryption object and is
+     read exactly as before.
+  2. **The comparison required one read as long as the write.** It had to be at
+     least as long, which quietly assumed the layer serving the disc hands over
+     a whole chunk in one go. A decrypted image's does; a Redump image's does
+     not - `iso_file_encrypted::read_at` reads the first sector, then the
+     middle, then the last, so for a 64 KiB chunk the longest read remembered
+     was 61 KiB and nothing ever matched. The length was never part of the
+     judgement - the bytes are compared in full either way - so it is gone.
+
+  Measured on this box, native, with the counters the runners now print
+  (`memory files: N bytes, M file(s) held as the disc's (H bytes), K bytes
+  copied in, D bytes decrypted to tell`; the figures start again once the
+  machine is built, because what the emulator installed before that is baseline
+  and costs a state nothing):
+
+  | disc | what the 25 MB EBOOT.BIN copy costs the machine |
+  |---|---|
+  | RE5 Gold, Redump + key, read through the key | 0 bytes: 1 file held as the disc's, 25,067,328 of them |
+  | the same, read as it lies (the control) | 25,067,328 bytes, held nothing |
+  | Oblivion, in the clear | 0 bytes, unchanged from before this |
+
+  And on the savestate itself, sandboxed, RE5 Gold at frame 30, the state
+  `run-wbx --save-state` writes (uncompressed, what miniBox hands over):
+
+  | | state |
+  |---|---|
+  | nothing installed | 1,138,129,704 |
+  | the 25 MB file installed, held as the disc's | 1,138,432,808 (+303,104) |
+  | the same, read as it lies (the control) | 1,164,237,608 (+26,107,904) |
+
+  So the install costs a third of a megabyte instead of twenty-six, and the
+  saving scales with the install: this game's real one is several gigabytes.
+  The 1.138 GB underneath is the machine proper, which is the flat figure the
+  chimera design log's 2026-09-20 entry measured.
+
+  And Oblivion's real install, 3000 frames of its own caching thread: 43 files
+  and 4,617,596,644 bytes held as the disc's, nothing copied, and the machine
+  byte-identical to a run before the change at every report.
+
+  Found writing the legs, and it is not this change's: on a real game the two
+  flavours are NOT frame-line identical. RE5 Gold ends five frames on
+  `time 1083339` natively and `1083353` in the box, with every memory, TTY,
+  video and audio digest identical and identical with the copy probe or without
+  it. That is the divergence issue #120 is about, and it is why these legs use
+  `same_memory` (the ram digests and the TTY) rather than `same_both`, and say
+  so rather than claiming an equality they did not check. `disc:boot` on
+  Bejeweled 3 still passes `same_both`; a disc that agrees, agrees.
+
+  The gate legs: `disc:install` (a disc in the clear), `disc:install:encrypted`
+  (a Redump image, with the control IN the leg - the same copy read as it lies
+  must keep every byte, or the leg fails for having proved nothing) and
+  `disc:install:state` (the reference saved in one process and read back in
+  another, which is what opening the project tomorrow is). Each copies a file
+  off the disc onto the hard disk 64 KiB at a time, the way an installer does,
+  and then READS IT BACK against the disc byte for byte, because a reference
+  that answered with the wrong bytes would be a corruption nothing else here
+  would catch. `--disc-copy` drives it in both runners.
+
+  It is a STAND-IN (chimera docs/gates.md, mode E) and does not run a game's
+  installer. What it does not cover: a game that TRANSFORMS what it installs -
+  unpacks an archive, re-encodes, writes a file of its own composition - for
+  which no reference can stand and every byte is machine state. Nothing here
+  makes that case worse; nothing here helps it either.
+
+  Not measured: Resident Evil 5's own installer end to end. It REACHES its
+  prompt on the null renderer - `cellMsgDialogOpen2(type=0xa5, msgString="The
+  HDD access indicator will blink when data is being written.")` every frame
+  from about frame 1000 - and cannot get past it there, for a reason that is
+  structural rather than a matter of pressing harder: rpcs3 creates the overlay
+  `display_manager` only for the OpenGL and Vulkan renderers
+  (`RSXThread.cpp`, `use_native_interface && renderer == opengl|vulkan`), so
+  with the null renderer there is no dialog to accept and the game asks again
+  forever. Worth knowing generally: **any game that gates its progress behind a
+  system dialog is unreachable on the null renderer**, which is what every leg
+  but the gpu ones runs. Driving that installer needs a renderer.
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but

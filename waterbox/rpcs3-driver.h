@@ -102,6 +102,20 @@ uint64_t chimera_rpcs3_fault_count(void);
 // how many of the RSX's own faults, taken inside its cache, were served by
 // opening the pages for it instead (diagnostic, never machine state)
 uint64_t chimera_rpcs3_window_count(void);
+// How a game's own data install fared: what the memory filesystem holds, how
+// many of its files are held as a reference to the disc instead of copied, what
+// those stand for, what was copied in full, and how much of the disc had to be
+// decrypted to tell. Diagnostic, never machine state. `which`: 0 bytes held in
+// memory files, 1 mirrors, 2 bytes mirrored, 3 bytes copied, 4 bytes decrypted.
+uint64_t chimera_rpcs3_memfs_stat(int which);
+// A game's own data install in miniature: copy a file off the mounted disc onto
+// the console's hard disk the way an installer does, read it back, and leave
+// what it cost in the figures above. `flags`: 1 reads the image as it lies
+// rather than as the console reads it (the negative control), 2 skips the copy
+// and only reads back what an earlier call wrote, which is how a machine that
+// has been through a savestate and another process is asked. Diagnostic;
+// returns the bytes copied or a negative number. No normal run calls it.
+int64_t chimera_rpcs3_disc_copy_probe(const char* disc_rel, int flags);
 // the compile cache bridge (cache-bridge.h): the host's dispatcher, before init
 void chimera_rpcs3_install_cache_bridge(uint64_t addr);
 uint64_t chimera_rpcs3_cache_fetched(void);

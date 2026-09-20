@@ -181,6 +181,40 @@ ECL_EXPORT uint64_t GetWindowCount(void)
   return chimera_rpcs3_window_count();
 }
 
+// what the memory filesystem holds and how much of it the disc is standing in
+// for (diagnostic, never machine state; rpcs3-driver.h names the indices)
+ECL_EXPORT uint64_t GetMemfsStat(int32_t which)
+{
+  return chimera_rpcs3_memfs_stat(which);
+}
+
+// A game's data install in miniature (rpcs3-driver.h): diagnostic. Which file
+// to copy arrives as a mounted file called "disccopy", because a sandboxed
+// guest is handed no arguments and no environment of its own; its first line
+// is the path on the disc; a second line carries "raw" for the control and
+// "verify" to read back without copying. Nothing but a gate leg mounts it.
+ECL_EXPORT int64_t DiscCopyProbe(void)
+{
+  char spec[512] = "";
+  FILE* f = fopen("disccopy", "rb");
+  if (!f)
+    return -100;
+  const size_t n = fread(spec, 1, sizeof spec - 1, f);
+  fclose(f);
+  spec[n] = '\0';
+  char* nl = strchr(spec, '\n');
+  int flags = 0;
+  if (nl)
+  {
+    *nl = '\0';
+    if (strstr(nl + 1, "raw"))
+      flags |= 1;
+    if (strstr(nl + 1, "verify"))
+      flags |= 2;
+  }
+  return chimera_rpcs3_disc_copy_probe(spec, flags);
+}
+
 // Diagnosis, never machine state: every CPU thread, where it is and what it
 // last called, to the host's stderr. For a machine that has gone quiet - a
 // PPU parked in an lv2 wait names the HLE function it is parked in.

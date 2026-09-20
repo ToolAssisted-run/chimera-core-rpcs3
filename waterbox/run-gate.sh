@@ -25,6 +25,21 @@
 #   disc:boot              a decrypted disc image in tests/roms-local (the
 #                          user's, never committed) boots: memory changes
 #                          every frame, native == sandbox
+#   disc:install           what a game's own data install costs the machine:
+#                          a file copied off the disc onto the console's hard
+#                          disk, 64 KiB at a time the way an installer does,
+#                          costs the machine nothing (it is held as a
+#                          reference to the disc) and reads back byte for byte;
+#                          the sandbox decides the same and runs to the same
+#                          memory (same_memory, not same_both - see issue #120)
+#   disc:install:encrypted the same off a Redump image, whose data regions the
+#                          ISO layer decrypts on the way past - with the
+#                          negative control in the leg: read as it lies rather
+#                          than as the console reads it, every byte is kept
+#   disc:install:state     and the reference survives a savestate loaded in
+#                          ANOTHER PROCESS, which is what opening the project
+#                          tomorrow is: the installed file still reads back as
+#                          the disc's own bytes
 #   pkg:boot               a digital-only title's .pkg in tests/roms-local IS
 #                          the game: it installs onto the console's hard disk
 #                          and the machine boots and runs what the install
@@ -102,13 +117,15 @@ if [ ! -x "$wbx" ] || [ ! -f "$core" ]; then
 fi
 
 # run_both NAME FRAMES REPORT ROM [extra runner flags]: native then (if built)
-# sandbox, frame lines in work/NAME-native.txt / NAME-wbx.txt, TTY in
-# work/tty-NAME-*.txt, the firmware mounted in both
+# sandbox, frame lines in work/NAME-native.txt / NAME-wbx.txt, the whole of
+# stdout in work/NAME-*-out.txt, TTY in work/tty-NAME-*.txt, firmware in both
 run_both() {
 	name="$1"; n="$2"; rep="$3"; game="$4"; shift 4
-	"$native" --work "$work/$name" --firmware "$pup" --frames "$n" --report "$rep" --tty-out "$work/tty-$name-native.txt" "$@" "$game" 2>"$work/$name-native.err" | grep '^frame\|^booted' > "$work/$name-native.txt"
+	"$native" --work "$work/$name" --firmware "$pup" --frames "$n" --report "$rep" --tty-out "$work/tty-$name-native.txt" "$@" "$game" > "$work/$name-native-out.txt" 2>"$work/$name-native.err"
+	grep '^frame\|^booted' "$work/$name-native-out.txt" > "$work/$name-native.txt"
 	[ "$have_wbx" = 1 ] || return 0
-	"$wbx" "$core" --firmware "$pup" --frames "$n" --report "$rep" --tty-out "$work/tty-$name-wbx.txt" "$@" "$game" 2>"$work/$name-wbx.err" | grep '^frame\|^booted' > "$work/$name-wbx.txt"
+	"$wbx" "$core" --firmware "$pup" --frames "$n" --report "$rep" --tty-out "$work/tty-$name-wbx.txt" "$@" "$game" > "$work/$name-wbx-out.txt" 2>"$work/$name-wbx.err"
+	grep '^frame\|^booted' "$work/$name-wbx-out.txt" > "$work/$name-wbx.txt"
 }
 
 # run_both_gpu NAME FRAMES REPORT ROM: the same on the GL renderer, natively
@@ -131,6 +148,21 @@ same_both() {
 	[ -s "$work/$1-native-frames.txt" ] && cmp -s "$work/$1-native-frames.txt" "$work/$1-wbx-frames.txt" && cmp -s "$work/tty-$1-native.txt" "$work/tty-$1-wbx.txt"
 }
 
+# same_memory NAME: the weaker claim, for a leg run on somebody's GAME. The
+# sandbox computed the native run's MEMORY and TTY, but not necessarily its
+# frame lines: a real game can still differ in the timing fields (issue #120 -
+# Resident Evil 5 ends five frames on 1083339 us natively and 1083353 in the
+# box, with every memory, TTY, video and audio digest identical). A leg about
+# what the memory filesystem decided must not fail for that, and must not claim
+# the equality it did not check either - so it says this instead.
+same_memory() {
+	[ "$have_wbx" = 1 ] || return 0
+	for fl in native wbx; do
+		grep '^frame' "$work/$1-$fl.txt" | sed 's/.* ram \([0-9a-f]*\) .*/\1/' > "$work/$1-$fl-ram.txt"
+	done
+	[ -s "$work/$1-native-ram.txt" ] && cmp -s "$work/$1-native-ram.txt" "$work/$1-wbx-ram.txt" && cmp -s "$work/tty-$1-native.txt" "$work/tty-$1-wbx.txt"
+}
+
 # vs_sandbox: what a leg that passed same_both is entitled to SAY. With a
 # sandboxed core built, the two flavors' lines were compared and matched. With
 # no core.wbx there is nothing to compare, and a leg that still printed
@@ -141,6 +173,16 @@ vs_sandbox() {
 		echo "native == sandbox"
 	else
 		echo "native only, no sandboxed core built"
+	fi
+}
+
+# vs_memory: the same courtesy for same_memory - with no sandboxed core there
+# is no second flavour and the leg must not pretend there was one.
+vs_memory() {
+	if [ "$have_wbx" = 1 ]; then
+		echo ", and the sandbox made the same decision and ran to the same memory"
+	else
+		echo " (native only, no sandboxed core built)"
 	fi
 }
 
@@ -195,7 +237,8 @@ if [ ! -f "$pup" ]; then
 	# actually run?" about - which is how a whole gate goes unnoticed.
 	skip "firmware:lle - no tests/roms-local/PS3UPDAT.PUP (would prove: the PUP installs in the box and liblv2 runs LLE)"
 	for leg in input:press input:port2 input:lag video:flip audio:tone \
-		disc:boot pkg:boot pkg:content pkg:licence ppu:llvm \
+		disc:boot disc:install disc:install:encrypted disc:install:state \
+		pkg:boot pkg:content pkg:licence ppu:llvm \
 		cache:objects cache:warm cache:precompile \
 		spu:interpreter spu:asmjit spu:agree \
 		gpu:flip gpu:disc gpu:rewind gpu:context; do
@@ -293,10 +336,21 @@ else
 fi
 
 # ---- disc:boot -----------------------------------------------------------
-disc=""
+# The discs the user put in tests/roms-local, sorted by whether they can be
+# read without a key: an image with a .dkey beside it is a Redump dump, whose
+# data regions are encrypted, and booting one as though it were in the clear
+# gets "Invalid file or folder" rather than a disc.
+plaindisc=""
+encdisc=""
 for f in "$root"/tests/roms-local/*.iso; do
-	[ -f "$f" ] && { disc="$f"; break; }
+	[ -f "$f" ] || continue
+	if [ -f "${f%.iso}.dkey" ] || [ -f "${f%.iso}.key" ]; then
+		[ -z "$encdisc" ] && encdisc="$f"
+	else
+		[ -z "$plaindisc" ] && plaindisc="$f"
+	fi
 done
+disc="$plaindisc"
 if [ -z "$disc" ]; then
 	skip "disc:boot - no decrypted .iso in tests/roms-local (would prove: a disc mounts, its modules link, memory changes every frame, native == sandbox)"
 else
@@ -310,6 +364,115 @@ else
 		fi
 	else
 		failed "disc:boot - expected 6 different memory digests, got $rams ($(tail -1 "$work/disc-native.err"))"
+	fi
+fi
+
+# ---- disc:install --------------------------------------------------------
+# What a game's own data install costs the machine. A PS3 game that installs
+# itself writes gigabytes onto /dev_hdd0, which is the machine's memory and so
+# is every savestate; a file whose bytes are provably a stretch of the disc is
+# held as a reference to the disc instead and costs nothing (memfs.cpp, "not
+# carrying the disc twice"). This drives the loop an installer runs - read a
+# disc file, write it to the hard disk, 64 KiB at a time - and then reads the
+# result back and compares it with the disc, because a reference that answered
+# with the wrong bytes would be a corruption nothing else here would catch.
+#
+# It is a STAND-IN and does not run a game's installer: what it does not cover
+# is a game that transforms what it installs (unpacks an archive, say), for
+# which no reference can stand and every byte is machine state. PLAN.md records
+# what the real thing measured.
+#
+# Its own negative control is the second run: with the image read as it lies
+# rather than as the console reads it, an encrypted disc's bytes match nothing.
+# On a disc in the clear the two runs are the same run, so the control there is
+# the leg for the encrypted one.
+# copy_field FILE N: the Nth number on the runner's "disc copy" line, which the
+# runner prints the moment the copy is done and nothing else has run since. The
+# figures cannot be read at the END of a run: the emulator appends to its own
+# log in the memory filesystem, and that growth would read as an install's cost.
+copy_field() { sed -n 's/^disc copy [^:]*: \([0-9-]*\) bytes, \([0-9]*\) held, \([0-9]*\) kept, \([0-9]*\) decrypted.*/\'"$2"'/p' "$1"; }
+disc_install_leg() {
+	legname="$1"; image="$2"; shift 2
+	run_both "$legname" 5 5 "$image" --disc-copy PS3_GAME/USRDIR/EBOOT.BIN "$@"
+	copied="$(copy_field "$work/$legname-native-out.txt" 1)"
+	held="$(copy_field "$work/$legname-native-out.txt" 2)"
+	kept="$(copy_field "$work/$legname-native-out.txt" 3)"
+	run_both "$legname-raw" 5 5 "$image" --disc-copy PS3_GAME/USRDIR/EBOOT.BIN --disc-copy-raw "$@"
+	rawheld="$(copy_field "$work/$legname-raw-native-out.txt" 2)"
+	rawkept="$(copy_field "$work/$legname-raw-native-out.txt" 3)"
+	# and the sandbox reached the same verdict, which same_both cannot see: it
+	# compares frame lines and the TTY, and this decision is in neither
+	samecopy=1
+	if [ "$have_wbx" = 1 ]; then
+		grep '^disc copy' "$work/$legname-native-out.txt" > "$work/$legname-copy-native.txt"
+		grep '^disc copy' "$work/$legname-wbx-out.txt" > "$work/$legname-copy-wbx.txt"
+		[ -s "$work/$legname-copy-native.txt" ] && cmp -s "$work/$legname-copy-native.txt" "$work/$legname-copy-wbx.txt" || samecopy=0
+	fi
+}
+if [ -z "$plaindisc" ]; then
+	skip "disc:install - no decrypted .iso in tests/roms-local (would prove: a file the game copies off the disc onto the hard disk costs the machine nothing)"
+else
+	disc_install_leg dinst "$plaindisc"
+	if [ -z "$copied" ] || [ "$copied" -le 0 ]; then
+		failed "disc:install - the copy off $(basename "$plaindisc" | cut -c1-30) did not happen or did not read back as the disc's own bytes (probe said ${copied:-nothing}; $(tail -1 "$work/dinst-native.err"))"
+	elif [ "$held" = "$copied" ] && [ "$kept" = 0 ]; then
+		if same_memory dinst && [ "$samecopy" = 1 ]; then
+			pass "disc:install - $(basename "$plaindisc" | cut -c1-30): $copied bytes copied off the disc onto the hard disk, read back byte for byte, and the machine carries none of them$(vs_memory)"
+		else
+			failed "disc:install - the sandbox decided differently or ran to different memory (diff $work/dinst-native.txt $work/dinst-wbx.txt, and $work/dinst-copy-native.txt)"
+		fi
+	else
+		failed "disc:install - $copied bytes copied, but only $held held as the disc's and $kept kept in the machine"
+	fi
+fi
+if [ -z "$encdisc" ]; then
+	skip "disc:install:encrypted - no .iso with a .dkey beside it in tests/roms-local (would prove: a Redump image, whose data the ISO layer decrypts on the way past, costs the machine nothing either - and would be the negative control for the leg above)"
+else
+	disc_install_leg dinste "$encdisc" --dkey "${encdisc%.iso}.dkey"
+	if ! grep -q "data regions are encrypted" "$work/dinste/RPCS3.log" 2>/dev/null; then
+		failed "disc:install:encrypted - $(basename "$encdisc" | cut -c1-30) is not an encrypted image, or its key was refused: nothing to control against"
+	elif [ -z "$copied" ] || [ "$copied" -le 0 ]; then
+		failed "disc:install:encrypted - the copy did not happen or did not read back as the disc's own bytes (probe said ${copied:-nothing}; $(tail -1 "$work/dinste-native.err"))"
+	elif [ "$rawheld" != 0 ] || [ "$rawkept" != "$copied" ]; then
+		failed "disc:install:encrypted - the control did not fail: read as it lies the image should hold none of the $copied bytes, and it held $rawheld ($rawkept kept)"
+	elif [ "$held" = "$copied" ] && [ "$kept" = 0 ]; then
+		if same_memory dinste && same_memory dinste-raw && [ "$samecopy" = 1 ]; then
+			pass "disc:install:encrypted - $(basename "$encdisc" | cut -c1-30): $copied bytes copied off a Redump image and read back byte for byte, the machine carrying none of them; read as it lies instead it carries all $rawkept$(vs_memory)"
+		else
+			failed "disc:install:encrypted - the sandbox decided differently or ran to different memory (diff $work/dinste-native.txt $work/dinste-wbx.txt, and $work/dinste-copy-native.txt)"
+		fi
+	else
+		failed "disc:install:encrypted - $copied bytes copied, but only $held held as the disc's and $kept kept in the machine"
+	fi
+fi
+
+# ---- disc:install:state --------------------------------------------------
+# What a reference to the disc is worth to a TAS: it has to survive a savestate
+# into ANOTHER PROCESS, which is what opening the project tomorrow is. The state
+# carries the reference (it is guest memory like everything else here) but not
+# the host's open handle on the image, nor anything derived from it. So: copy in
+# one process, save at the last frame, and in a second process load that state
+# and read the installed file back - against the disc, byte for byte.
+if [ "$have_wbx" != 1 ]; then
+	skip "disc:install:state - no sandboxed core (this question needs two processes)"
+elif [ -z "$encdisc" ]; then
+	skip "disc:install:state - no .iso with a .dkey beside it in tests/roms-local (would prove: a file held as a reference to an encrypted disc still reads back as the disc's own bytes after a savestate is loaded in another process)"
+else
+	st="$work/dinst-state.bin"
+	"$wbx" "$core" --firmware "$pup" --dkey "${encdisc%.iso}.dkey" --frames 30 --report 30 \
+		--disc-copy PS3_GAME/USRDIR/EBOOT.BIN --save-state "$st" "$encdisc" > "$work/dinsts1.txt" 2>"$work/dinsts1.err"
+	"$wbx" "$core" --firmware "$pup" --dkey "${encdisc%.iso}.dkey" --frames 5 --report 5 \
+		--state "$st" --disc-copy PS3_GAME/USRDIR/EBOOT.BIN --disc-verify "$encdisc" > "$work/dinsts2.txt" 2>"$work/dinsts2.err"
+	wrote="$(copy_field "$work/dinsts1.txt" 1)"
+	readback="$(copy_field "$work/dinsts2.txt" 1)"
+	if [ -z "$wrote" ] || [ "$wrote" -le 0 ]; then
+		failed "disc:install:state - the first process did not make the copy (said ${wrote:-nothing}; $(tail -1 "$work/dinsts1.err"))"
+	elif [ ! -s "$st" ]; then
+		failed "disc:install:state - no state was written ($(tail -1 "$work/dinsts1.err"))"
+	elif [ "$readback" = "$wrote" ]; then
+		pass "disc:install:state - $wrote bytes held as the disc's, saved in a $(wc -c < "$st") byte state, and read back byte for byte out of a state loaded in another process"
+	else
+		failed "disc:install:state - after the state was loaded in another process the installed file read back as ${readback:-nothing}, not the $wrote bytes written ($(tail -1 "$work/dinsts2.err"))"
 	fi
 fi
 

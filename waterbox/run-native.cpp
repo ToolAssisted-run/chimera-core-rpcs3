@@ -73,6 +73,12 @@ int main(int argc, char** argv)
   std::vector<const char*> raps;
   const char* videoOut = nullptr;
   const char* cacheDir = nullptr;
+  // a game's data install in miniature: copy this file off the disc onto the
+  // hard disk once the machine is up and read it back. --disc-copy-raw reads
+  // the image as it lies (the control), --disc-verify reads back without
+  // copying (for a machine that came out of a savestate).
+  const char* discCopy = nullptr;
+  int discCopyFlags = 0;
   int preIndex = -1, preCount = 0, preFirmware = 1;
   struct { long first, count; int index; } press[32];
   int presses = 0;
@@ -92,6 +98,12 @@ int main(int argc, char** argv)
       firmware = argv[++i];
     else if (!strcmp(argv[i], "--dkey") && i + 1 < argc)
       dkey = argv[++i];
+    else if (!strcmp(argv[i], "--disc-copy") && i + 1 < argc)
+      discCopy = argv[++i];
+    else if (!strcmp(argv[i], "--disc-copy-raw"))
+      discCopyFlags |= 1;
+    else if (!strcmp(argv[i], "--disc-verify"))
+      discCopyFlags |= 2;
     else if (!strcmp(argv[i], "--pkg") && i + 1 < argc)
       pkgs.push_back(argv[++i]);
     else if (!strcmp(argv[i], "--rap") && i + 1 < argc)
@@ -163,7 +175,7 @@ int main(int argc, char** argv)
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--rap licence.rap]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--ram-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--rap licence.rap]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--ram-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -216,6 +228,19 @@ int main(int argc, char** argv)
     printf("precompiled %u/%u modules (worker %d of %d)\n", done, total, preIndex, preCount);
     frames = 0;
   }
+  // The copy before the frames, as in run-wbx, so the two runners ask the same
+  // question of the same machine - and its figures printed HERE, with nothing
+  // else having run since, because the emulator appends to its own log in the
+  // memory filesystem and a leg that read the figures at the end of the run
+  // would be reading the log's growth as well as the copy's cost.
+  if (discCopy)
+  {
+    const long long copied = chimera_rpcs3_disc_copy_probe(discCopy, discCopyFlags);
+    printf("disc copy %s: %lld bytes, %llu held, %llu kept, %llu decrypted\n", discCopy, copied,
+           (unsigned long long)chimera_rpcs3_memfs_stat(2), (unsigned long long)chimera_rpcs3_memfs_stat(3),
+           (unsigned long long)chimera_rpcs3_memfs_stat(4));
+    fflush(stdout);
+  }
   for (long f = 1; f <= frames; f++)
   {
     for (int pi = 0; pi < presses; pi++)
@@ -245,6 +270,10 @@ int main(int argc, char** argv)
     fprintf(stderr, "page faults served by the renderer: %llu\n", (unsigned long long)chimera_rpcs3_fault_count());
   if (chimera_rpcs3_window_count())
     fprintf(stderr, "faults of the RSX's own served by opening the page: %llu\n", (unsigned long long)chimera_rpcs3_window_count());
+  fprintf(stderr, "memory files: %llu bytes, %llu file(s) held as the disc's (%llu bytes), %llu bytes copied in, %llu bytes decrypted to tell\n",
+          (unsigned long long)chimera_rpcs3_memfs_stat(0), (unsigned long long)chimera_rpcs3_memfs_stat(1),
+          (unsigned long long)chimera_rpcs3_memfs_stat(2), (unsigned long long)chimera_rpcs3_memfs_stat(3),
+          (unsigned long long)chimera_rpcs3_memfs_stat(4));
   if (videoOut)
   {
     // the last frame's picture: two little-endian u32 (width, height), then

@@ -4,6 +4,7 @@
  * diffed against the native reference.
  *
  * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F]
+ *        [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]]
  *        [--log-trace CHANS] [--debug-at N]
  *        [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>
  *
@@ -67,6 +68,7 @@ typedef uint32_t (MB_GUEST_ABI *u32fn)(void);
 typedef void (MB_GUEST_ABI *framefn)(uint64_t);
 typedef uintptr_t (MB_GUEST_ABI *ptrfn)(void);
 typedef uint64_t (MB_GUEST_ABI *u64fn)(void);
+typedef uint64_t (MB_GUEST_ABI *u64fn_i)(int32_t);
 typedef void (MB_GUEST_ABI *voidfn)(void);
 typedef int64_t (MB_GUEST_ABI *i64fn)(void);
 typedef void (MB_GUEST_ABI *btnfn)(int32_t, int32_t);
@@ -99,6 +101,12 @@ int main(int argc, char **argv)
 	 * what happens to a machine whose GL context is not the one it drew on,
 	 * because that question needs two PROCESSES. */
 	const char *stateOut = NULL, *stateIn = NULL;
+	/* a game's data install in miniature: this file, off the disc onto the hard
+	 * disk, once the machine is up, and read back. --disc-copy-raw reads the
+	 * image as it lies (the control), --disc-verify reads back without copying
+	 * (for a machine that came out of a savestate). */
+	const char *discCopy = NULL;
+	int discCopyFlags = 0;
 	struct { long first, count; int index; } press[32];
 	int presses = 0;
 	/* the pkg and rap slots: any number of each, reaching the guest through the
@@ -114,6 +122,9 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--debug-at") && i + 1 < argc) debugAt = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--firmware") && i + 1 < argc) firmware = argv[++i];
 		else if (!strcmp(argv[i], "--dkey") && i + 1 < argc) dkey = argv[++i];
+		else if (!strcmp(argv[i], "--disc-copy") && i + 1 < argc) discCopy = argv[++i];
+		else if (!strcmp(argv[i], "--disc-copy-raw")) discCopyFlags |= 1;
+		else if (!strcmp(argv[i], "--disc-verify")) discCopyFlags |= 2;
 		else if (!strcmp(argv[i], "--pkg") && i + 1 < argc) {
 			if (npkgs == 32) { fprintf(stderr, "too many --pkg\n"); return 2; }
 			pkgs[npkgs++] = argv[++i];
@@ -221,6 +232,17 @@ int main(int argc, char **argv)
 		memreader lr = { (const uint8_t *)logTrace, strlen(logTrace), 0 };
 		wbx_mount_file(h, "logtrace", mem_reader, (uintptr_t)&lr, false, &r);
 		if (r.error_message[0]) { fprintf(stderr, "mount logtrace: %s\n", r.error_message); return 1; }
+	}
+
+	/* which file to copy off the disc once the machine is up, for the leg that
+	 * asks what a game's own data install costs the machine (DiscCopyProbe) */
+	if (discCopy) {
+		static char spec[600];
+		snprintf(spec, sizeof spec, "%s\n%s %s", discCopy,
+			(discCopyFlags & 1) ? "raw" : "", (discCopyFlags & 2) ? "verify" : "");
+		memreader dr = { (const uint8_t *)spec, strlen(spec), 0 };
+		wbx_mount_file(h, "disccopy", mem_reader, (uintptr_t)&dr, false, &r);
+		if (r.error_message[0]) { fprintf(stderr, "mount disccopy: %s\n", r.error_message); return 1; }
 	}
 
 	/* the settings channel, exactly as the frontend mounts it */
@@ -345,6 +367,19 @@ int main(int argc, char **argv)
 		fflush(stdout);
 	}
 
+	/* The copy BEFORE the frames, so that a --save-state at the last frame
+	 * carries a machine that already holds the reference to the disc, and a
+	 * --state --disc-verify run reads it back out of one that was loaded. */
+	if (discCopy) {
+		typedef int64_t (MB_GUEST_ABI *i64fn0)(void);
+		i64fn0 DiscCopyProbe = (i64fn0)proc(h, "DiscCopyProbe");
+		u64fn_i MemfsStat = (u64fn_i)proc(h, "GetMemfsStat");
+		long long copied = (long long)DiscCopyProbe();
+		printf("disc copy %s: %lld bytes, %llu held, %llu kept, %llu decrypted\n", discCopy, copied,
+			(unsigned long long)MemfsStat(2), (unsigned long long)MemfsStat(3), (unsigned long long)MemfsStat(4));
+		fflush(stdout);
+	}
+
 	if (rewind) {
 		long half = frames / 2;
 		for (long f = 1; f <= half; f++) FrameAdvance(0);
@@ -435,6 +470,11 @@ int main(int argc, char **argv)
 		u64fn GetWindowCount = (u64fn)proc(h, "GetWindowCount");
 		if (GetWindowCount && GetWindowCount())
 			fprintf(stderr, "faults of the RSX's own served by opening the page: %llu\n", (unsigned long long)GetWindowCount());
+		u64fn_i GetMemfsStat = (u64fn_i)proc(h, "GetMemfsStat");
+		fprintf(stderr, "memory files: %llu bytes, %llu file(s) held as the disc's (%llu bytes), %llu bytes copied in, %llu bytes decrypted to tell\n",
+			(unsigned long long)GetMemfsStat(0), (unsigned long long)GetMemfsStat(1),
+			(unsigned long long)GetMemfsStat(2), (unsigned long long)GetMemfsStat(3),
+			(unsigned long long)GetMemfsStat(4));
 	}
 
 	if (ramOut) {
