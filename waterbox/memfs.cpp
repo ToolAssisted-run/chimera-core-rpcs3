@@ -193,6 +193,48 @@ namespace chimera
       g_recentNext++;
     }
 
+    // A read of a host file through a handle this filesystem keeps, with the
+    // handle opened again when it has stopped being the file.
+    //
+    // It can stop being the file across a SAVESTATE. The FILE object lives in
+    // the machine's memory and a savestate carries it faithfully, but the
+    // descriptor inside it belongs to the sandbox, which keeps its open files
+    // on the host side where no savestate reaches them (miniBox host.c: "Phase
+    // 1 FS is fixed ... the memory block carries all mutable machine state").
+    // Load a state and the machine is holding a number the sandbox has since
+    // closed, or handed to another open of another file. The read fails, and a
+    // game reading the data it installed onto the console's hard disk - which
+    // this filesystem serves out of the disc image itself, as a mirror - is
+    // told its own data is broken. Guilty Gear Xrd is told exactly that:
+    //
+    //   IO Failure detected with file /dev_hdd0/game/BLUS31588/USRDIR/FIOS-GGXRD/IS_DATA00.PSARC
+    //   cellGameContentErrorDialog -> "ERROR: Game data is corrupted."
+    //
+    // and the machine stops there, on the character it was loading (#118).
+    //
+    // A SHORT read counts as failure: every caller asks for bytes the file is
+    // known to hold, so less than that means the descriptor is not this file.
+    // One reopen heals it, and the machine that comes out is frame-for-frame
+    // the machine that never saved.
+    u64 host_read_at(std::FILE*& f, const std::string& path, u64 host_size, u64 offset, void* buffer, u64 size)
+    {
+      if (offset >= host_size)
+        return 0;
+      const u64 want = std::min<u64>(size, host_size - offset);
+      if (f != nullptr && std::fseek(f, static_cast<long>(offset), SEEK_SET) == 0)
+      {
+        const u64 got = std::fread(buffer, 1, static_cast<size_t>(want), f);
+        if (got == want)
+          return got;
+      }
+      if (f != nullptr)
+        std::fclose(f);
+      f = std::fopen(path.c_str(), "rb");
+      if (f == nullptr || std::fseek(f, static_cast<long>(offset), SEEK_SET) != 0)
+        return 0;
+      return std::fread(buffer, 1, static_cast<size_t>(want), f);
+    }
+
     // Reads a read-only node without a file object of the game's: one reader per
     // source, kept, because a copy loop compares tens of thousands of chunks and
     // a reopen per chunk (or a restart of a compressed stream) would be its cost.
@@ -222,11 +264,7 @@ namespace chimera
           return zip->read_at(offset, buffer, size);
         if (sevenz)
           return sevenz->read_at(offset, buffer, size);
-        if (!host || offset >= n->host_size)
-          return 0;
-        if (std::fseek(host, static_cast<long>(offset), SEEK_SET) != 0)
-          return 0;
-        return std::fread(buffer, 1, static_cast<size_t>(std::min<u64>(size, n->host_size - offset)), host);
+        return host_read_at(host, n->host_path, n->host_size, offset, buffer, size);
       }
     };
     std::map<const node*, std::unique_ptr<source_reader>> g_sourceReaders;
@@ -365,11 +403,7 @@ namespace chimera
           return zip->read_at(offset, buffer, size);
         if (sevenz)
           return sevenz->read_at(offset, buffer, size);
-        if (offset >= n->host_size)
-          return 0;
-        if (std::fseek(host, static_cast<long>(offset), SEEK_SET) != 0)
-          return 0;
-        return std::fread(buffer, 1, static_cast<size_t>(std::min<u64>(size, n->host_size - offset)), host);
+        return host_read_at(host, n->host_path, n->host_size, offset, buffer, size);
       }
       u64 read(void* buffer, u64 size) override
       {
