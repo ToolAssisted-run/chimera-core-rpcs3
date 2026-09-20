@@ -22,6 +22,16 @@ LIBS := $(shell find $(B) -name '*.a' | grep -v /3rdparty/ffmpeg/) $(shell find 
 UPSTREAM_TUS := Input/pad_thread.cpp Input/product_info.cpp Input/ps_move_tracker.cpp Input/ps_move_config.cpp rpcs3_version.cpp
 UPSTREAM_OBJS := $(patsubst %.cpp,$(O)/upstream/%.o,$(UPSTREAM_TUS))
 
+# The archive readers the memory filesystem grafts a disc dump through, and
+# the 7-Zip reference decoder they need - the same list guest.mk builds and
+# with the same -DZ7_ST, so both flavors read a disc archive the same way. The
+# native reference could not link at all without them once a disc could arrive
+# as an archive.
+SZDIR   := $(ROOT)/extern/rpcs3/3rdparty/7zip/7zip/C
+SZ_SRCS := 7zAlloc.c 7zArcIn.c 7zBuf.c 7zCrc.c 7zCrcOpt.c 7zDec.c 7zStream.c CpuArch.c \
+           LzmaDec.c Lzma2Dec.c Bcj2.c Bra.c Bra86.c BraIA64.c Delta.c Ppmd7.c Ppmd7Dec.c
+SZ_OBJS := $(patsubst %.c,$(O)/7z/%.o,$(SZ_SRCS))
+
 all: $(O)/run-native
 
 $(O)/upstream/%.o: $(ROOT)/extern/rpcs3/rpcs3/%.cpp
@@ -31,6 +41,14 @@ $(O)/upstream/%.o: $(ROOT)/extern/rpcs3/rpcs3/%.cpp
 $(O)/%.o: %.cpp rpcs3-driver.h vsched.h
 	@mkdir -p $(O)
 	g++ $(CXXFLAGS) -c -o $@ $<
+
+$(O)/7z/%.o: $(SZDIR)/%.c
+	@mkdir -p $(dir $@)
+	gcc $(CFLAGS) -DZ7_ST -I$(SZDIR) -c -o $@ $<
+
+$(O)/sevenzip.o: sevenzip.cpp sevenzip.h
+	@mkdir -p $(O)
+	g++ $(CXXFLAGS) -DZ7_ST -I$(SZDIR) -c -o $@ $<
 
 $(O)/vsched.o: vsched.cpp vsched.h
 	@mkdir -p $(O)
@@ -72,7 +90,7 @@ $(O)/generated-assets.o: generated-assets.cpp chimera-assets.h
 	@mkdir -p $(O)
 	g++ -O1 -I. -c -o $@ $<
 
-$(O)/run-native: $(O)/run-native.o $(O)/rpcs3-driver.o $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/vsched.o $(O)/gl-shim.o $(O)/gl-bridge-guest.o $(O)/gl-traps.o $(O)/glad-gl.o $(O)/gl-host.o $(O)/cache-host.o $(O)/generated-assets.o $(UPSTREAM_OBJS) $(LIBS)
+$(O)/run-native: $(O)/run-native.o $(O)/rpcs3-driver.o $(O)/archive.o $(O)/sevenzip.o $(SZ_OBJS) $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/vsched.o $(O)/gl-shim.o $(O)/gl-bridge-guest.o $(O)/gl-traps.o $(O)/glad-gl.o $(O)/gl-host.o $(O)/cache-host.o $(O)/generated-assets.o $(UPSTREAM_OBJS) $(LIBS)
 	g++ -o $@ $(filter %.o,$^) -Wl,--start-group $(LIBS) -Wl,--end-group -lpthread -lm -ldl -lrt -lasound -lEGL
 
 clean:
