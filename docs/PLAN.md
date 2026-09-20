@@ -1028,6 +1028,50 @@ optimisation. No user interface, no networking, no real audio or input devices.
   while the bar filled), because /dev_hdd0 is memory. Whatever a PS3 game
   installs is machine state, and a savestate carries it.
 
+- **A rebuilt renderer lets go of its surfaces before it frees them
+  (2026-09-20, chimera#110, patch 0032).** Loading a state on the GL renderer
+  killed the machine every time on a real game: `the core crashed: it read or
+  ran address 0000000000000008`, inside `__dynamic_cast`, or - when the freed
+  memory still read like an object - rpcs3's own
+  `Verification failed (object: 0x0)` out of `gl::as_rtt` in
+  GLRenderTargets.h. Oblivion on the GTX 1060, one save and load at frame 400
+  and then play: dead within twenty frames.
+
+  `chimera_gl_teardown` (patch 0021) inherited upstream's `on_exit` order,
+  which destroys the surface cache before the texture cache. Those two are not
+  independent: a texture-cache section that covers a render target keeps the
+  surface's address in `vram_texture` and holds a LOCK on it, and clearing the
+  cache unprotects each locked section - which asks the section for its surface
+  again (`post_protect` -> `get_render_target()`, a `dynamic_cast`) so it can
+  give the lock back. `gl_render_targets::destroy()` has already run
+  `invalidate_all()` and cleared `invalidated_resources` by then, so every one
+  of those pointers names a freed object, and the cast walks a vtable musl's
+  allocator has written its own bookkeeping over.
+
+  Upstream has the same order (VK too) and gets away with it: `on_exit` runs
+  once, at the end of a process, where a freed object usually still reads like
+  itself. Here the same code runs on EVERY state load, so it is a crash rather
+  than a warning. The fix is the order - the texture cache goes first, while
+  the surfaces it points into are still there - and nothing else in the
+  teardown depends on the texture cache, so moving it earlier only leaves more
+  alive around it.
+
+  Proved by two packages built from the same tree, differing only in patch
+  0032: the control dies at frame 400 with the fault above, the fixed core
+  finishes 620 frames, and its picture after the load is the picture the SAME
+  core gives with the rebuild turned off (CHIMERA_GL_KEEP_OBJECTS_ON_LOAD=1) -
+  0.03% of pixels differ at frame 420, 2768 colours either way; 0.65% at frame
+  600. Five saves and
+  loads in one run (400, 450, 500, 550, 600) all rebuild cleanly and the run
+  ends on a 105,182-colour picture. A cross-PROCESS reopen - the state saved
+  in one run, loaded in another, which is what opening a saved project is -
+  crashed identically before and is clean after.
+
+  Why the gate did not catch it: `gpu:rewind` and `gpu:context` load a state on
+  the GL renderer, but flip.elf draws with the CPU and flips, so its texture
+  cache has no section covering a render target and nothing holds a lock to
+  give back. The shape that finds this needs a game.
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but

@@ -1,0 +1,37 @@
+diff --git a/rpcs3/Emu/RSX/GL/GLGSRender.cpp b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.cpp
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+@@ -486,6 +486,24 @@
+ 	gl::destroy_pipe_compiler();
+ 
+ 	m_prog_buffer.clear();
++
++	// chimera: the texture cache goes FIRST, because its sections point into
++	// the surfaces the surface cache owns. A section that covers a render
++	// target keeps the surface's address in vram_texture and holds a lock on
++	// it; clearing the cache unprotects each locked section, and that asks the
++	// section for its surface again (post_protect -> get_render_target, a
++	// dynamic_cast) so it can give the lock back. Destroying the surfaces
++	// first leaves those pointers naming freed memory, and the cast walks a
++	// vtable the allocator has already written over.
++	//
++	// Upstream tears these down the other way round in on_exit, where it is
++	// latent: the process is ending and a freed object usually still reads
++	// like itself. Here the same code runs whenever a state is loaded (see
++	// chimera_check_gl_context), on an allocator that reuses a freed chunk
++	// immediately, and it is a crash every time.
++	m_null_textures.clear();
++	m_gl_texture_cache.destroy();
++
+ 	m_rtts.destroy();
+ 
+ 	m_host_dma_ctrl.reset();
+@@ -599,8 +617,6 @@
+ 		m_instancing_ring_buffer->remove();
+ 	}
+ 
+-	m_null_textures.clear();
+-	m_gl_texture_cache.destroy();
+ 	m_ui_renderer.destroy();
+ 	m_video_output_pass.destroy();
+ 
