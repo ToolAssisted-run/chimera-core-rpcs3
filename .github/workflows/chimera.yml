@@ -83,7 +83,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends meson ninja-build build-essential cmake pkg-config python3 mono-complete libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev
+          sudo apt-get install -y --no-install-recommends meson ninja-build build-essential cmake pkg-config python3 mono-complete libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev g++-13
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
@@ -183,7 +183,11 @@ jobs:
           # for waterbox/waterbox/native.mk. MB is not optional either - the
           # makefile's default is under $HOME, which on a runner is not the
           # checkout.
-          make -C waterbox -f native.mk -j"$(nproc)" \
+          # g++-13 is PINNED, not preferred: g++ 14 cannot build this at all -
+          # a hard internal compiler error in abseil's any_invocable.h. The
+          # runner's default is 13 today, so this changes nothing now and stops
+          # the day ubuntu-latest moves from turning the native reference red.
+          make -C waterbox -f native.mk -j"$(nproc)" CXX=g++-13 \
             MB="$PWD/chimera-checkout/extern/chimera-common-minibox"
 
       - name: Core gate

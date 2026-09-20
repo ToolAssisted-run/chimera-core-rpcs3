@@ -8,6 +8,13 @@ ROOT := ..
 B    := $(ROOT)/build/native
 O    := obj-native
 
+# The compiler is NAMED, and overridable, because it matters which one this is:
+# g++ 14 cannot build this at all - a hard internal compiler error in abseil's
+# any_invocable.h - so build/native here and in CI are both g++-13. Every rule
+# below said `g++` literally, which meant CXX= on the command line did nothing
+# and the pin could not even be expressed. Set CXX to move it.
+CXX ?= g++
+
 TUFLAGS := $(shell python3 extract-tu-flags.py $(B)/compile_commands.json Emu/System.cpp)
 MB      ?= $(HOME)/chimera/extern/chimera-common-minibox
 GLINCS  := -I$(MB)/source/gl -I$(MB)/source/cache -Iglad/include -Igenerated-gl
@@ -36,11 +43,11 @@ all: $(O)/run-native
 
 $(O)/upstream/%.o: $(ROOT)/extern/rpcs3/rpcs3/%.cpp
 	@mkdir -p $(dir $@)
-	g++ $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 $(O)/%.o: %.cpp rpcs3-driver.h vsched.h
 	@mkdir -p $(O)
-	g++ $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 $(O)/7z/%.o: $(SZDIR)/%.c
 	@mkdir -p $(dir $@)
@@ -48,17 +55,17 @@ $(O)/7z/%.o: $(SZDIR)/%.c
 
 $(O)/sevenzip.o: sevenzip.cpp sevenzip.h
 	@mkdir -p $(O)
-	g++ $(CXXFLAGS) -DZ7_ST -I$(SZDIR) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) -DZ7_ST -I$(SZDIR) -c -o $@ $<
 
 $(O)/vsched.o: vsched.cpp vsched.h
 	@mkdir -p $(O)
-	g++ -O2 -g1 -I. -c -o $@ $<
+	$(CXX) -O2 -g1 -I. -c -o $@ $<
 
 # the GPU bridge: the generated guest half (build-core.sh regenerates it from
 # miniBox's master list), glad, and the host half with its EGL context
 $(O)/gl-bridge-guest.o: generated-gl/gl-bridge-guest.cpp
 	@mkdir -p $(O)
-	g++ -O2 -g1 $(GLINCS) -c -o $@ $<
+	$(CXX) -O2 -g1 $(GLINCS) -c -o $@ $<
 
 $(O)/glad-gl.o: glad/src/gl.c
 	@mkdir -p $(O)
@@ -74,24 +81,24 @@ $(O)/cache-host.o: cache-host.c $(MB)/source/cache/cache-bridge.h
 
 $(O)/gl-shim.o: gl-shim.cpp
 	@mkdir -p $(O)
-	g++ -O2 -g1 $(GLINCS) -c -o $@ $<
+	$(CXX) -O2 -g1 $(GLINCS) -c -o $@ $<
 
 generated-gl/gl-traps.cpp: gen-traps.py generated-gl/gl-bridge-ops.h glad/include/glad/gl.h
 	python3 gen-traps.py glad/include/glad/gl.h generated-gl/gl-bridge-ops.h $@
 
 $(O)/gl-traps.o: generated-gl/gl-traps.cpp
 	@mkdir -p $(O)
-	g++ -O1 -c -o $@ $<
+	$(CXX) -O1 -c -o $@ $<
 
 generated-assets.cpp: gen-assets.py $(ROOT)/extern/rpcs3/rpcs3/Emu/localized_string_id.h $(ROOT)/extern/rpcs3/rpcs3/rpcs3qt/localized_emu.h $(wildcard $(ROOT)/extern/rpcs3/bin/Icons/ui/*.png)
 	python3 gen-assets.py $(ROOT)/extern/rpcs3/bin/Icons/ui $@ $(ROOT)/extern/rpcs3/rpcs3/Emu/localized_string_id.h $(ROOT)/extern/rpcs3/rpcs3/rpcs3qt/localized_emu.h
 
 $(O)/generated-assets.o: generated-assets.cpp chimera-assets.h
 	@mkdir -p $(O)
-	g++ -O1 -I. -c -o $@ $<
+	$(CXX) -O1 -I. -c -o $@ $<
 
 $(O)/run-native: $(O)/run-native.o $(O)/rpcs3-driver.o $(O)/archive.o $(O)/sevenzip.o $(SZ_OBJS) $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/vsched.o $(O)/gl-shim.o $(O)/gl-bridge-guest.o $(O)/gl-traps.o $(O)/glad-gl.o $(O)/gl-host.o $(O)/cache-host.o $(O)/generated-assets.o $(UPSTREAM_OBJS) $(LIBS)
-	g++ -o $@ $(filter %.o,$^) -Wl,--start-group $(LIBS) -Wl,--end-group -lpthread -lm -ldl -lrt -lasound -lEGL
+	$(CXX) -o $@ $(filter %.o,$^) -Wl,--start-group $(LIBS) -Wl,--end-group -lpthread -lm -ldl -lrt -lasound -lEGL
 
 clean:
 	rm -rf $(O)
