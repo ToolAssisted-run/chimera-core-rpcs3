@@ -1254,8 +1254,13 @@ push green. The first leg in the table below catches that on the first push.
 ### The table
 
 Twenty-five legs in `waterbox/run-gate.sh` (569 lines), six in
-`waterbox/tests/run-frontend.sh` (316 lines). CI now runs four of the
-thirty-one; before today it ran none.
+`waterbox/tests/run-frontend.sh` (316 lines). CI now runs six of the
+thirty-one, in two jobs; before today it ran none.
+
+The two jobs are `core-gate` (everything that is compiled, plus
+`run-gate.sh`) and `frontend-gate` (`run-frontend.sh` against the package
+`core-gate` produced, and no rpcs3 compiled at all). `publish` needs both, so
+a red frontend gate now blocks the release.
 
 | Leg | CI | Needs |
 | --- | --- | --- |
@@ -1284,12 +1289,12 @@ thirty-one; before today it ran none.
 | pkg:boot | SKIP | the PUP + a digital-only game .pkg |
 | pkg:content | SKIP | the PUP + a .pkg that is DLC or an update |
 | pkg:licence | SKIP | the PUP + a REQUIRE_LICENSE .pkg and its .rap |
-| game:frontend | no | **nothing** - see below |
-| keybinds | no | **nothing** - see below |
-| precompile:frontend | no | the PUP |
-| disc:frontend | no | the PUP + a disc |
-| gpu:frontend | no | the PUP + a disc |
-| project:frontend | no | the PUP + a disc |
+| game:frontend | RUNS | nothing |
+| keybinds | RUNS | nothing |
+| precompile:frontend | SKIP | the PUP |
+| disc:frontend | SKIP | the PUP + a disc |
+| gpu:frontend | SKIP | the PUP + a disc |
+| project:frontend | SKIP | the PUP + a disc |
 
 The test programs are not a blocker: `flip.elf`, `tone.elf`, `sputest.elf`,
 `padtest.elf` and `padtest2.elf` are committed under `tests/roms`, and
@@ -1300,7 +1305,8 @@ core legs.
 Every skipped leg now prints its own SKIP line, by name, and the script ends
 with `gate: N passed, M failed, K skipped`. It used to fold four of them into
 one line and leave seventeen entirely silent, which is how twenty-one missing
-legs look like a handful.
+legs look like a handful. `run-frontend.sh` already did this; on a runner it
+prints all six lines and ends `2 ok, 0 failed, 4 skipped`.
 
 ### Why - cost, and what it actually cost
 
@@ -1374,6 +1380,66 @@ bulk - but the margin is thinner than it was. **If a cold run ever does hit
 the cap, the fix is to split the native reference into its own job with its
 own cache, not to stop building it.**
 
+### What the frontend gate costs, measured
+
+`frontend-gate` is a second job. It compiles no rpcs3: the package and
+`run-wbx` are `core-gate`'s artifacts, and `core.wbx` is unzipped back out of
+the package, so the bytes this job's two sides compare are the bytes that
+ship. It does not build the native reference either - "native == sandbox" is
+`core-gate`'s claim and this job's reference is the sandbox - so none of the
+LLVM, ffmpeg or `native.mk` cost above appears here.
+
+What it does pay for is Chimera. Those steps are not estimates: flycast's
+`frontend gate (Chimera)` job already runs every one of them on a public
+runner, so these are that job's own step timings (run 35511256013,
+2026-09-20), with the rpcs3-specific steps measured on the dev box:
+
+| Step | on a runner | note |
+| --- | --- | --- |
+| checkout, no submodules | ~5 s | `core-gate` pays 2 min 48 s for the recursive init; nothing here compiles rpcs3 |
+| check out Chimera + its `extern` | 45 s | |
+| apt (adds `mono-complete`, `xvfb`) | 45 s | |
+| set up .NET | 6 s | |
+| **Chimera's natives (meson)** | **7 min 9 s** | the bulk, and not cached - see below |
+| `dotnet build Chimera.sln` | 47 s | |
+| miniBox host library only | under 1 min 30 s | flycast's figure builds the C++ guest toolchain too, which this job does not |
+| download the package + `run-wbx`, unzip `core.wbx` | ~30 s | about 47 MB |
+| **`run-frontend.sh`** | **under 2 min** | 30 s wall / 32 CPU s here, single-threaded, so a 4-vCPU runner is about the same |
+| **the whole job** | **about 12 min** | |
+
+So: **about twelve runner-minutes added per push, and about twelve minutes of
+extra wall clock**, because `needs: core-gate` serialises it behind the
+package it consumes.
+
+Three things were considered and rejected, so the next person does not
+rediscover them:
+
+- **Folding the legs into `core-gate` instead** would cost about three
+  minutes rather than twelve - that job already builds Chimera's natives, sets
+  up .NET and installs `mono-complete` for the contract tests. It was not done
+  because `core-gate` is the job that sits against GitHub's six-hour cap (see
+  above), and because a frontend failure should be attributable and re-runnable
+  without repeating a multi-hour build.
+- **Caching Chimera's meson tree** to save that seven minutes. A restored
+  build tree sits beside a FRESH checkout whose sources all have newer
+  timestamps, so ninja rebuilds it anyway; the cache buys a download in place
+  of a build. flycast does not cache it either.
+- **Sharing `core-gate`'s guest-toolchain cache.** The key is the same in both
+  jobs, and a save from `frontend-gate` - which never builds
+  `build/meson-cpp` - would be restored by `core-gate` for ever after, since
+  `actions/cache` re-saves nothing on an exact key hit. That is the same trap
+  the `v2` in the LLVM key exists to escape. `frontend-gate` therefore builds
+  the miniBox host library from scratch and touches no cache at all.
+
+`run-wbx` is passed as an artifact rather than rebuilt in the second job
+because building it needs `waterbox/generated-gl`, which is the guest build's
+output. Rebuilding it there would be CI doing something subtly different from
+`build-core.sh` - gates.md failure mode G, which is the thing this whole
+section exists to prevent. Its `RUNPATH` is an absolute path under
+`GITHUB_WORKSPACE`, identical in both jobs, and the job runs `ldd` on it and
+fails by name if the miniBox host library is not there - otherwise that
+failure arrives disguised as "reference runner error" from inside the gate.
+
 ### Two traps found while doing this, both still live
 
 - **`build-native.sh` picks whatever `c++` is, and g++ 14 cannot build it.**
@@ -1394,23 +1460,29 @@ own cache, not to stop building it.**
 
 ### What is still not gated, and why not
 
-**The frontend gate is not run by CI at all**, and two of its six legs -
-`game:frontend` and `keybinds` - need no content either. They are left out of
-this round deliberately, not overlooked: running them means a second job that
-builds `Chimera.sln`, installs Xvfb and drives the real GUI under Mono, which
-is the shape flycast and quickerNES already use and is a change of its own
-size. **Proposal for Sergio: that is the next piece of this work.** It is
-worth doing, because `game:frontend` is the only leg anywhere that holds the
-PACKAGE - the thing users download - to the sandbox reference.
-
-**The four legs CI runs are all on `lv2test.elf`**, which is a stand-in
+**The six legs CI runs are all on `lv2test.elf`**, which is a stand-in
 (gates.md mode E). They prove the core starts, is deterministic, survives a
-savestate round-trip, and that the sandbox equals the host build ON THAT
-PROGRAM. They do not stand in for a game: issue #120 is precisely a
+savestate round-trip, that the sandbox equals the host build ON THAT PROGRAM,
+and that the shipped package run through the real frontend equals the sandbox
+ON THAT PROGRAM. They do not stand in for a game: issue #120 is precisely a
 native-vs-sandbox divergence that real titles show and these programs do not.
 Green here is not a claim about games.
 
-### Who owns running the other twenty-seven, and when (proposal for Sergio)
+**`game:frontend` compares a 1 MiB window, not all of main memory.** The
+frontend and the reference each write the first 1,048,576 bytes of the PS3's
+256 MB of main memory and those are what `cmp` sees. The window is not inert -
+lv2test's frame 100 and frame 200 differ inside it, at byte 689 - but it is
+narrow, and here is the measured consequence: swapping the package for a
+genuinely different build of this core (2026-09-12's, seven days and a miniBox
+bump older) and running the leg against today's `core.wbx` as the reference
+gave a **PASS**. Two builds that far apart happen to leave that window
+identical on this program. So the leg does bite when the package is broken -
+it went red at once when the package shipped a half-written `core.wbx` - but
+it is not a fingerprint of the build, and it should not be read as one.
+Widening it means changing what `frontend-ram.lua` writes out; nobody has
+needed that yet.
+
+### Who owns running the other twenty-five, and when (proposal for Sergio)
 
 By hand, on the development machine that holds `tests/roms-local`, with the
 output pasted into this file under a dated heading - one line per leg, plus
