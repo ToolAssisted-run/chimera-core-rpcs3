@@ -25,6 +25,18 @@
 #   disc:boot              a decrypted disc image in tests/roms-local (the
 #                          user's, never committed) boots: memory changes
 #                          every frame, native == sandbox
+#   pkg:boot               a digital-only title's .pkg in tests/roms-local IS
+#                          the game: it installs onto the console's hard disk
+#                          and the machine boots and runs what the install
+#                          produced, with no disc anywhere
+#   pkg:content            a package that is not a game on its own put in the
+#                          Game slot is refused by name before the machine
+#                          starts: content FOR a game (a DLC, a licence), or
+#                          an UPDATE, which installs a bootable EBOOT.BIN
+#                          exactly as its game does and is still part of one
+#   pkg:licence            a purchased title (REQUIRE_LICENSE) boots with its
+#                          .rap in the Licence slot, and without it says which
+#                          licence is missing
 #   gpu:flip               the GL renderer through the GPU bridge (a host EGL
 #                          context, llvmpipe will do): the flip program's
 #                          pictures are the machine's own pixels, the same
@@ -262,6 +274,113 @@ else
 		fi
 	else
 		failed "disc:boot - expected 6 different memory digests, got $rams ($(tail -1 "$work/disc-native.err"))"
+	fi
+fi
+
+# ---- pkg:boot, pkg:content and pkg:licence -------------------------------
+# A digital-only title was never pressed on a disc: its .pkg IS the game. Put
+# in the Game slot it installs onto the console's hard disk before the machine
+# starts, exactly as the console's own XMB installs it, and the machine boots
+# the EBOOT.BIN the install produced - no disc and no disc key anywhere.
+#
+# Every .pkg in tests/roms-local (the user's, never committed) is tried in
+# turn, with every .rap there handed over as a licence, and each one lands in
+# one of the legs:
+#   pkg:boot     a GAME package installs and the machine boots and runs what
+#                it installed (whether the two flavors agree is reported, not
+#                required - see the note at the leg)
+#   pkg:content  a package that is not a game on its own is refused BY NAME
+#                before the machine starts: content FOR a game (a DLC, a
+#                licence, a theme), or an UPDATE, which says CATEGORY=HG and
+#                installs a bootable EBOOT.BIN exactly as its game does and is
+#                still only part of one
+#   pkg:licence  a package that says REQUIRE_LICENSE boots with its .rap and
+#                is refused, by a sentence naming the licence, without it
+# Telling those apart is half of what this feature is, so they are legs.
+raparg=""
+for f in "$root"/tests/roms-local/*.rap; do
+	[ -f "$f" ] && raparg="$raparg --rap $f"
+done
+pkggame=""
+pkgcontent=""
+pkglicensed=""
+# smallest first, and stop as soon as every leg has its package: booting a
+# package means installing it and running a real game, so the cheapest one
+# that answers a question is the one to answer it with
+find "$root/tests/roms-local" -maxdepth 1 -name '*.pkg' -printf '%s\t%p\n' 2>/dev/null | sort -n | cut -f2- > "$work/pkglist.txt"
+while IFS= read -r f; do
+	[ -f "$f" ] || continue
+	[ -n "$pkggame" ] && [ -n "$pkgcontent" ] && [ -n "$pkglicensed" ] && break
+	rm -rf "$work/pkgscan"
+	# shellcheck disable=SC2086
+	"$native" --work "$work/pkgscan" --firmware "$pup" $raparg --frames 120 --report 20 --tty-out "$work/tty-pkgscan.txt" "$f" 2>"$work/pkgscan.err" | grep '^frame\|^booted' > "$work/pkgscan.txt"
+	if grep -q 'is not a game: installing it produced no USRDIR\|is a PATCH for a disc game\|is an UPDATE, not a game' "$work/pkgscan.err"; then
+		if [ -z "$pkgcontent" ]; then
+			pkgcontent="$f"
+			cp "$work/pkgscan.err" "$work/pkgcontent.err"
+		fi
+	elif [ -s "$work/pkgscan.txt" ]; then
+		if [ -z "$pkggame" ]; then
+			pkggame="$f"
+			cp "$work/pkgscan.txt" "$work/pkg-native.txt"
+			cp "$work/tty-pkgscan.txt" "$work/tty-pkg-native.txt"
+			cp "$work/pkgscan.err" "$work/pkg-native.err"
+		fi
+		# a package whose header says REQUIRE_LICENSE is the one worth asking
+		# the licence question of; the others boot with or without a .rap
+		if [ -z "$pkglicensed" ] && grep -aq 'Package Flags = .*REQUIRE_LICENSE' "$work/pkgscan/RPCS3.log" 2>/dev/null; then
+			pkglicensed="$f"
+		fi
+	fi
+done < "$work/pkglist.txt"
+if [ -z "$pkggame" ]; then
+	skip "pkg:boot - no digital-only game .pkg in tests/roms-local (would prove: a package installs onto the console's hard disk and the machine boots the title it installed, native == sandbox)"
+else
+	if [ "$have_wbx" = 1 ]; then
+		# shellcheck disable=SC2086
+		"$wbx" "$core" --firmware "$pup" $raparg --frames 120 --report 20 --tty-out "$work/tty-pkg-wbx.txt" "$pkggame" 2>"$work/pkg-wbx.err" | grep '^frame\|^booted' > "$work/pkg-wbx.txt"
+	fi
+	rams="$(distinct "$work/pkg-native.txt" ram 1)"
+	# Whether the two flavors agree is REPORTED here and not required, and the
+	# reason is measured rather than assumed: the core has a native-vs-sandbox
+	# divergence on some real games that has nothing to do with packages.
+	# Prince of Persia (BLUS30214), a plain disc image with no package and no
+	# licence anywhere near it, gives two different memory digests in the two
+	# flavors at identical machine time, while Bejeweled 3 (BLUS30865) is
+	# byte-identical in both. Requiring it here would attribute that fault to
+	# this feature. What this leg is for is the package: that it installs onto
+	# the console's hard disk and that the machine boots and RUNS what it
+	# installed. See docs/PLAN.md, the .pkg entry.
+	if [ "$rams" = 6 ]; then
+		if same_both pkg; then
+			agree="native == sandbox"
+		else
+			agree="the flavors differ (not a package matter: see docs/PLAN.md)"
+		fi
+		pass "pkg:boot - $(basename "$pkggame" | cut -c1-40): the package installed and the machine booted what it installed, 120 frames, memory different at every report, $agree"
+	else
+		failed "pkg:boot - expected 6 different memory digests, got $rams ($(tail -1 "$work/pkg-native.err"))"
+	fi
+fi
+if [ -z "$pkgcontent" ]; then
+	skip "pkg:content - no .pkg in tests/roms-local that is content or an update (would prove: a package that is not a game on its own is refused by name, not installed into a console with part of a title on it)"
+else
+	pass "pkg:content - $(basename "$pkgcontent" | cut -c1-40): put in the Game slot it is refused - $(sed -n 's/^init failed: that .pkg \(is[^.,:]*\).*/a package that \1/p' "$work/pkgcontent.err" | head -1)"
+fi
+# The same licensed game again with no licence at all. A title whose header
+# says REQUIRE_LICENSE is NPDRM: without the account's .rap its executable
+# does not decrypt, and rpcs3 says only "Failed to decrypt content", which
+# names neither the cause nor the cure.
+if [ -z "$pkglicensed" ]; then
+	skip "pkg:licence - no purchased .pkg (REQUIRE_LICENSE) with its .rap in tests/roms-local (would prove: such a title boots with its licence and names the missing licence without it)"
+else
+	"$native" --work "$work/pkg-nolic" --firmware "$pup" --frames 1 --report 1 "$pkglicensed" 2>"$work/pkg-nolic.err" | grep '^booted' > "$work/pkg-nolic.txt"
+	if grep -q 'licensed content and the project carries no licence' "$work/pkg-nolic.err"; then
+		pass "pkg:licence - $(basename "$pkglicensed" | cut -c1-40): boots with its .rap in the Licence slot, and without it says which licence is missing instead of failing to decrypt"
+	elif [ -s "$work/pkg-nolic.txt" ]; then
+		failed "pkg:licence - $(basename "$pkglicensed" | cut -c1-40) says REQUIRE_LICENSE but booted with no licence at all"
+	else
+		failed "pkg:licence - without its licence the package failed without saying a licence was missing ($(tail -1 "$work/pkg-nolic.err"))"
 	fi
 fi
 

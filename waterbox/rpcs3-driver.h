@@ -31,6 +31,12 @@ void chimera_rpcs3_set_savedata(const char* zip_path);
 // own package reader onto /dev_hdd0 before _init seals the machine: DLC,
 // patches, unlocks. One that will not install fails the load.
 void chimera_rpcs3_add_package(const char* pkg_path);
+// A .rap the project carries (the rap slot, any number): the per-account
+// licence for a package that was paid for. It is a 16-byte key file named
+// after the content it licenses, and it goes into the console's user exdata
+// under that exact name, where rpcs3 looks for it when it decrypts an NPDRM
+// executable or an EDAT. A licensed game whose .rap is missing does not boot.
+void chimera_rpcs3_add_rap(const char* rap_path);
 // The export: a snapshot of every file, names as the zip above has them. The
 // pointers are the files themselves and hold until the machine runs again.
 int chimera_rpcs3_savedata_count(void);

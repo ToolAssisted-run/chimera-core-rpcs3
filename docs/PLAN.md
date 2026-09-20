@@ -1072,6 +1072,128 @@ optimisation. No user interface, no networking, no real audio or input devices.
   cache has no section covering a render target and nothing holds a lock to
   give back. The shape that finds this needs a game.
 
+- **A digital-only title is its .pkg (2026-09-20, chimera#66).** Half of that
+  issue shipped in 59bd3d3: a project's Packages slot installs .pkg files onto
+  the console before it starts - DLC, patches, unlocks, a .rap of its own. The
+  other half is a game that was never pressed on a disc, where the package IS
+  the game and there is no disc image to put in the Game slot.
+
+  The Game slot now takes a .pkg, and what happens to it is what a console
+  does: `install_game_package` runs the same `package_reader` that installs a
+  DLC, into the memory filesystem, before the seal - so what it installed is
+  baseline and not a savestate's - and then hands `Emulator::BootGame` the
+  USRDIR/EBOOT.BIN the install CREATED, under /dev_hdd0/game/<title id>/.
+  rpcs3 boots an installed title by that path every day: `Emulator::Load` sees
+  the path is inside /dev_hdd0/game (`from_hdd0_game`), takes argv[0] and the
+  game directory from it, and never looks for a /dev_bdvd. Nothing new had to
+  be taught to the emulator; the work was deciding what to hand it.
+
+  The game package installs FIRST and the project's own packages after it, so
+  a title's patch and its DLC land on top of the game in the order a console
+  would install them.
+
+  Which packages are a game is decided by WHAT THE INSTALL PRODUCED and by the
+  package's own HEADER, never by guessing. `package_reader` already reports the
+  USRDIR/EBOOT.BIN each package created (`bootable_paths`, which the Qt front
+  end uses to offer a freshly installed game), so `install_pkg_paths` passes
+  that back: a package that created none is content FOR a game - a DLC, a
+  licence, a theme - and is refused by name.
+
+  That is not enough on its own, and the content proved it. A digital title's
+  UPDATE is indistinguishable from its game by everything except the header:
+  Super Stardust HD's 6.00 update says CATEGORY=HG exactly as the full game
+  does, carries the same TITLE_ID, installs into the same
+  /dev_hdd0/game/NPEA00014, and produces a bootable USRDIR/EBOOT.BIN - and
+  booting it is booting part of a game. (A DISC game's patch says CATEGORY=GD
+  and is a different shape; rpcs3's own `check_target_app_version` only checks
+  GD, so it lets a digital update install over nothing without complaint.) The
+  header is honest where the file system is not, and the two packages differ
+  there exactly:
+
+      Super-Stardust-HD_Full.pkg    type 0x4a  EBOOT, HDD_MC, RENAME_DIRECTORY
+      Super-Stardust-HD_Update.pkg  type 0x5e  ... plus REQUIRE_LICENSE, PATCH
+      echochrome (NPUA80134)        type 0x4e  ... plus REQUIRE_LICENSE
+
+  So the Game slot refuses PKG_FLAG_PATCH, read from the header BEFORE the
+  install, because the install is gigabytes and the answer is in the first
+  kilobyte.
+
+  **The licence.** PKG_FLAG_REQUIRE_LICENSE is the other half. A PSN title that
+  was paid for is NPDRM: its executable is encrypted and the key is a 16-byte
+  per-account licence, a `.rap` named after the content it unlocks
+  (UP9000-NPUA80134_00-ECHOCHROME000000.rap). rpcs3 looks it up by that exact
+  name - `rpcs3::utils::get_rap_file_path`, asked by unself when it decrypts an
+  NPDRM executable and by unedat for EDAT data - under
+  /dev_hdd0/home/<user>/exdata/, and converts it to a RIF key in memory. So the
+  new Licence slot is almost no code: the file goes into exdata under its own
+  name and the name is the whole of the plumbing. Without it echochrome stops
+  at rpcs3's "Failed to decrypt content", which names neither the cause nor the
+  cure; with the header flag in hand the core can say what is missing instead.
+
+  In the project: `.pkg` joins the Game slot's formats, a Licence slot takes
+  `.rap` files (any number, name pinned by `namePattern` to rpcs3's own content
+  id rule, because renaming one makes it invisible), the Disc key slot is
+  `exposedWhen` NOT a package game (a package carries no encrypted disc), and
+  the firmware requirement grows an `any` so a package game asks for the PUP
+  exactly as a disc game does.
+
+  One trap found by reading rather than by running. Upstream's desktop
+  `resolve_path` is Qt's canonical path, which has NO trailing separator, and
+  `Emulator::Load` leans on that: it appends its own '/' to a resolved
+  directory and cuts the boot path by the result's length. The default callback
+  is the identity, which leaves the separator on - so a title booted out of
+  /dev_hdd0/game would have got an argv[0] and a game directory one character
+  short. It never showed before because no path this core booted came from
+  there. The callback now strips trailing separators, which is all there is to
+  canonicalise in a memory filesystem.
+
+  What a package game costs: the install writes the whole game into
+  /dev_hdd0, which is memory, so its machine state is as large as the game -
+  the same bill a disc game's own data install runs up (chimera#108).
+
+  PROVEN, on two real digital-only titles:
+
+  - **Super Stardust HD, NPEA00014** (Super-Stardust-HD_Full.pkg, 305 MB,
+    CATEGORY HG, APP_VER 04.00, no REQUIRE_LICENSE): installs and boots to
+    running frames with firmware 4.82. It is a slow machine - 42 threads on the
+    PPU interpreter - so it is not what the gate leg runs.
+  - **echochrome, NPUA80134** (107 MB, CATEGORY HG, APP_VER 01.02,
+    REQUIRE_LICENSE): with its .rap in the Licence slot it installs, decrypts
+    and runs 120 frames, memory different at every report. Without the .rap it
+    is refused with a sentence naming the licence.
+  - The 6.00 update and the Saint Seiya all-DLC package are both refused by
+    name in the Game slot, for their two different reasons.
+
+  NOT proven, and found on the way: **native and sandbox do not agree on the
+  memory of every real game**, and it is nothing to do with packages. echochrome
+  gives six different memory digests in each flavor, each flavor identical to
+  itself run after run, and the two flavors differ from frame 3 - by 23 bytes
+  out of 256 MiB, at guest 0x3463b6, 0x40269a and 0x47bd22 and their
+  neighbours, values that read like stored timer words, with machine time 4
+  microseconds apart at that frame.
+
+  The control says this is not the package path. **Prince of Persia
+  (BLUS30214), a plain disc image with no package and no licence anywhere near
+  it, diverges too** - two different memory digests at IDENTICAL machine time,
+  constant across frames - while **Bejeweled 3 (BLUS30865) is byte-identical in
+  both flavors** for four frames. So some real games are flavor-equal and some
+  are not, and the two that are not have nothing in common but being games.
+  That deserves its own issue; requiring it in `pkg:boot` would only pin a
+  core-wide fault on this feature, so the leg reports the comparison and does
+  not fail on it. `run-native` grew a `--ram-out` (the same memory domain
+  run-wbx writes) so the next person can diff rather than guess.
+
+  Also measured: Super Stardust HD is SLOW here - 42 threads, about half a
+  minute of wall time per frame on the PPU interpreter, and the RSX FIFO asks
+  for a bigger wake-up delay in the log. It boots and it runs; it is not what
+  the gate leg should run, which is why the leg takes the packages in tests/
+  roms-local smallest first and stops once each of its questions has an answer.
+
+  Also fixed on the way: `native.mk` never built archive.cpp, sevenzip.cpp or
+  the 7-Zip decoder, so the native reference could not LINK at all once a disc
+  could arrive as an archive. guest.mk had them; the two lists are the same
+  list now.
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but

@@ -420,7 +420,14 @@ namespace
   // and `names` is what to call each file in that sentence: a project's own
   // packages are grafted first, so the path the reader is handed is a memory
   // file's and the name the person chose is the other one.
-  bool install_pkg_paths(const std::vector<std::string>& paths, const std::vector<std::string>& names, const char* whence)
+  //
+  // `bootable_out`, when asked for, receives one entry per package: the path
+  // of the USRDIR/EBOOT.BIN that package CREATED, or an empty string for a
+  // package that created none. That is how the installer answers "was this a
+  // game?" - see install_game_package, where a .pkg in the game slot is the
+  // game itself.
+  bool install_pkg_paths(const std::vector<std::string>& paths, const std::vector<std::string>& names, const char* whence,
+                         std::deque<std::string>* bootable_out = nullptr)
   {
     if (paths.empty())
       return true;
@@ -458,6 +465,8 @@ namespace
     }
     chimera_log.notice("%zu package(s) from %s installed into the machine (%zu bytes of memory files)", readers.size(), whence,
                        chimera::memfs_bytes());
+    if (bootable_out)
+      *bootable_out = std::move(bootable);
     return true;
   }
 
@@ -486,6 +495,25 @@ namespace
       g_main_word.notify_one();
     };
     cb.try_to_quit = [](bool, std::function<void()>) { return false; };
+
+    // Upstream's desktop resolve_path is Qt's canonical path, which carries NO
+    // trailing separator, and Emulator::Load leans on that: it appends its own
+    // '/' to a resolved directory and then cuts a boot path with the result's
+    // length (the from_hdd0_game and dev_flash branches). The default callback
+    // is the identity, which leaves the separator on, so the cut takes one
+    // character too many and a title installed on the console's hard disk -
+    // which is what a .pkg game is - would boot with a mangled argv[0] and a
+    // game directory one letter short. There is nothing else to canonicalise
+    // in the memory filesystem: it has no links, no relative paths and one
+    // spelling per file. So the whole job is the separator.
+    cb.resolve_path = [](std::string_view p)
+    {
+      std::string s{p};
+      while (s.size() > 1 && s.back() == '/')
+        s.pop_back();
+      return s;
+    };
+    cb.resolve_path_may_not_exist = cb.resolve_path;
 
     cb.init_gs_render = [](utils::serial* ar)
     {
@@ -895,12 +923,166 @@ namespace
     }
     return true;
   }
+
+  // A .pkg in the GAME slot: a digital-only title, sold as a package and never
+  // pressed on a disc, so the package is the game. A console installs it to
+  // /dev_hdd0/game/<title id>/ and then boots what it installed - there is no
+  // disc anywhere in the story - and that is exactly what happens here. The
+  // package installs into the memory filesystem before the seal, the same
+  // package_reader that installs a DLC, and the EBOOT.BIN it CREATED becomes
+  // the path handed to Emulator::BootGame. rpcs3 boots an installed title by
+  // that path every day: Emulator::Load sees the path is inside
+  // /dev_hdd0/game, sets argv[0] and the game directory from it, and never
+  // looks for a /dev_bdvd.
+  //
+  // Whether a package is a game is decided by WHAT IT INSTALLED, not by the
+  // content type in its header: the reader reports the USRDIR/EBOOT.BIN each
+  // package created, and a package that created none is content for a game -
+  // downloadable content, a licence, a theme - and belongs in the Packages
+  // slot. A patch for a disc game does install an EBOOT.BIN, and is told apart
+  // by the PARAM.SFO it installed beside it: CATEGORY "GD" is game data for a
+  // disc that has to be in the drive, and booting it alone reaches a machine
+  // looking for a disc that is not there.
+  //
+  // What it installs is several gigabytes of /dev_hdd0, which is memory, so a
+  // pkg game's machine state is as large as the game - the same as a disc
+  // game that installs its data (chimera#108).
+  std::string g_game_pkg_boot;
+  // the game package wanted a licence and the project brought none: what makes
+  // "Failed to decrypt content" a sentence somebody can act on
+  bool g_game_pkg_unlicensed = false;
+
+  // The .rap files the project carries (the rap slot). A PSN title that was
+  // paid for is NPDRM: its executable and its data are encrypted, and the key
+  // is a per-account licence the console keeps in the user's exdata. The
+  // licence arrives as a 16-byte .rap named after the content it unlocks
+  // (UP9000-NPUA80134_00-ECHOCHROME000000.rap), and rpcs3 looks for exactly
+  // that path - rpcs3::utils::get_rap_file_path, which unself asks when it
+  // decrypts an NPDRM executable and unedat asks for EDAT data - so the file
+  // goes in under its own name and the name is the whole of the plumbing.
+  // rpcs3 turns it into a RIF key in memory (rap_to_rif); nothing is written.
+  //
+  // A package whose header carries REQUIRE_LICENSE needs one, and without it
+  // the boot ends at "Failed to decrypt content" with nothing saying why -
+  // which is what this slot exists to prevent.
+  std::vector<std::string> g_raps;
+
+  bool install_raps()
+  {
+    if (g_raps.empty())
+      return true;
+    chimera::memfs_mkdirs(k_user_home + "exdata");
+    for (const std::string& path : g_raps)
+    {
+      const char* slash = strrchr(path.c_str(), '/');
+      const std::string name = slash ? slash + 1 : path;
+      if (!chimera::memfs_graft(k_user_home + "exdata/" + name, path))
+      {
+        g_error = "cannot open the licence " + path;
+        return false;
+      }
+      chimera_log.notice("licence %s is in the console's exdata", name);
+    }
+    return true;
+  }
+
+  // Whether a package's own header says it is a PATCH - an update for
+  // something already installed, and not a thing to install on its own. It is
+  // asked BEFORE the install, because the answer is in the header and the
+  // install is gigabytes.
+  //
+  // This is the signal, not the CATEGORY in the PARAM.SFO. A disc game's patch
+  // does say CATEGORY=GD, but a digital title's update says CATEGORY=HG, the
+  // same as the game itself: it replaces the files of the very title it
+  // patches, in the very directory that title lives in, so nothing about its
+  // shape says "update". Super Stardust HD's 6.00 update installs into
+  // /dev_hdd0/game/NPEA00014 and produces a bootable EBOOT.BIN exactly as the
+  // full game does, and booting it is booting part of a game. The header is
+  // honest about it: the full package is EBOOT, HDD_MC, RENAME_DIRECTORY and
+  // the update is the same plus REQUIRE_LICENSE and PATCH.
+  bool package_is_patch(const std::string& path, bool& requires_license, bool& valid)
+  {
+    package_reader reader(path);
+    valid = reader.is_valid();
+    if (!valid)
+      return false;
+    const u32 type = reader.get_metadata().package_type;
+    requires_license = (type & PKG_FLAG_REQUIRE_LICENSE) != 0;
+    return (type & PKG_FLAG_PATCH) != 0;
+  }
+
+  bool install_game_package(const std::string& pkg_path, const std::string& display)
+  {
+    bool requires_license = false, valid = false;
+    const bool is_patch = package_is_patch(pkg_path, requires_license, valid);
+    if (!valid)
+    {
+      g_error = "that file is not a PS3 package: " + display;
+      return false;
+    }
+    if (is_patch)
+    {
+      g_error = "that .pkg is an UPDATE, not a game: its header carries the PATCH flag, so what it holds is "
+                "the files that CHANGE in a version of a game, not the game. Installed on its own it leaves a "
+                "console with part of a title on it. Put the full package in the Game slot and this one in "
+                "the Packages slot, and the machine boots the updated game.";
+      return false;
+    }
+    g_game_pkg_unlicensed = requires_license && g_raps.empty();
+    if (g_game_pkg_unlicensed)
+      chimera_log.warning("the game package says REQUIRE_LICENSE and the project carries no .rap");
+    std::deque<std::string> bootable;
+    if (!install_pkg_paths({pkg_path}, {display}, "the game slot", &bootable))
+    {
+      g_error = g_install_error;
+      return false;
+    }
+    std::string boot;
+    for (const std::string& p : bootable)
+      if (!p.empty())
+      {
+        boot = p;
+        break;
+      }
+    if (boot.empty())
+    {
+      g_error = "that .pkg is not a game: installing it produced no USRDIR/EBOOT.BIN, so what it carries is "
+                "content FOR a game - downloadable content, a licence, a theme - and there is nothing in it to "
+                "boot. Put it in the Packages slot beside the game it belongs to, and put the game itself in "
+                "the Game slot.";
+      return false;
+    }
+    // the PARAM.SFO the package installed sits beside the USRDIR it created
+    static const std::string k_tail = "USRDIR/EBOOT.BIN";
+    const std::string dir = boot.size() > k_tail.size() ? boot.substr(0, boot.size() - k_tail.size()) : std::string();
+    const psf::registry sfo = psf::load(dir + "PARAM.SFO").sfo;
+    const std::string category(psf::get_string(sfo, "CATEGORY"));
+    const std::string title_id(psf::get_string(sfo, "TITLE_ID"));
+    chimera_log.notice("game package: title id %s, category %s, installed at %s", title_id, category, dir);
+    if (category == "GD")
+    {
+      g_error = "that .pkg is a PATCH for a disc game (its PARAM.SFO says CATEGORY=GD" +
+                (title_id.empty() ? std::string() : ", title " + title_id) +
+                "), not a game of its own: it replaces part of a game whose disc has to be in the drive. Put "
+                "the disc image in the Game slot and this package in the Packages slot, and the machine boots "
+                "the patched game.";
+      return false;
+    }
+    g_game_pkg_boot = boot;
+    return true;
+  }
 }
 
 void chimera_rpcs3_add_package(const char* pkg_path)
 {
   if (pkg_path && *pkg_path)
     g_packages.emplace_back(pkg_path);
+}
+
+void chimera_rpcs3_add_rap(const char* rap_path)
+{
+  if (rap_path && *rap_path)
+    g_raps.emplace_back(rap_path);
 }
 
 int chimera_rpcs3_savedata_count(void)
@@ -960,9 +1142,14 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   // whether the game is a disc IMAGE, which is the only shape that can arrive
   // with its data still encrypted (see iso_data_is_locked)
   bool game_is_iso = false;
+  // whether the game is a PACKAGE: a digital-only title, installed onto the
+  // console's hard disk and booted from there (install_game_package)
+  bool game_is_pkg = false;
+  std::string game_name;
   {
     const char* base = strrchr(game_path, '/');
     base = base ? base + 1 : game_path;
+    game_name = base;
 
     // An archive is how a disc dumped as a FOLDER reaches this core. A
     // chimera project carries files, never directory trees, so a thousand
@@ -1108,6 +1295,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
       }
       game = root + "game/" + base;
       game_is_iso = ends_with_ci(base, ".iso");
+      game_is_pkg = ends_with_ci(base, ".pkg");
     }
     // a Redump disc key rides next to the ISO as "<stem>.dkey", where rpcs3's
     // ISO loader looks first (Loader/ISO.cpp: the path minus its extension)
@@ -1216,6 +1404,21 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
       return 0;
     chimera_log.notice("firmware %s installed into the machine (%zu bytes of memory files)", g_firmware_version, chimera::memfs_bytes());
   }
+  // the licences the project carries, into the user's exdata, before anything
+  // asks for one
+  if (!install_raps())
+    return 0;
+  // A package in the game slot IS the game: it installs onto the console's
+  // hard disk FIRST, so the project's other packages - its patch, its DLC -
+  // land on top of it in the order a console would install them, and the
+  // machine then boots the EBOOT.BIN the install produced.
+  if (game_is_pkg)
+  {
+    if (!install_game_package(game, game_name))
+      return 0;
+    game = g_game_pkg_boot;
+    chimera_log.notice("the game slot holds a package: booting what it installed, %s", game);
+  }
   // the project's packages, onto the console's hard disk, before the seal
   if (!install_packages(root))
     return 0;
@@ -1270,7 +1473,14 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     // "Game install failed" is the whole of what the boot result says about a
     // disc whose content would not install; the reason is the sentence the
     // installer left behind.
-    if (r == game_boot_result::install_failed && !g_install_error.empty())
+    if (g_game_pkg_unlicensed)
+      // decrypt_error, usually, and "Failed to decrypt content" on its own
+      // names neither the cause nor the cure
+      fail("that game's package is licensed content and the project carries no licence for it. Its header "
+           "says REQUIRE_LICENSE: the executable inside is NPDRM-encrypted and the key is the account's own "
+           ".rap file, named after the content (UP9000-NPUA80134_00-ECHOCHROME000000.rap and the like). Put "
+           "that .rap in the Licence slot beside the package and the machine decrypts and boots it.");
+    else if (r == game_boot_result::install_failed && !g_install_error.empty())
       fail("the content this disc installs onto the console could not be installed: " + g_install_error);
     else if (game_is_iso && iso_data_is_locked(game))
       fail(dkey_path && *dkey_path
@@ -1308,7 +1518,9 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   // what is wrong. Refusing here does, while the cause is still in hand. The
   // title id check keeps this to executables the machine could not identify:
   // a title that does have its PARAM.SFO is a different situation.
-  if (vfs::get("/dev_bdvd").empty() && Emu.GetTitleID().empty())
+  // (a package game boots an EBOOT.BIN with no disc ON PURPOSE - it is the one
+  // the install wrote into /dev_hdd0/game, with the rest of the game beside it)
+  if (!game_is_pkg && vfs::get("/dev_bdvd").empty() && Emu.GetTitleID().empty())
   {
     std::string base = game.substr(game.find_last_of('/') + 1);
     for (char& c : base)

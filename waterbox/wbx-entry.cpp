@@ -93,6 +93,18 @@ ECL_EXPORT int Init(void)
         chimera_rpcs3_add_package(pkgName);
     }
   }
+  // the licences for what they unlock: the rap slot ({"rap":["name", ...]}),
+  // any number. The NAME is the content id, and it is what rpcs3 looks a
+  // licence up by, so it travels into the console's exdata unchanged.
+  {
+    const int raps = wbx_slot_count("rap");
+    for (int i = 0; i < raps; i++)
+    {
+      char rapName[256] = "";
+      if (wbx_slot_name("rap", i, rapName, sizeof rapName))
+        chimera_rpcs3_add_rap(rapName);
+    }
+  }
   // which renderer the project asked for; "opengl-hw" only draws when the
   // host also handed over a GPU bridge (SetGpuBridge, before Init)
   char renderer[32] = "null";

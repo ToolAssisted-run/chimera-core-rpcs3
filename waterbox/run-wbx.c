@@ -3,7 +3,7 @@
  * digests in run-native's exact format, so the sandboxed build can be
  * diffed against the native reference.
  *
- * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F]
+ * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F]
  *        [--log-trace CHANS] [--debug-at N]
  *        [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>
  *
@@ -101,6 +101,11 @@ int main(int argc, char **argv)
 	const char *stateOut = NULL, *stateIn = NULL;
 	struct { long first, count; int index; } press[32];
 	int presses = 0;
+	/* the pkg and rap slots: any number of each, reaching the guest through the
+	 * "slots" map the frontend mounts (waterbox_slots.h), because nothing else
+	 * can carry a LIST of files under names the core reads them by */
+	const char *pkgs[32], *raps[32];
+	int npkgs = 0, nraps = 0;
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--report") && i + 1 < argc) report = atol(argv[++i]);
@@ -109,6 +114,14 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--debug-at") && i + 1 < argc) debugAt = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--firmware") && i + 1 < argc) firmware = argv[++i];
 		else if (!strcmp(argv[i], "--dkey") && i + 1 < argc) dkey = argv[++i];
+		else if (!strcmp(argv[i], "--pkg") && i + 1 < argc) {
+			if (npkgs == 32) { fprintf(stderr, "too many --pkg\n"); return 2; }
+			pkgs[npkgs++] = argv[++i];
+		}
+		else if (!strcmp(argv[i], "--rap") && i + 1 < argc) {
+			if (nraps == 32) { fprintf(stderr, "too many --rap\n"); return 2; }
+			raps[nraps++] = argv[++i];
+		}
 		else if (!strcmp(argv[i], "--settings") && i + 1 < argc) {
 			if (settingsJson) { fprintf(stderr, "--ports and --settings: say the ports in the settings\n"); return 2; }
 			settingsJson = argv[++i];
@@ -144,7 +157,7 @@ int main(int argc, char **argv)
 		else game = argv[i];
 	}
 	if (!core || !game) {
-		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>\n");
+		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>\n");
 		return 2;
 	}
 
@@ -174,6 +187,33 @@ int main(int argc, char **argv)
 	memreader nr = { (const uint8_t *)vfsname, strlen(vfsname), 0 };
 	wbx_mount_file(h, "rom.name", mem_reader, (uintptr_t)&nr, false, &r);
 	if (r.error_message[0]) { fprintf(stderr, "mount rom.name: %s\n", r.error_message); return 1; }
+
+	/* The packages and the licences, each under its own basename, plus the
+	 * "slots" map that names them - exactly the shape a project mounts. The
+	 * game keeps arriving as rom.name, so the map names no "game" slot and the
+	 * guest falls back to it as it does for a rom opened directly. */
+	if (npkgs || nraps) {
+		static char slotsJson[8192];
+		int at = snprintf(slotsJson, sizeof slotsJson, "{");
+		for (int k = 0; k < 2; k++) {
+			const char **list = k ? raps : pkgs;
+			const int n = k ? nraps : npkgs;
+			if (!n) continue;
+			at += snprintf(slotsJson + at, sizeof slotsJson - at, "%s\"%s\":[", at > 1 ? "," : "", k ? "rap" : "pkg");
+			for (int j = 0; j < n; j++) {
+				const char *b = strrchr(list[j], '/');
+				b = b ? b + 1 : list[j];
+				wbx_mount_file_path(h, b, list[j], &r);
+				if (r.error_message[0]) { fprintf(stderr, "mount %s: %s\n", b, r.error_message); return 1; }
+				at += snprintf(slotsJson + at, sizeof slotsJson - at, "%s\"%s\"", j ? "," : "", b);
+			}
+			at += snprintf(slotsJson + at, sizeof slotsJson - at, "]");
+		}
+		snprintf(slotsJson + at, sizeof slotsJson - at, "}");
+		memreader sl = { (const uint8_t *)slotsJson, strlen(slotsJson), 0 };
+		wbx_mount_file(h, "slots", mem_reader, (uintptr_t)&sl, false, &r);
+		if (r.error_message[0]) { fprintf(stderr, "mount slots: %s\n", r.error_message); return 1; }
+	}
 
 	/* the log channels to raise, as a file: a sandboxed guest is handed no
 	 * environment, so CHIMERA_LOG_TRACE cannot reach it any other way */

@@ -1,5 +1,5 @@
 {
-  "_comment": "The core-declared file form for chimera's project wizard: a PS3 project is one game - a homebrew executable booted directly, a disc image, or a dumped disc folder as one .zip.",
+  "_comment": "The core-declared file form for chimera's project wizard: a PS3 project is one game - a homebrew executable booted directly, a disc image, a dumped disc folder as one .zip, or a digital-only title's .pkg, which is installed onto the console's hard disk and booted from there.",
   "slots": [
     {
       "id": "game",
@@ -12,9 +12,10 @@
         "bin",
         "iso",
         "zip",
-        "7z"
+        "7z",
+        "pkg"
       ],
-      "help": "A PS3 executable (.elf, .self) booted directly the way a modded console would, a disc image (.iso): a decrypted image, or a Redump image with its disc key in the Disc key slot, or a disc dumped as a FOLDER packed into a single .zip or .7z. The archive is read where it lies and never unpacked, so it may be as large as the disc; store its files rather than compressing them and the game's big files stay seekable. A disc game's own EBOOT.BIN is not enough by itself, because the rest of that disc is where its data is. A .7z works the same way, but it must be packed NON-SOLID: `7z a -ms=off`. 7-Zip's default packs every file into one shared stream, which has to be decoded from its start to reach anything in it - measured at 190 seconds just to read the first 64KB of one disc's EBOOT.BIN - so a solid archive is refused rather than left to look like a hang."
+      "help": "A PS3 executable (.elf, .self) booted directly the way a modded console would, a disc image (.iso): a decrypted image, or a Redump image with its disc key in the Disc key slot, or a disc dumped as a FOLDER packed into a single .zip or .7z. The archive is read where it lies and never unpacked, so it may be as large as the disc; store its files rather than compressing them and the game's big files stay seekable. A disc game's own EBOOT.BIN is not enough by itself, because the rest of that disc is where its data is. A .7z works the same way, but it must be packed NON-SOLID: `7z a -ms=off`. 7-Zip's default packs every file into one shared stream, which has to be decoded from its start to reach anything in it - measured at 190 seconds just to read the first 64KB of one disc's EBOOT.BIN - so a solid archive is refused rather than left to look like a hang. A digital-only title - one sold as a download and never pressed on a disc - is its .pkg: it is installed onto the console's hard disk before the machine starts, exactly as the console's own XMB installs it, and the machine boots what the install produced. No disc and no disc key are involved. A package that is content FOR a game (downloadable content, a licence, a patch for a disc game) is refused here by name and belongs in the Packages slot instead."
     },
     {
       "id": "dkey",
@@ -25,7 +26,13 @@
         "dkey",
         "key"
       ],
-      "help": "The 32-character disc key that decrypts a Redump PS3 image (the .dkey file distributed alongside it). Not needed for a decrypted image or a homebrew executable."
+      "help": "The 32-character disc key that decrypts a Redump PS3 image (the .dkey file distributed alongside it). Not needed for a decrypted image or a homebrew executable. A package game needs none either: a .pkg carries no encrypted disc.",
+      "exposedWhen": {
+        "not": {
+          "slot": "game",
+          "extension": "pkg"
+        }
+      }
     },
     {
       "id": "pkg",
@@ -36,6 +43,18 @@
         "pkg"
       ],
       "help": "PS3 package files (.pkg) installed onto the console's hard disk before the machine starts, the way the console's own XMB installs them: downloadable content, game patches, unlock packages. Any number, installed in the order listed. Encrypted content (EDAT) also needs its licence: a .rap comes as a package of its own, or a package repacked to need none installs and works alone. Each package is pinned by hash and cited by the movie, so a movie that plays a game with its DLC is as reproducible as one without. A file that is not a PS3 package, or a patch for another version of the game, refuses to load rather than leaving the content silently missing."
+    },
+    {
+      "id": "rap",
+      "title": "Licences",
+      "min": 0,
+      "max": -1,
+      "formats": [
+        "rap"
+      ],
+      "namePattern": "^[A-Za-z0-9_\\-]{1,48}\\.rap$",
+      "nameHelp": "A .rap is named after the content it unlocks, and the console finds it by that name: UP9000-NPUA80134_00-ECHOCHROME000000.rap. Renaming it makes it invisible, so it has to go in exactly as it came.",
+      "help": "The account licence for a PlayStation Store title that was paid for (.rap). A purchased package is NPDRM: its executable and its data are encrypted, and the key is this 16-byte file, which the console keeps in the user's exdata and looks up BY NAME - so the file's name is the content id and must not be changed. Put one here for each package that needs it, and the machine decrypts and boots what it unlocked; leave it out and a licensed game stops at 'failed to decrypt content'. A free package (a demo, an unlocked repack) needs none. The licence is pinned by hash and cited by the movie like every other file the machine starts with."
     },
     {
       "id": "savedata",
