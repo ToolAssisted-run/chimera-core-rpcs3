@@ -122,12 +122,26 @@ run_both_gpu() {
 }
 
 # same_both NAME: the sandbox printed the native lines and TTY (true when
-# there is no sandbox, so a native-only leg still passes on its own merits)
+# there is no sandbox, so a native-only leg still passes on its own merits -
+# and then it must say vs_sandbox rather than claim the equivalence)
 same_both() {
 	[ "$have_wbx" = 1 ] || return 0
 	grep '^frame' "$work/$1-native.txt" > "$work/$1-native-frames.txt"
 	grep '^frame' "$work/$1-wbx.txt" > "$work/$1-wbx-frames.txt"
 	[ -s "$work/$1-native-frames.txt" ] && cmp -s "$work/$1-native-frames.txt" "$work/$1-wbx-frames.txt" && cmp -s "$work/tty-$1-native.txt" "$work/tty-$1-wbx.txt"
+}
+
+# vs_sandbox: what a leg that passed same_both is entitled to SAY. With a
+# sandboxed core built, the two flavors' lines were compared and matched. With
+# no core.wbx there is nothing to compare, and a leg that still printed
+# "native == sandbox" asserted an equivalence nobody computed - absent wearing
+# the costume of verified (~/chimera/docs/gates.md, mode C).
+vs_sandbox() {
+	if [ "$have_wbx" = 1 ]; then
+		echo "native == sandbox"
+	else
+		echo "native only, no sandboxed core built"
+	fi
 }
 
 # distinct FILE FIELD OFFSET: how many different values a frame-line field
@@ -195,7 +209,7 @@ run_both fw "$((frames / 3))" 50 "$rom"
 if ! grep -q "firmware 4" "$work/fw-native.txt"; then
 	failed "firmware:lle - the firmware did not install natively ($(tail -1 "$work/fw-native.err"))"
 elif same_both fw; then
-	pass "firmware:lle - $(grep '^booted' "$work/fw-native.txt" | sed 's/booted; //'), liblv2 LLE, native == sandbox at $((frames / 3)) frames"
+	pass "firmware:lle - $(grep '^booted' "$work/fw-native.txt" | sed 's/booted; //'), liblv2 LLE, $(vs_sandbox) at $((frames / 3)) frames"
 else
 	failed "firmware:lle - sandbox differs from native with firmware (diff $work/fw-native.txt $work/fw-wbx.txt)"
 fi
@@ -208,7 +222,7 @@ pressed="$(grep -c ' 00000040 ' "$work/tty-pad-native.txt")"
 first="$(grep -n ' 00000040 ' "$work/tty-pad-native.txt" | head -1 | cut -d: -f1)"
 if [ "$pressed" = 5 ] && [ "$first" = 11 ] && grep -q ' lag 0 ' "$work/pad-native.txt"; then
 	if same_both pad; then
-		pass "input:press - Cross seen on exactly the 5 pressed frames (first at line $first), lag 0, native == sandbox"
+		pass "input:press - Cross seen on exactly the 5 pressed frames (first at line $first), lag 0, $(vs_sandbox)"
 	else
 		failed "input:press - the sandbox's pad trace differs from native (diff $work/tty-pad-native.txt $work/tty-pad-wbx.txt)"
 	fi
@@ -226,7 +240,7 @@ run_both pad2off 40 40 "$pad2rom" --ports 1000000 --press 10:5:27
 pressedoff="$(grep -c ' 00000040 ' "$work/tty-pad2off-native.txt")"
 if [ "$pressed2" = 5 ] && [ "$first2" = 11 ] && [ "$pressedoff" = 0 ]; then
 	if same_both pad2 && same_both pad2off; then
-		pass "input:port2 - Cross on a plugged-in second pad seen on exactly the 5 pressed frames, and on an empty port never; native == sandbox"
+		pass "input:port2 - Cross on a plugged-in second pad seen on exactly the 5 pressed frames, and on an empty port never; $(vs_sandbox)"
 	else
 		failed "input:port2 - the sandbox's second-pad trace differs from native (diff $work/tty-pad2-native.txt $work/tty-pad2-wbx.txt)"
 	fi
@@ -250,7 +264,7 @@ else
 	flips="$(grep -c '^frame [0-9]* buffer' "$work/tty-flip-native.txt")"
 	if [ "$images" = 12 ] && [ "$flips" -ge 100 ]; then
 		if same_both flip; then
-			pass "video:flip - 12 reports, 12 different 1280x720 images, $flips flips reported by the program, native == sandbox"
+			pass "video:flip - 12 reports, 12 different 1280x720 images, $flips flips reported by the program, $(vs_sandbox)"
 		else
 			failed "video:flip - the sandbox's images differ from native (diff $work/flip-native.txt $work/flip-wbx.txt)"
 		fi
@@ -269,7 +283,7 @@ else
 	blocks="$(grep -c '^block' "$work/tty-tone-native.txt")"
 	if [ "$sounds" -ge 3 ] && [ "$blocks" -ge 8 ]; then
 		if same_both tone; then
-			pass "audio:tone - 6 reports, $sounds different 800-sample blocks (the wave's period), $blocks block reports, native == sandbox"
+			pass "audio:tone - 6 reports, $sounds different 800-sample blocks (the wave's period), $blocks block reports, $(vs_sandbox)"
 		else
 			failed "audio:tone - the sandbox's audio differs from native (diff $work/tone-native.txt $work/tone-wbx.txt)"
 		fi
@@ -290,7 +304,7 @@ else
 	rams="$(distinct "$work/disc-native.txt" ram 1)"
 	if [ "$rams" = 6 ]; then
 		if same_both disc; then
-			pass "disc:boot - $(basename "$disc" | cut -c1-40): 120 frames, memory different at every report, native == sandbox"
+			pass "disc:boot - $(basename "$disc" | cut -c1-40): 120 frames, memory different at every report, $(vs_sandbox)"
 		else
 			failed "disc:boot - the sandbox differs from native on the disc (diff $work/disc-native.txt $work/disc-wbx.txt)"
 		fi
@@ -375,7 +389,7 @@ else
 	# installed. See docs/PLAN.md, the .pkg entry.
 	if [ "$rams" = 6 ]; then
 		if same_both pkg; then
-			agree="native == sandbox"
+			agree="$(vs_sandbox)"
 		else
 			agree="the flavors differ (not a package matter: see docs/PLAN.md)"
 		fi
@@ -421,7 +435,7 @@ if ! grep -q '^frame   200' "$work/ppu-llvm-native.txt"; then
 elif ! same_both ppu-llvm; then
 	failed "ppu:llvm - the sandbox differs from native (diff $work/ppu-llvm-native.txt $work/ppu-llvm-wbx.txt)"
 else
-	pass "ppu:llvm - 200 frames of lv2test on the LLVM recompiler, $(wc -c < "$work/tty-ppu-llvm-native.txt") TTY bytes, native == sandbox"
+	pass "ppu:llvm - 200 frames of lv2test on the LLVM recompiler, $(wc -c < "$work/tty-ppu-llvm-native.txt") TTY bytes, $(vs_sandbox)"
 fi
 
 # ---- cache:objects and cache:warm ---------------------------------------
@@ -493,7 +507,7 @@ else
 		elif ! same_both "spu-$dec"; then
 			failed "spu:$dec - the sandbox differs from native (diff $work/spu-$dec-native.txt $work/spu-$dec-wbx.txt)"
 		else
-			pass "spu:$dec - $answers SPU answers in 120 frames, native == sandbox"
+			pass "spu:$dec - $answers SPU answers in 120 frames, $(vs_sandbox)"
 		fi
 	done
 	# the same answers from both decoders, line for line, as far as both got
@@ -521,7 +535,7 @@ else
 		grep '^frame' "$work/gflip-native.txt" | awk '{print $2, $7}' > "$work/gflip-got.txt"
 		if [ -s "$work/gflip-got.txt" ] && cmp -s "$work/gflip-want.txt" "$work/gflip-got.txt"; then
 			if same_both gflip; then
-				pass "gpu:flip - $(grep 'gpu bridge: [0-9]' "$work/gflip-native.err" | head -1 | sed 's/gpu bridge: //' | cut -c1-60): 6 pictures identical to the machine's own pixels, native == sandbox"
+				pass "gpu:flip - $(grep 'gpu bridge: [0-9]' "$work/gflip-native.err" | head -1 | sed 's/gpu bridge: //' | cut -c1-60): 6 pictures identical to the machine's own pixels, $(vs_sandbox)"
 			else
 				failed "gpu:flip - the sandbox's GL run differs from the native GL run (diff $work/gflip-native.txt $work/gflip-wbx.txt)"
 			fi
@@ -545,7 +559,7 @@ else
 			elif [ -z "$faults_native" ] || [ "$have_wbx" = 1 ] && [ "$faults_native" != "$faults_wbx" ]; then
 				failed "gpu:disc - the renderer's page watch served ${faults_native:-0} faults natively and ${faults_wbx:-0} in the sandbox (both must, equally)"
 			else
-				pass "gpu:disc - 120 frames on the GL renderer, memory identical to the null renderer's run, ${faults_native} page faults served by the renderer in each flavor, native == sandbox"
+				pass "gpu:disc - 120 frames on the GL renderer, memory identical to the null renderer's run, ${faults_native} page faults served by the renderer in each flavor, $(vs_sandbox)"
 			fi
 		else
 			failed "gpu:disc - the GL run's memory differs from the null renderer's (diff $work/gdisc-want.txt $work/gdisc-got.txt; $(tail -1 "$work/gdisc-native.err"))"
