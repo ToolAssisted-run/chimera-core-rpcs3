@@ -439,6 +439,26 @@ namespace chimera
       size_t at = 0;
       explicit mem_dir(const node& d)
       {
+        // "." and ".." first, the way every real filesystem's readdir answers
+        // and the way the console's own cellFsReaddir does. They are not a
+        // courtesy: sys_fs_opendir builds the directory it hands the game and
+        // then sorts it from data.begin() + 2, to leave those two entries
+        // where the console puts them. A directory that reports fewer than two
+        // entries makes that iterator run past the end of the vector, and the
+        // sort then walks memory that is not the directory - a crash inside
+        // memcmp on one machine and a hang on another, because it is undefined
+        // either way. An EMPTY directory is what meets it: Mortal Kombat
+        // Komplete Edition creates /dev_hdd0/game/BLUS30902/USRDIR/MK9/DYNADS/
+        // TEMP and opens it in the next breath. Every other reader of this
+        // filesystem already skips these two by name, because every host
+        // hands them back.
+        for (const char* dots : { ".", ".." })
+        {
+          fs::dir_entry e;
+          e.name = dots;
+          fill_stat(d, e);
+          entries.push_back(std::move(e));
+        }
         for (auto& [name, child] : d.children)
         {
           fs::dir_entry e;
