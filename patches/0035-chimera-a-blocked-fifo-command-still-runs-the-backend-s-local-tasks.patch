@@ -1,0 +1,35 @@
+--- a/rpcs3/Emu/RSX/RSXThread.h
++++ b/rpcs3/Emu/RSX/RSXThread.h
+@@ -412,6 +412,14 @@
+ 
+ 	public:
+ 
++#ifdef CHIMERA_CORE
++		// chimera: a FIFO command that blocks (an NV406E semaphore acquire)
++		// never returns to the loop that runs the backend's local tasks, and
++		// the deferred flip is one of them. Let such a command run them while
++		// it waits.
++		void chimera_local_task() { do_local_task(FIFO::state::lock_wait); }
++#endif
++
+ 		draw_command_processor& GRAPH_frontend() { return m_draw_processor; }
+ 
+ 		/**
+--- a/rpcs3/Emu/RSX/NV47/HW/nv406e.cpp
++++ b/rpcs3/Emu/RSX/NV47/HW/nv406e.cpp
+@@ -87,6 +87,15 @@ namespace rsx
+ 					continue;
+ 				}
+ 
++#ifdef CHIMERA_CORE
++				// chimera: the deferred flip is done by do_local_task, which
++				// the FIFO loop calls BETWEEN commands - and this command
++				// never returns to it. On the console the display head flips
++				// whether or not the pushbuffer is blocked; here one thread
++				// is both, so a game that makes the RSX wait in the FIFO for
++				// a label its own flip handler writes waits for itself.
++				RSX(ctx)->chimera_local_task();
++#endif
+ 				RSX(ctx)->on_semaphore_acquire_wait();
+ 
+ 				// Wait until the value changes or until 100us pass.
