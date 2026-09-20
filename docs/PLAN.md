@@ -1004,6 +1004,30 @@ optimisation. No user interface, no networking, no real audio or input devices.
   nothing on a good disc, because it runs only after a failed boot, and a
   decrypted image (Bejeweled 3) still boots untouched.
 
+- **Resident Evil 5 Gold Edition, end to end (2026-09-20, chimera#108).** The
+  disc the issue names, with its Redump key in the Disc key slot, now plays to
+  its own title screen. The key is the image's `.dkey` - 32 ASCII hex
+  characters, no newline needed, since rpcs3's loader reads exactly 32 bytes
+  and takes a 16-byte file as raw instead. The log reads: `Found INSDIR`,
+  `package .../PS3_GAME/INSDIR/DATA000.PKG (from the disc): content type 0x4,
+  22 entries`, `Created file .../dev_hdd0/game/BLUS30491/USRDIR/EBOOT.BIN`,
+  `1 package(s) from the disc installed into the machine (210569145 bytes of
+  memory files)`, `Updates found at /dev_hdd0/game/BLUS30491/` - so the machine
+  then boots the EBOOT the DISC installed, not the one on the disc, which is
+  what INSDIR is for. Waterboxed, null renderer, 60 frames twice: identical
+  RAM, TTY, video and audio digests, memory different at every report.
+  The picture, on the 1060 through `chimera-run --gpu --draw-every-frame`:
+  frame 500 is the game's own "game data must be installed" prompt, frame 900
+  its progress bar a quarter of the way, frame 2800 the RESIDENT EVIL 5 title
+  screen with PRESS START. Three controls on the same disc and project: the
+  2026-09-16 core fails with "Game install failed" WITH the key as well as
+  without it (the key is not what fixes this), and this core without the key
+  gives the Redump sentence above.
+  The cost worth knowing: this game's own data install writes several GB into
+  the memory filesystem (the run's process grew from 4.9 GB to about 10.9 GB
+  while the bar filled), because /dev_hdd0 is memory. Whatever a PS3 game
+  installs is machine state, and a savestate carries it.
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but
