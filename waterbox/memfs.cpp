@@ -47,11 +47,12 @@ namespace chimera
     u64 logical_size(const node& n) { return n.mirror ? n.mirrorLen : n.data.size(); }
 
     std::shared_ptr<node> g_root;
-    // A file's mtime is the machine's own clock: the frozen date miniBox
-    // answers clock_gettime with (2017-05-27) plus the virtual seconds the
-    // machine has run. A save made at frame N carries the same date on every
-    // run; a counter would have shown every save as made in January 1970.
-    constexpr s64 kEpoch = 1495889068;
+    // A file's mtime is the machine's own clock: the machine's calendar
+    // (VSCHED_EPOCH_SECONDS, 2017-05-27) plus the virtual seconds the machine
+    // has run - the same clock the console itself reads. A save made at frame
+    // N carries the same date on every run; a counter would have shown every
+    // save as made in January 1970.
+    constexpr s64 kEpoch = static_cast<s64>(VSCHED_EPOCH_SECONDS);
     s64 now_mtime() { return kEpoch + static_cast<s64>(vsched_now_ns() / 1000000000ull); }
 
     std::vector<std::string> split(const std::string& rel)

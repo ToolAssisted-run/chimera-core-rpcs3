@@ -378,20 +378,22 @@ else
 	fi
 	rams="$(distinct "$work/pkg-native.txt" ram 1)"
 	# Whether the two flavors agree is REPORTED here and not required, and the
-	# reason is measured rather than assumed: the core has a native-vs-sandbox
-	# divergence on some real games that has nothing to do with packages.
-	# Prince of Persia (BLUS30214), a plain disc image with no package and no
-	# licence anywhere near it, gives two different memory digests in the two
-	# flavors at identical machine time, while Bejeweled 3 (BLUS30865) is
-	# byte-identical in both. Requiring it here would attribute that fault to
-	# this feature. What this leg is for is the package: that it installs onto
-	# the console's hard disk and that the machine boots and RUNS what it
-	# installed. See docs/PLAN.md, the .pkg entry.
+	# reason is measured rather than assumed: on titles that drive the SPUs the
+	# two flavors' VIRTUAL clocks drift apart by microseconds, and a game that
+	# measures elapsed time stores the difference (chimera#120). echochrome is
+	# one - 35 bytes of frame-time floats out of 256 MiB, and it does not grow
+	# with the run - and so are Saint Seiya and Arcana Heart 3, none of which
+	# came from a package. Bejeweled 3, GTA San Andreas, Oblivion, Ultra Street
+	# Fighter IV and Prince of Persia are byte-identical in both flavors.
+	# Requiring it here would pin a core-wide matter on this feature. What this
+	# leg is for is the package: that it installs onto the console's hard disk
+	# and that the machine boots and RUNS what it installed. See docs/PLAN.md,
+	# the .pkg entry.
 	if [ "$rams" = 6 ]; then
 		if same_both pkg; then
 			agree="$(vs_sandbox)"
 		else
-			agree="the flavors differ (not a package matter: see docs/PLAN.md)"
+			agree="the flavors' virtual clocks drift (chimera#120, not a package matter: see docs/PLAN.md)"
 		fi
 		pass "pkg:boot - $(basename "$pkggame" | cut -c1-40): the package installed and the machine booted what it installed, 120 frames, memory different at every report, $agree"
 	else

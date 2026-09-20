@@ -1164,24 +1164,58 @@ optimisation. No user interface, no networking, no real audio or input devices.
   - The 6.00 update and the Saint Seiya all-DLC package are both refused by
     name in the Game slot, for their two different reasons.
 
-  NOT proven, and found on the way: **native and sandbox do not agree on the
-  memory of every real game**, and it is nothing to do with packages. echochrome
-  gives six different memory digests in each flavor, each flavor identical to
-  itself run after run, and the two flavors differ from frame 3 - by 23 bytes
-  out of 256 MiB, at guest 0x3463b6, 0x40269a and 0x47bd22 and their
-  neighbours, values that read like stored timer words, with machine time 4
-  microseconds apart at that frame.
+  Found on the way and nothing to do with packages: **native and sandbox did
+  not agree on the memory of every real game** (chimera#120). Chased with
+  `--ram-out`, which `run-native` grew for it, it turned out to be two separate
+  things, and one of them is fixed.
 
-  The control says this is not the package path. **Prince of Persia
-  (BLUS30214), a plain disc image with no package and no licence anywhere near
-  it, diverges too** - two different memory digests at IDENTICAL machine time,
-  constant across frames - while **Bejeweled 3 (BLUS30865) is byte-identical in
-  both flavors** for four frames. So some real games are flavor-equal and some
-  are not, and the two that are not have nothing in common but being games.
-  That deserves its own issue; requiring it in `pkg:boot` would only pin a
-  core-wide fault on this feature, so the leg reports the comparison and does
-  not fail on it. `run-native` grew a `--ram-out` (the same memory domain
-  run-wbx writes) so the next person can diff rather than guess.
+  **The wall clock, FIXED (patch 0033).** `sys_time_get_current_time` was the
+  one clock in the emulator patch 0003 did not route through vsched: it read
+  the host's CLOCK_REALTIME. So the native reference wrote today's date into
+  the machine's memory where the box - whose clock miniBox freezes - wrote
+  2017-05-27, and two native runs a minute apart differed from EACH OTHER.
+  `sys_time_get_timezone` read the host's timezone for the same reason. Both
+  are now the machine's own: the console's calendar starts at
+  `VSCHED_EPOCH_SECONDS` (the date the box's clock is frozen at, and the date
+  memfs already stamps its files with) and advances with `vsched_now_ns`, and
+  the console keeps UTC with no summer time.
+
+  Prince of Persia (BLUS30214) is the clean case: a plain disc image, no
+  package and no licence anywhere near it, and its whole divergence was **8
+  bytes out of 256 MiB** - two copies of one `time_t` at guest 0x1491904 and
+  0x1492d17, the second inside a record named MEMORYLOGGERFILE. Arcana Heart 3
+  is the loud one: 4580 bytes, a ring of records each holding the `time_t`, the
+  broken-down fields and the `ctime` string - "Sun Sep 20 14:27:04 2026"
+  natively against "Sat May 27 12:44:28 2017" in the box. Both now agree, and
+  both are deterministic natively again.
+
+  **The virtual clock, STILL OPEN.** What remains is smaller and different: on
+  titles that drive the SPUs the two flavours' VIRTUAL time drifts apart by
+  microseconds, and a game that measures elapsed time stores the difference.
+  echochrome still differs by 35 bytes at frame 120 (guest 0x3463b6, 0x40269a,
+  0x47bd22 and neighbours: floats and doubles holding frame times, with machine
+  time 4 us apart at frame 3); Saint Seiya by 27; Arcana Heart 3 by 19 tick
+  counters once the calendar is out of the way; Resident Evil 5 Gold by 2093,
+  of which 2081 are one 0x824-byte high-entropy block at guest 0x17bd79c that
+  differs end to end and 12 are tick counters. It grows barely at all -
+  echochrome is 35 bytes at 120 frames, 37 at 600, 45 at 1800 - so the two
+  machines are not running away from each other, and each flavour stays
+  bit-deterministic run after run, which is the property a movie rests on. It
+  is not the host clock and not host addresses: two native runs with different
+  ASLR bases (vm::g_base_addr 0x737b00000000 against 0x728900000000) are
+  byte-identical, and forcing the SPU interpreter in both flavours does not
+  remove it (it moves echochrome's first differing frame from 3 to 2). The two
+  builds are the same source through two toolchains, and somewhere one of them
+  charges the scheduler differently.
+
+  So `pkg:boot` still reports the flavour comparison rather than failing on it,
+  and now says what the difference IS. Byte equality between the flavours holds
+  for Bejeweled 3, GTA San Andreas, Oblivion, Ultra Street Fighter IV and
+  Prince of Persia and not for echochrome, Saint Seiya, Arcana Heart 3 or
+  Resident Evil 5 - five of the nine titles here that boot, at 300 frames on
+  the null renderer. What the gate can honestly claim about a real game is that
+  each flavour reproduces ITSELF exactly, which is what a movie rests on, and
+  not that the two flavours reproduce each other.
 
   Also measured: Super Stardust HD is SLOW here - 42 threads, about half a
   minute of wall time per frame on the PPU interpreter, and the RSX FIFO asks

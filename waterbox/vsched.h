@@ -37,6 +37,14 @@ void vsched_exit(void);
 // Virtual time in nanoseconds since the machine started.
 uint64_t vsched_now_ns(void);
 
+// The machine's calendar: 2017-05-27 12:44:28 UTC, the date the console's
+// clock starts from and carries forward by vsched_now_ns(). It is the date
+// miniBox freezes clock_gettime at, so the boxed machine and the native
+// reference keep the same calendar - the host's date is never the console's.
+// The console's clock (sys_time_get_current_time) and the dates on the files
+// it writes (memfs) both start here.
+#define VSCHED_EPOCH_SECONDS 1495889068ULL
+
 // Charge virtual time without giving way.
 void vsched_advance(uint64_t ns);
 

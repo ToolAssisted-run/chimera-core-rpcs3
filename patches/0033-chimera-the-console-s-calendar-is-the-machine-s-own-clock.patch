@@ -1,0 +1,48 @@
+diff --git a/rpcs3/Emu/Cell/lv2/sys_time.cpp b/rpcs3/Emu/Cell/lv2/sys_time.cpp
+--- a/rpcs3/Emu/Cell/lv2/sys_time.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_time.cpp
+@@ -283,6 +283,17 @@
+ {
+ 	sys_time.trace("sys_time_get_timezone(timezone=*0x%x, summertime=*0x%x)", timezone, summertime);
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: the console keeps UTC and no summer time. The host's timezone
++	// is the host's: read here it puts a machine in Madrid two hours ahead of
++	// the same machine in London, and the box - which has no timezone at all
++	// - behind both. Arcana Heart 3 asks, and prints the answer into its
++	// memory.
++	*timezone = 0;
++	*summertime = 0;
++	return CELL_OK;
++#endif
++
+ #ifdef _WIN32
+ 	TIME_ZONE_INFORMATION tz{};
+ 	switch (GetTimeZoneInformation(&tz))
+@@ -359,6 +370,26 @@
+ 		return CELL_EFAULT;
+ 	}
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: the console's calendar is the machine's own clock. Every other
++	// clock in this file already reads the scheduler's virtual time; this one
++	// read the host's CLOCK_REALTIME, and so two runs of the same game an hour
++	// apart put a different hour in the machine's memory, and the native
++	// reference put 2026 where the box - whose clock is frozen - put 2017.
++	// The machine starts its calendar at VSCHED_EPOCH_SECONDS, the date the
++	// box's clock is frozen at, and carries it forward as the machine runs.
++	const u64 chimera_now = vsched_now_ns();
++	*sec = static_cast<s64>(VSCHED_EPOCH_SECONDS + chimera_now / 1000000000ull) + g_cfg.sys.console_time_offset;
++
++	if (!nsec)
++	{
++		return CELL_EFAULT;
++	}
++
++	*nsec = static_cast<s64>(chimera_now % 1000000000ull);
++	return CELL_OK;
++#endif
++
+ #ifdef _WIN32
+ 	LARGE_INTEGER count;
+ 	ensure(QueryPerformanceCounter(&count));
