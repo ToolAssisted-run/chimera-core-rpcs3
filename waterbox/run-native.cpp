@@ -66,9 +66,11 @@ int main(int argc, char** argv)
   long frames = 60;
   long report = 10;
   const char* tty_out = nullptr;
+  const char* ram_out = nullptr;
   const char* firmware = nullptr;
   const char* dkey = nullptr;
   std::vector<const char*> pkgs;
+  std::vector<const char*> raps;
   const char* videoOut = nullptr;
   const char* cacheDir = nullptr;
   int preIndex = -1, preCount = 0, preFirmware = 1;
@@ -84,12 +86,16 @@ int main(int argc, char** argv)
       work = argv[++i];
     else if (!strcmp(argv[i], "--tty-out") && i + 1 < argc)
       tty_out = argv[++i];
+    else if (!strcmp(argv[i], "--ram-out") && i + 1 < argc)
+      ram_out = argv[++i];
     else if (!strcmp(argv[i], "--firmware") && i + 1 < argc)
       firmware = argv[++i];
     else if (!strcmp(argv[i], "--dkey") && i + 1 < argc)
       dkey = argv[++i];
     else if (!strcmp(argv[i], "--pkg") && i + 1 < argc)
       pkgs.push_back(argv[++i]);
+    else if (!strcmp(argv[i], "--rap") && i + 1 < argc)
+      raps.push_back(argv[++i]);
     else if (!strcmp(argv[i], "--video-out") && i + 1 < argc)
       videoOut = argv[++i];
     else if (!strcmp(argv[i], "--precompile") && i + 1 < argc)
@@ -157,7 +163,7 @@ int main(int argc, char** argv)
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--rap licence.rap]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--ram-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -179,6 +185,8 @@ int main(int argc, char** argv)
   }
   for (const char* pkg : pkgs)
     chimera_rpcs3_add_package(pkg);
+  for (const char* rap : raps)
+    chimera_rpcs3_add_rap(rap);
   if (!chimera_rpcs3_init(work, game, firmware, dkey))
   {
     fprintf(stderr, "init failed: %s\n", chimera_rpcs3_error());
@@ -250,6 +258,17 @@ int main(int argc, char** argv)
       fwrite(hdr, 4, 2, f);
       if (px && vw > 0 && vh > 0)
         fwrite(px, 4, (size_t)vw * vh, f);
+      fclose(f);
+    }
+  }
+  // the same memory domain run-wbx writes, so two flavors that disagree on a
+  // digest can be diffed rather than guessed about
+  if (ram_out)
+  {
+    FILE* f = fopen(ram_out, "wb");
+    if (f)
+    {
+      fwrite(chimera_rpcs3_main_memory_ptr(), 1, 0x0FFF0000, f);
       fclose(f);
     }
   }
