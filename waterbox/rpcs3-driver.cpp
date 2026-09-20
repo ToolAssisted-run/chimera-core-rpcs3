@@ -1596,6 +1596,16 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     return 1;
   }
   Emu.Run(true);
+  // A third time, and this is the one that counts: Emulator::Run() calls
+  // configure_logs(), which RESETS every channel and puts the configured
+  // levels back - so the two calls above were undone the moment the machine
+  // started. Everything the emulator logs at TRACE was therefore silently
+  // missing from a --log-trace run, and the flip, the display queue, the
+  // user command and the vblank are all deliberately trace-level ("to help
+  // with log spam", sys_rsx.cpp). A machine that had gone quiet looked
+  // quieter than it was: chimera#125 was chased for a day past a FIFO that
+  // was saying exactly what it wanted, at trace.
+  apply_log_trace();
   run_main_queue();
   g_booted = true;
   g_frame_base_ns = vsched_now_ns();
