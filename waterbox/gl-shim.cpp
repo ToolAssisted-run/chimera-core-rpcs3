@@ -46,6 +46,42 @@ extern "C" int chimera_rpcs3_gpu_bridge_present(void)
   return g_bridge != nullptr;
 }
 
+// A LOAD IS THE HOST'S WORD, NOT SOMETHING TO INFER FROM A NUMBER
+// (chimera issue 126).
+//
+// The renderer rebuilds its GL objects when the context id it stored beside
+// them no longer matches the one the calls are landing on
+// (GLGSRender::chimera_check_gl_context). That stored id lives in the renderer,
+// starts at 0, and is first written the first time the RSX thread reaches
+// do_local_task - so there is a window in every session in which a renderer
+// EXISTS and the stored id is still 0. A savestate taken in that window carries
+// the 0, and a guard shaped "rebuild only if the stored id is not 0" reads it as
+// "this machine has never held any GL objects". It does not mean that. It means
+// "this state was taken before the renderer looked, so it cannot vouch for what
+// the driver is holding NOW" - and what the driver is holding is whatever the
+// frames after the snapshot left there. The greenzone's frame-0 anchor is such
+// a state, and it is the one TAStudio reaches for when a movie is replayed from
+// the beginning.
+//
+// So the engine's word is kept instead: it tells every core when the machine's
+// memory has been replaced (the optional StateLoaded export, see
+// wbx-entry.cpp), and this flag records that it did. It is set AFTER the load,
+// so the load cannot wipe it, and it is read-and-cleared by the renderer's
+// check. A fresh boot has had no load, so the flag is 0 and nothing is rebuilt.
+static int g_state_loaded;
+
+extern "C" void chimera_gl_note_state_loaded(void)
+{
+  g_state_loaded = 1;
+}
+
+extern "C" int chimera_gl_take_state_loaded(void)
+{
+  const int was = g_state_loaded;
+  g_state_loaded = 0;
+  return was;
+}
+
 // generated-gl/gl-traps.cpp: one trap per name glad knows and the bridge
 // does not, each naming itself
 extern "C" void* chimera_gl_trap_lookup(const char* name);

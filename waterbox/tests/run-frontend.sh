@@ -131,15 +131,109 @@ else
 	report "game:frontend" PASS "$frames frames of lv2test, main memory identical to the sandbox reference"
 fi
 
+# What content there is, found once: the disc the disc legs want, and the
+# firmware that every leg below this line wants.
+for f in "$root"/tests/roms-local/*.iso; do
+	[ -f "$f" ] && { disc="$f"; break; }
+done
+pup="$root/tests/roms-local/PS3UPDAT.PUP"
+
+# --- 1b. every restore rebuilds the renderer, the frame-0 anchor included ---
+#
+# Placed before the three disc legs because it needs NO disc: they are the
+# slowest and hungriest things in this script, and a leg that can run without
+# them should not be behind them (a run that dies at leg 3 used to take this
+# one with it).
+#
+# On the GPU bridge the renderer's GL objects live in the driver and a savestate
+# carries only their NAMES, so the engine mints a fresh context id on every load
+# and this core rebuilds when the id it stored beside those objects no longer
+# matches (GLGSRender::chimera_check_gl_context, patch 0021).
+#
+# One state used to slip through. m_chimera_gl_context starts at 0 and is first
+# written the first time the RSX thread reaches do_local_task, which is AFTER
+# on_init_thread has built every GL object the renderer holds - so a state taken
+# in between carries a 0 while the objects exist, and the guard read that 0 as
+# "this machine has never held any GL objects". The greenzone's frame-0 anchor
+# is such a state, and it is the one TAStudio loads when a movie is replayed
+# from the beginning. Reported on PCSX2 as chimera issue #126: corrupt picture
+# from frame 0 or 1, clean from frame 2, which is exactly where TAStudio stops
+# reaching for the anchor.
+#
+# WHAT IT MEASURES. How many calls cross the bridge on the frame after a
+# restore. The rebuild is 5203 of them here; an ordinary frame of this program
+# is about 55.
+#
+# WHY NOT PCSX2'S TEST. That leg asserts the frame after a restore crosses the
+# bridge thousands of times, because an idle frame of its program crosses it
+# once. The same test passes on a BROKEN rpcs3: restoring to frame 0 replays
+# flip.elf's own gcm setup, 3549 calls with or without a rebuild. And the A/B
+# PCSX2 could have used - the same restore under
+# CHIMERA_GL_KEEP_OBJECTS_ON_LOAD - is not a control at frame 0 either, because
+# that switch only stops the engine MINTING a new id, and a stored 0 differs
+# from the live id however little it moved. Measured, both traps:
+#
+#   restore to      before the fix        after the fix
+#   frame 0         3549 / 3549 (off)     8752 / 8752 (off)
+#   frame 2           53 (off) / 5258       53 (off) / 5258
+#
+# So the leg asserts the two things that WERE false before the fix and are true
+# after it: frame 2's crossings really are a rebuild (5258 against 53 with the
+# rebuild off), and restoring the frame-0 anchor costs at least as much as
+# restoring frame 2 - which it cannot if the anchor skipped the rebuild, since
+# it does strictly more work when it does not (8752 = 3549 + 5203). Run against
+# the package built before the fix it FAILS on the second: "3549 against 5258".
+#
+# WHAT THIS DOES NOT STAND IN FOR (chimera docs/gates.md, E): flip.elf is not a
+# game and llvmpipe is not a driver. It proves the rebuild RUNS after every
+# restore, not that a real game's picture is right on real hardware.
+crun="$chimera_root/build/meson-linux/chimera-run"
+flipelf="$root/tests/roms/flip.elf"
+if [ ! -x "$crun" ] || [ ! -f "$pup" ] || [ ! -f "$flipelf" ]; then
+	report "gl:rebuild-at-zero" SKIP "needs chimera-run ($crun), the firmware and tests/roms/flip.elf"
+else
+	gz="$work/glzero"
+	rm -rf "$gz"; mkdir -p "$gz"
+	printf '[Input]\nLogKey:#\n' > "$gz/none.txt"
+	# a movie of its own: --rewind-loop needs frames to rewind through
+	( cd "$chimera_root" && env -u LD_LIBRARY_PATH timeout 900 "$crun" "$package" "$flipelf" "$gz/none.txt" \
+		--settings '{"renderer":"opengl-hw"}' --frames 40 --record "$gz/movie.txt" \
+		--firmware "PS3UPDAT.PUP=$pup" ) > "$gz/record.log" 2>&1
+	# the bridge crossings in the frame that follows a restore to $1, with the
+	# rebuild left alone ($2 empty) or turned off ($2 = the keep-objects switch)
+	restore_calls() {
+		( cd "$chimera_root" && env -u LD_LIBRARY_PATH $2 CHIMERA_GL_TRACE=1 CHIMERA_GL_STATEAUDIT=1 \
+			timeout 900 "$crun" "$package" "$flipelf" "$gz/movie.txt" \
+			--settings '{"renderer":"opengl-hw"}' --frames 40 --firmware "PS3UPDAT.PUP=$pup" \
+			--gpu --greenzone 4096 --rewind-loop "$1",1 ) > "$gz/rewind.$1.$3.log" 2>&1
+		awk '/ce-gl-audit\] restore/ { seen = 1; next }
+		     seen && /^\[ce-gl\] frame/ { print $4; exit }' "$gz/rewind.$1.$3.log"
+	}
+	if [ ! -s "$gz/movie.txt" ]; then
+		report "gl:rebuild-at-zero" FAIL "could not record a movie to rewind through (see tests/work/glzero/record.log)"
+	else
+		zero="$(restore_calls 0 "" on)"
+		two="$(restore_calls 2 "" on)"
+		two_off="$(restore_calls 2 CHIMERA_GL_KEEP_OBJECTS_ON_LOAD=1 off)"
+		if grep -q "no context" "$gz/rewind.0.on.log"; then
+			report "gl:rebuild-at-zero" SKIP "this machine offers the bridge no GL context: $(grep -a 'no context' "$gz/rewind.0.on.log" | head -1)"
+		elif [ -z "$zero" ] || [ -z "$two" ] || [ -z "$two_off" ]; then
+			report "gl:rebuild-at-zero" FAIL "a restore was not traced (see tests/work/glzero/rewind.*.log)"
+		elif [ "$((two - two_off))" -lt 500 ]; then
+			report "gl:rebuild-at-zero" FAIL "restoring frame 2 cost $two calls against $two_off with the rebuild off: the renderer was not rebuilt, so this leg cannot speak for the anchor either"
+		elif [ "$zero" -lt "$two" ]; then
+			report "gl:rebuild-at-zero" FAIL "restoring the frame-0 anchor cost $zero calls against $two restoring frame 2: the anchor's stored context id of zero was read as nothing to rebuild (chimera issue 126)"
+		else
+			report "gl:rebuild-at-zero" PASS "a restore rebuilds the renderer wherever it lands - the anchor costs $zero calls, frame 2 $two, and $two_off with the rebuild turned off"
+		fi
+	fi
+fi
+
 # --- 2. a disc through the frontend -----------------------------------------
 # A decrypted disc image in tests/roms-local (the user's, never committed)
 # boots through Chimera with the firmware resolved the way the Firmware
 # window stores it (keyed by core name and declaration id), and its main
 # memory after a fixed number of frames is the sandbox reference's.
-for f in "$root"/tests/roms-local/*.iso; do
-	[ -f "$f" ] && { disc="$f"; break; }
-done
-pup="$root/tests/roms-local/PS3UPDAT.PUP"
 dframes=120
 if [ -z "$disc" ] || [ ! -f "$pup" ]; then
 	report "disc:frontend" SKIP "needs a decrypted .iso and PS3UPDAT.PUP in tests/roms-local"

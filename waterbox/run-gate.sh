@@ -71,6 +71,9 @@
 #                          renderer notices and builds them again - and the
 #                          picture after the load is the picture before the
 #                          save, rather than no picture at all
+#   (each gpu leg also fails when the bridge's dispatcher had no CASE for an
+#    opcode the guest sent it, however well the pictures then compared - see
+#    bridge_answered, and gl-host.c's default arm, for why)
 # Run from anywhere; artifacts land in waterbox/work/gate.
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -161,6 +164,56 @@ same_memory() {
 		grep '^frame' "$work/$1-$fl.txt" | sed 's/.* ram \([0-9a-f]*\) .*/\1/' > "$work/$1-$fl-ram.txt"
 	done
 	[ -s "$work/$1-native-ram.txt" ] && cmp -s "$work/$1-native-ram.txt" "$work/$1-wbx-ram.txt" && cmp -s "$work/tty-$1-native.txt" "$work/tty-$1-wbx.txt"
+}
+
+# bridge_answered FILE...: did the GPU bridge have a case for every opcode the
+# guest sent it? The dispatcher's default arm logs and returns 0, and 0 is a
+# perfectly plausible answer to nearly every question the bridge carries - so a
+# guest that was answered and a guest that was shrugged at look the same, and
+# two flavours that were both shrugged at compare EQUAL.
+#
+# That is not a worry, it is a measurement. GL_OP_CONTEXT_ID (chimera issue
+# #43) had no case in gl-host.c for as long as the opcode existed. gpu:flip
+# passed green while a single 60-frame sandbox run printed "opcode 4 has no
+# case" 365 times, and gpu:context - the leg that exists for exactly that
+# opcode - could not have passed at all. Absent was indistinguishable from
+# working (~/chimera/docs/gates.md, mode C).
+#
+# So no gpu leg may go green over that line. Every one of them runs this
+# first, on both flavours' stderr, and the message names the opcodes.
+bridge_gap=""
+bridge_answered() {
+	bridge_gap=""
+	for f in "$@"; do
+		[ -f "$f" ] || continue
+		grep -q 'has no case' "$f" || continue
+		bridge_gap="the GPU bridge had no case for $(grep -o 'opcode [0-9]*' "$f" | sort -u | tr '\n' ',' | sed 's/,$//; s/,/, /g') and answered 0 ($(basename "$f"))"
+		return 1
+	done
+	return 0
+}
+
+# gpu_ran NAME: did both flavours actually produce frame lines? A run that was
+# killed, hung or crashed leaves an EMPTY frame file, and an empty file
+# compared against a full one reads as "the two flavours DIFFER" - which sends
+# the next reader hunting a divergence instead of a corpse. Measured on
+# 2026-09-21: the sandbox GL run on bejeweled3.iso never completes frame 1 (it
+# faults guest pages in at ~370 MiB/s from about 95 s in until it is OOM-killed,
+# while the same disc runs 20 frames natively on GL in three seconds and 20
+# frames in the sandbox on the NULL renderer in seconds), and the leg said
+# "differs". Absent must not wear the costume of failed
+# (~/chimera/docs/gates.md, mode C).
+gpu_absent=""
+gpu_ran() {
+	gpu_absent=""
+	for fl in native wbx; do
+		[ "$fl" = wbx ] && [ "$have_wbx" != 1 ] && continue
+		if ! grep -q '^frame' "$work/$1-$fl.txt" 2>/dev/null; then
+			gpu_absent="the $fl GL run produced no frame at all - killed, hung or refused to start ($(grep -v 'Failed to open /proc/self/status' "$work/$1-$fl.err" 2>/dev/null | tail -1))"
+			return 1
+		fi
+	done
+	return 0
 }
 
 # vs_sandbox: what a leg that passed same_both is entitled to SAY. With a
@@ -698,7 +751,11 @@ else
 	else
 		grep '^frame' "$work/flip-native.txt" | head -6 | awk '{print $2, $7}' > "$work/gflip-want.txt"
 		grep '^frame' "$work/gflip-native.txt" | awk '{print $2, $7}' > "$work/gflip-got.txt"
-		if [ -s "$work/gflip-got.txt" ] && cmp -s "$work/gflip-want.txt" "$work/gflip-got.txt"; then
+		if ! bridge_answered "$work/gflip-native.err" "$work/gflip-wbx.err"; then
+			failed "gpu:flip - $bridge_gap"
+		elif ! gpu_ran gflip; then
+			failed "gpu:flip - $gpu_absent"
+		elif [ -s "$work/gflip-got.txt" ] && cmp -s "$work/gflip-want.txt" "$work/gflip-got.txt"; then
 			if same_both gflip; then
 				pass "gpu:flip - $(grep 'gpu bridge: [0-9]' "$work/gflip-native.err" | head -1 | sed 's/gpu bridge: //' | cut -c1-60): 6 pictures identical to the machine's own pixels, $(vs_sandbox)"
 			else
@@ -718,7 +775,11 @@ else
 		grep '^frame' "$work/gdisc-native.txt" | awk '{print $2, $4}' > "$work/gdisc-got.txt"
 		faults_native="$(sed -n 's/^page faults served by the renderer: //p' "$work/gdisc-native.err")"
 		faults_wbx="$(sed -n 's/^page faults served by the renderer: //p' "$work/gdisc-wbx.err")"
-		if [ -s "$work/gdisc-got.txt" ] && cmp -s "$work/gdisc-want.txt" "$work/gdisc-got.txt"; then
+		if ! bridge_answered "$work/gdisc-native.err" "$work/gdisc-wbx.err"; then
+			failed "gpu:disc - $bridge_gap"
+		elif ! gpu_ran gdisc; then
+			failed "gpu:disc - $gpu_absent"
+		elif [ -s "$work/gdisc-got.txt" ] && cmp -s "$work/gdisc-want.txt" "$work/gdisc-got.txt"; then
 			if ! same_both gdisc; then
 				failed "gpu:disc - the sandbox's GL run differs from the native GL run (diff $work/gdisc-native.txt $work/gdisc-wbx.txt)"
 			elif [ -z "$faults_native" ] || [ "$have_wbx" = 1 ] && [ "$faults_native" != "$faults_wbx" ]; then
@@ -731,7 +792,11 @@ else
 		fi
 		if [ "$have_wbx" = 1 ]; then
 			if CHIMERA_GPU=1 "$wbx" "$core" --firmware "$pup" --settings '{"renderer":"opengl-hw"}' --frames 120 --rewind "$disc" > "$work/grewind.txt" 2>"$work/grewind.err"; then
-				pass "gpu:rewind - $(grep '^rewind' "$work/grewind.txt")"
+				if ! bridge_answered "$work/grewind.err"; then
+					failed "gpu:rewind - $bridge_gap"
+				else
+					pass "gpu:rewind - $(grep '^rewind' "$work/grewind.txt")"
+				fi
 			else
 				failed "gpu:rewind - $(grep '^rewind' "$work/grewind.txt" || tail -1 "$work/grewind.err")"
 			fi
@@ -754,7 +819,9 @@ else
 				before="$(grep '^frame' "$work/gctx1.txt" | tail -1 | sed 's/.*vid \([0-9x]*\) \([0-9a-f]*\).*/\1 \2/')"
 				after="$(grep '^frame' "$work/gctx2.txt" | tail -1 | sed 's/.*vid \([0-9x]*\) \([0-9a-f]*\).*/\1 \2/')"
 				blank="$(printf '%s' "$after" | grep -c '1920x1080' || true)"
-				if [ "$after" = "$before" ] && [ "$blank" = 0 ]; then
+				if ! bridge_answered "$work/gctx1.err" "$work/gctx2.err"; then
+					failed "gpu:context - $bridge_gap"
+				elif [ "$after" = "$before" ] && [ "$blank" = 0 ]; then
 					pass "gpu:context - a state loaded in another process draws again ($after)"
 				else
 					failed "gpu:context - the picture after the load is '$after', the one before the save was '$before'"

@@ -1,0 +1,59 @@
+diff --git a/rpcs3/Emu/RSX/GL/GLGSRender.cpp b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.cpp
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+@@ -1354,8 +1354,13 @@
+ // which context the calls are landing on (miniBox source/gl: GL_OP_CONTEXT_ID).
+ // Zero when there is no bridge, or the host predates the question.
+ extern "C" uint64_t chimera_gl_context_id(void);
++// and whether the ENGINE said the machine's memory was just replaced, read and
++// cleared (waterbox/gl-shim.cpp, fed by the StateLoaded export). See below for
++// why the stored id alone is not enough to answer that.
++extern "C" int chimera_gl_take_state_loaded(void);
+ #else
+ static inline uint64_t chimera_gl_context_id(void) { return 0; }
++static inline int chimera_gl_take_state_loaded(void) { return 0; }
+ #endif
+ 
+ // chimera: has the ground moved? The objects this renderer holds are names a
+@@ -1368,6 +1373,32 @@
+ // compare, against a frame's worth of drawing.
+ void GLGSRender::chimera_check_gl_context()
+ {
++	// A STORED ZERO IS NOT A PROMISE THAT NOTHING MOVED (chimera issue 126).
++	//
++	// m_chimera_gl_context starts at 0 and is first written at the bottom of
++	// this function, which the RSX thread first reaches in do_local_task -
++	// AFTER on_init_thread has already built every GL object this renderer
++	// holds. So there is a window in every session in which the objects exist
++	// and the stored id is still 0, and a savestate taken inside it carries
++	// that 0. The guard below used to read it as "this machine has never held
++	// any GL objects, nothing to rebuild". It does not mean that: it means
++	// "this state was taken before the renderer looked, so it cannot vouch for
++	// what the driver is holding now", and what the driver is holding is
++	// whatever the frames after the snapshot left there - surfaces resized,
++	// textures deleted and their names handed out again, framebuffers
++	// reattached. The renderer then draws from emulated memory describing the
++	// snapshot into driver objects as of frame N.
++	//
++	// The greenzone's frame-0 anchor is exactly such a state (the engine takes
++	// it right after Init), and it is the one TAStudio loads when a movie is
++	// replayed from the beginning - which is how it reached a user as a corrupt
++	// picture from frame 0 or 1 and a clean one from frame 2.
++	//
++	// So the host's word is kept instead of being inferred from the number: the
++	// engine tells every core when the machine's memory has been replaced, and
++	// that is read and cleared here whether or not the id moved.
++	const bool after_load = chimera_gl_take_state_loaded() != 0;
++
+ 	const u64 live = chimera_gl_context_id();
+ 	if (live == 0 || live == m_chimera_gl_context)
+ 	{
+@@ -1376,7 +1407,7 @@
+ 		return;
+ 	}
+ 
+-	if (m_chimera_gl_context != 0)
++	if (m_chimera_gl_context != 0 || after_load)
+ 	{
+ 		rsx_log.warning("chimera: these GL objects came from another context (%llu, now %llu); rebuilding",
+ 			m_chimera_gl_context, live);

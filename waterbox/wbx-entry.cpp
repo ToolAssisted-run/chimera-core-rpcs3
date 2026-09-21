@@ -19,6 +19,9 @@
 static char g_loadError[512];
 
 extern "C" void chimera_rpcs3_install_gpu_bridge(uint64_t addr);
+// gl-shim.cpp: the engine told us the machine's memory was replaced, and the
+// renderer needs to hear it (chimera issue 126)
+extern "C" void chimera_gl_note_state_loaded(void);
 
 extern "C" {
 
@@ -269,6 +272,19 @@ ECL_EXPORT uint32_t GetPrecompileTotal(void)
 ECL_EXPORT int IsGpuActive(void)
 {
   return chimera_rpcs3_gpu_active();
+}
+
+// Told after every load of the machine - a savestate, a branch file, a
+// greenzone restore - with the machine stopped and before it runs again. The
+// engine calls it AFTER the memory has been replaced, which is what makes the
+// flag it sets survive the load (gl-shim.cpp, chimera issue 126).
+//
+// The only thing this core keeps that a load invalidates is the renderer's
+// claim about which GL context its objects came from. Everything else it
+// derives from memory it derives again.
+ECL_EXPORT void StateLoaded(void)
+{
+  chimera_gl_note_state_loaded();
 }
 
 ECL_EXPORT void FrameAdvance(uint64_t /*input*/)

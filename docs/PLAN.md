@@ -1435,6 +1435,7 @@ a red frontend gate now blocks the release.
 | precompile:frontend | SKIP | the PUP |
 | disc:frontend | SKIP | the PUP + a disc |
 | gpu:frontend | SKIP | the PUP + a disc |
+| gl:rebuild-at-zero | SKIP | the PUP + chimera-run + a built package (no disc) |
 | project:frontend | SKIP | the PUP + a disc |
 
 The test programs are not a blocker: `flip.elf`, `tone.elf`, `sputest.elf`,
@@ -1652,3 +1653,197 @@ Four occasions, chosen because they are when this repo actually moves:
 
 Not "every push": the firmware and the discs are one machine's, and a rule
 nobody can keep is worse than a rule that names its four occasions.
+
+## The bridge had no case for its own context id (2026-09-21)
+
+`waterbox/gl-host.c` is the dispatcher the SANDBOX harness hands a guest, and
+it had no case for `GL_OP_CONTEXT_ID` - the opcode miniBox added for chimera
+issue #43 - for as long as the opcode has existed. The default arm logged
+`opcode 4 has no case` and returned 0, and 0 is the contract's "cannot tell":
+`GLGSRender::chimera_check_gl_context` reads it, concludes nothing moved, and
+keeps the GL object names it already had. Which is issue #43 exactly, in the
+one harness that exists to prove #43 fixed.
+
+**What it cost, measured, not reasoned.** The rest of the command stream was
+never at risk: one sandbox `gpu:flip` run (60 frames, llvmpipe) printed the line
+365 times and its six frame lines are byte-identical to the same run with the
+case present. So the cost was the answer alone - the renderer was told "cannot
+tell" 365 times a minute and so could never rebuild. Natively the cost is nil
+and always was: `chimera_rpcs3_install_gpu_bridge` deliberately does NOT call
+`chimera_gl_install` in the single-binary build (the dispatcher would recurse
+into the wrappers), so `chimera_gl_context_id` sees a null bridge and returns 0
+without ever reaching the dispatcher - which is why the native run printed the
+line zero times. `run-native` has no `--state` either, so nothing native can
+meet a context that moved.
+
+**The case, and a load hook to go with it.** `mint_context_id` is the engine's
+(`~/chimera/source/engine/source/gl_bridge.cpp`), for its reasons: the pid and a
+high-resolution counter carry the per-process entropy, because an address is not
+per-process on Windows and `time()` at one-second granularity would hand two
+runs started in the same second the SAME id. And because chimera's host mints
+again on every state load (`ce_gl_state_loaded`; rpcs3 declares no
+`video.rebuildOnStateLoad`, so it rebuilds), `run-wbx` now calls
+`chimera_gl_host_state_loaded` at all three of its load sites. Without that a
+load in this runner was a strictly EASIER test than a load in Chimera, and the
+gate stood behind the easier one.
+
+**The gate could not see any of it, and now can.** A leg that passes while the
+log says "no case for this opcode" 365 times is not a leg (gates.md mode C:
+absent is indistinguishable from working). So: the default arm counts as well
+as logs, caps its own chatter at eight lines - 365 a run is how this stayed
+invisible - `chimera_gl_host_unhandled` hands the count to the runners, they
+print it at the end, and `bridge_answered` in `run-gate.sh` fails `gpu:flip`,
+`gpu:disc`, `gpu:rewind` and `gpu:context` when either flavour's stderr carries
+that line.
+
+Proved by breaking it. With the case label changed to a number nothing sends
+and run-wbx rebuilt from that, the gate said `FAIL: gpu:flip - the GPU bridge
+had no case for opcode 4 and answered 0 (gflip-wbx.err)` - the same leg, on the
+same program, that had been green for as long as the opcode existed. The
+control was run through the real `run-gate.sh` on a tree whose
+`tests/roms-local` held only the firmware (with `bin`, `obj-native` and
+`tests/roms` symlinked in), so the disc and package legs skipped and it reached
+`gpu:flip` in forty minutes rather than taking the machine for an hour and a
+half: 17 passed, 1 failed, 8 skipped, the one failure being the leg under test.
+With the case back it passes.
+
+**gpu:disc, gpu:rewind and gpu:context still fail, for a different reason, NOT
+fixed here.** The disc the gate picks is whichever `tests/roms-local/*.iso` has
+no key beside it, and today that is `bejeweled3.iso`. In the sandbox on the GL
+renderer that disc never completes frame 1: it sits at 4.8 GiB for about 95
+seconds, then faults guest pages into the miniBox block at roughly 370 MiB/s
+until it is OOM-killed - 30 GiB with no frame line printed, in a run asked for
+one frame. The three controls say where it is not:
+
+| run | result |
+|---|---|
+| bejeweled3, GL, native | 20 frames in ~3 s, 1.7 GiB |
+| bejeweled3, null renderer, sandbox | 20 frames in seconds, under 16 GiB |
+| bejeweled3, GL, sandbox | frame 1 never returns, killed at 30 GiB |
+| re5gold, GL, sandbox | frame 15 reached, killed at a 14 GiB cap |
+
+So it is not the bridge, not the opcode, not the RSX patches landed on
+2026-09-20 (established that day by somebody else: 0034 and 0035 removed from
+the series and the core rebuilt, still no frame), and not every game - it is this disc through the sandbox on GL, and
+it is open. An `RSX` trace ends at `cellVideoOutConfigure` and the two
+`setDisplayBuffer` calls, with nothing after it, so the FIFO is where to look
+next. `gpu:disc` used to be proved on GTA San Andreas (2026-09-02, 1800 frames
+at 47 fps), which is a disc this machine no longer holds - the leg's subject
+changed when the folder did, and nothing said so.
+
+**The same gap is in three sibling cores.** PCSX2's, Dolphin's and xemu's
+`waterbox/gl-host.c` have no case for `GL_OP_CONTEXT_ID` either, and all three
+have guests that ask for it (pcsx2's `waterbox/cinterface.cpp`, dolphin's
+`OGLGfx.cpp`, xemu's `pgraph/gl/renderer.c`), so their sandbox harnesses are
+telling those renderers "cannot tell" exactly as this one was. Flycast has no
+`gl-host.c` at all. Not touched from here - it is their repositories - but
+recorded so nobody has to find it a fourth time.
+
+**And a gate run cannot survive it.** The full gate on 2026-09-21 reported 25
+legs PASS, 0 FAIL, 0 SKIP up to and including `gpu:flip`, and then stopped
+without a summary: the cgroup OOM kill that ends the `gpu:disc` sandbox run
+takes the gate's own shell with it (`systemd-run --scope -p MemoryMax=26G`,
+killed at 09:32). Uncapped it would take the machine instead. So today
+`gpu:disc`, `gpu:rewind` and `gpu:context` are not legs that fail; they are
+legs that end the run, and the summary line - the one thing that says how many
+legs were skipped - never prints. Nothing in the script can bound a child's
+memory portably (`ulimit -v` is meaningless for a waterbox, which reserves tens
+of gigabytes of address space by design), so this is recorded rather than
+fixed, and it is the second reason the disc problem above wants solving.
+
+`gpu_ran` is the small part of that which IS fixed: an empty frame file
+compared against a full one used to read as "the sandbox's GL run differs from
+the native GL run", which sends the next reader hunting a divergence instead of
+a corpse. The leg now says the run produced no frame at all, and prints the
+last line of its stderr.
+
+## A stored context id of zero is not a promise that nothing moved (2026-09-21)
+
+Chimera issue #126, reported against PCSX2 on Maximo: Ghosts to Glory, fixed
+there in 323e916. The code it lived in was copied between every bridged core,
+so this one was checked for it. **It had it.**
+
+`GLGSRender::chimera_check_gl_context` rebuilds the renderer's GL objects when
+the context id stored beside them differs from the one the calls are landing
+on. `m_chimera_gl_context` starts at 0 and is first written at the bottom of
+that function, which the RSX thread first reaches in `do_local_task` - AFTER
+`on_init_thread` has already run `chimera_gl_setup` and built every object the
+renderer holds. So there is a window in every session in which the objects
+exist and the stored id is still 0, and a state taken inside it carries the 0.
+The guard `if (m_chimera_gl_context != 0)` read that as "this machine has never
+held any GL objects". It does not mean that. It means "this state was taken
+before the renderer looked, so it cannot vouch for what the driver is holding
+now" - and what the driver is holding is whatever the frames after the snapshot
+left there.
+
+The greenzone's frame-0 anchor is such a state (the engine captures it right
+after Init, `session.cpp`), and it is the one TAStudio loads when a movie is
+replayed from the beginning, because it reaches a frame by loading the state
+BEFORE it and emulating one frame forward. Frames 0 and 1 both load the anchor;
+frame 2 is the first that does not. That is the fingerprint the reporter
+described.
+
+**Measured on flip.elf through chimera-run**, `--gpu --greenzone 4096
+--rewind-loop N,1` under `CHIMERA_GL_TRACE=1 CHIMERA_GL_STATEAUDIT=1`, counting
+the bridge crossings on the frame after the restore. Two packages from this
+tree differing only in the fix:
+
+| restore to | rebuild left alone | rebuild off (`CHIMERA_GL_KEEP_OBJECTS_ON_LOAD=1`) |
+|---|---|---|
+| frame 0, before | 3549 | 3549 |
+| frame 0, after | **8752** | 8752 |
+| frame 2, before | 5258 | 53 |
+| frame 2, after | 5258 | 53 |
+
+Read it this way: before the fix, restoring the anchor cost the same whether
+the rebuild was allowed or not - 3549 calls, all of them flip.elf's own gcm
+setup being replayed - so no rebuild happened. After the fix it costs 8752,
+which is that same 3549 plus 5203, and 5203 is exactly what the rebuild costs
+at frame 2 (5258 - 55). Frame 2 is untouched by the change, as it should be: it
+always rebuilt.
+
+**The fix is PCSX2's, so that every bridged core ends up one shape.** The
+engine already tells every core when the machine's memory has been replaced;
+this core now implements that optional export (`StateLoaded` in wbx-entry.cpp),
+which sets a flag in `gl-shim.cpp` that the renderer reads and clears. The flag
+is set AFTER the load, so the load cannot wipe it, and a fresh boot has had no
+load and still does not rebuild. `run-wbx` calls the export at all three of its
+load sites too, so the runner's loads are not quieter than the frontend's.
+
+The two alternatives PCSX2 rejected were not re-litigated: recording the id
+during `Init` puts it in the SEALED baseline where no state carries it as a
+delta, which breaks the cross-session rebuild of issue #43; and a non-zero
+"never seen" sentinel fails identically, because the anchor carries whatever
+the initial value is.
+
+**The leg is `gl:rebuild-at-zero`** (waterbox/tests/run-frontend.sh, which is
+where the package and the chimera checkout are already to hand). It needs the
+firmware and flip.elf and no disc, and it is placed AHEAD of the three disc
+legs for that reason: those are the slowest and hungriest things in the script,
+they exhausted a 30 GiB cap twice on this machine, and a run that dies at leg 3
+used to take this one with it.
+
+It was watched failing. Against the package built before the fix:
+`FAIL: gl:rebuild-at-zero - restoring the frame-0 anchor cost 3549 calls
+against 5258 restoring frame 2: the anchor's stored context id of zero was read
+as nothing to rebuild (chimera issue 126)`. Against the fixed package: `PASS -
+the anchor costs 8752 calls, frame 2 5258, and 53 with the rebuild turned off`.
+
+**PCSX2's leg would have passed on the broken core here**, which is worth
+recording as its own lesson. That leg asserts the frame after a restore crosses
+the bridge thousands of times, because an idle frame of its test program
+crosses it once; restoring rpcs3 to frame 0 crosses it 3549 times on a broken
+core, from the program's own replayed setup. And the obvious A/B - the same
+restore under `CHIMERA_GL_KEEP_OBJECTS_ON_LOAD` - is not a control at frame 0
+either, because that switch only stops the engine MINTING a new id, and a
+stored 0 differs from the live id however little it moved; it reads 8752
+against 8752 on the FIXED core. A borrowed threshold is not a borrowed test.
+So the leg asserts what was actually false before and true after: that frame
+2's crossings really are a rebuild (the A/B is valid there - 5258 against 53),
+and that restoring the anchor costs at least as much as restoring frame 2,
+which it cannot if the anchor skipped the rebuild.
+
+**What this does NOT establish.** The corrupt picture was never reproduced
+here; nothing was run on the reporter's hardware and no NVIDIA driver has been
+near it. What is established is that the rpcs3 core had the same defect PCSX2
+had, by the same measurement, and that the same fix removes it.

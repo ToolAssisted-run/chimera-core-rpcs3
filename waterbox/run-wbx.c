@@ -28,7 +28,48 @@ uintptr_t chimera_cache_host_dispatch(uintptr_t op, uintptr_t a, uintptr_t b, ui
 int chimera_gl_host_init(char *err, int errlen);
 const char *chimera_gl_host_description(void);
 uintptr_t chimera_gl_host_dispatch(uintptr_t op, uintptr_t a, uintptr_t b, uintptr_t c, uintptr_t d, uintptr_t e);
+void chimera_gl_host_state_loaded(void);
+unsigned long chimera_gl_host_unhandled(long *last_op);
+
+/* What chimera's session does after a load (ce_gl_state_loaded), said here so
+ * this runner asks the renderer the same question the frontend does. Without
+ * it a load in this runner is a strictly EASIER test than a load in Chimera,
+ * and the gate would be standing behind the easier one. */
+static void gl_state_loaded(void)
+{
+	chimera_gl_host_state_loaded();
+}
+
+/* Every call the bridge shrugged at. Zero is a plausible answer to nearly
+ * every opcode, so a run nobody answered looks exactly like a run that was
+ * answered - which is how GL_OP_CONTEXT_ID went unanswered here for as long as
+ * the opcode existed while gpu:flip passed. Said out loud so the gate can fail
+ * on it instead of the log saying it to nobody. */
+static void gl_report_unhandled(void)
+{
+	long last = 0;
+	const unsigned long n = chimera_gl_host_unhandled(&last);
+	if (n == 0) return;
+	fprintf(stderr, "gpu bridge: %lu call(s) to opcodes this host has no case for"
+		" (last: opcode %ld); every one was answered 0\n", n, last);
+	fflush(stderr);
+}
+#else
+static void gl_state_loaded(void) { }
+static void gl_report_unhandled(void) { }
 #endif
+
+static void (MB_GUEST_ABI *g_coreStateLoaded)(void);
+
+/* Both halves of "a state was loaded": the HOST mints a fresh GL context id
+ * (the renderer's cue that the objects it remembers are another context's),
+ * and the CORE is told, which is what lets a renderer whose stored id is still
+ * its initial zero know that the zero cannot be trusted (chimera issue 126). */
+static void state_was_loaded(void)
+{
+	gl_state_loaded();
+	if (g_coreStateLoaded != NULL) g_coreStateLoaded();
+}
 
 static uint64_t fnv(uint64_t h, const void *p, size_t n)
 {
@@ -333,6 +374,18 @@ int main(int argc, char **argv)
 	intfn GetThreadCount = (intfn)proc(h, "GetThreadCount");
 	u64fn GetMachineTimeNs = (u64fn)proc(h, "GetMachineTimeNs");
 	intfn IsRunning = (intfn)proc(h, "IsRunning");
+	/* The core's OPTIONAL StateLoaded export, resolved without proc() because a
+	 * core that does not have it is not an error. Called wherever chimera's
+	 * session calls it (afterStateLoaded): once the machine's memory has been
+	 * replaced and before it runs again. Without it this runner's loads are
+	 * quieter than the frontend's, and the gate would stand behind the quieter
+	 * of the two. */
+	{
+		mb_return sr;
+		memset(&sr, 0, sizeof sr);
+		wbx_get_proc_addr(h, "StateLoaded", &sr);
+		g_coreStateLoaded = (sr.error_message[0] || sr.data == 0) ? NULL : (voidfn)sr.data;
+	}
 	btnfn SetButton = (btnfn)proc(h, "SetButton");
 	intfn InputWasRead = (intfn)proc(h, "InputWasRead");
 	ptrfn GetVideoBgra = (ptrfn)proc(h, "GetVideoBgra");
@@ -362,6 +415,7 @@ int main(int argc, char **argv)
 		st.pos = 0;
 		wbx_load_state(h, mem_read, (uintptr_t)&st, &r);
 		if (r.error_message[0]) { fprintf(stderr, "load: %s\n", r.error_message); return 1; }
+		state_was_loaded();
 		free(st.b);
 		printf("loaded state %s\n", stateIn);
 		fflush(stdout);
@@ -391,10 +445,12 @@ int main(int argc, char **argv)
 		st.pos = 0;
 		wbx_load_state(h, mem_read, (uintptr_t)&st, &r);
 		if (r.error_message[0]) { fprintf(stderr, "load: %s\n", r.error_message); return 1; }
+		state_was_loaded();
 		for (long f = half + 1; f <= frames; f++) { FrameAdvance(0); uint64_t d = GetMainMemoryDigest(); pass2 = fnv(pass2, &d, sizeof d); }
 		printf("rewind: pass1 %016" PRIx64 " pass2 %016" PRIx64 " -> %s (state %zu bytes)\n", pass1, pass2,
 		       pass1 == pass2 ? "EQUAL" : "DIFFERENT", st.len);
 		free(st.b);
+		gl_report_unhandled();
 		wbx_deactivate_host(h, &r); wbx_destroy_host(h, &r);
 		return pass1 == pass2 ? 0 : 1;
 	}
@@ -423,6 +479,7 @@ int main(int argc, char **argv)
 			st.pos = 0;
 			wbx_load_state(h, mem_read, (uintptr_t)&st, &r);
 			if (r.error_message[0]) { fprintf(stderr, "load@%ld: %s\n", f, r.error_message); return 1; }
+			state_was_loaded();
 			free(st.b);
 		}
 		FrameAdvance(0);
@@ -492,6 +549,7 @@ int main(int argc, char **argv)
 		FILE *f = fopen(ttyOut, "wb");
 		if (f) { fwrite(tty, 1, (size_t)tn, f); fclose(f); }
 	}
+	gl_report_unhandled();
 	wbx_deactivate_host(h, &r);
 	wbx_destroy_host(h, &r);
 	printf("done\n");
