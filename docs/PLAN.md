@@ -1928,3 +1928,115 @@ which it cannot if the anchor skipped the rebuild.
 here; nothing was run on the reporter's hardware and no NVIDIA driver has been
 near it. What is established is that the rpcs3 core had the same defect PCSX2
 had, by the same measurement, and that the same fix removes it.
+
+## The frame limiter was spending the machine's time (2026-09-21)
+
+Chimera issue #125, fourth round. The RSX was executing about three pushbuffer
+words per frame, and the reason was the core's own settings.
+
+`rsx::thread::handle_emu_flip` serves rpcs3's frame limiter by sleeping the RSX
+thread on `lv2_obj::wait_timeout` until its next flip slot whenever the guest
+asks to flip sooner than the limiter allows. On a desktop that sleep is host
+time and costs the emulated machine nothing. Here it is the MACHINE's time -
+vsched charges it like any other wait - and the RSX thread is also the FIFO
+puller, so nothing reads the pushbuffer while it waits. The core pinned
+`frame_limit = _auto`, which is 60 fps, so a game that asks libgcm to flip as
+fast as it can - which both of #125's reproducers do once they are waiting on
+something - got a loop of: sleep out the frame, flip, execute one command,
+repeat.
+
+Measured on Mortal Kombat, null renderer, 1500 frames: `get` advanced 18,124
+bytes across 1499 flips - **about twelve bytes, three command words, per
+frame** - with 21,860 bytes still unread. Injustice drained its (much smaller)
+buffer but presented eight frames in 1500.
+
+**So the limiter is a defect here on its own terms, whatever it is hiding.**
+Chimera drives frames itself; a core must never self-limit, and a sleep
+denominated in emulated time is a determinism hazard independent of any bug it
+causes (user-decided, 2026-09-21).
+
+### Which setting, and why not "none"
+
+`none` was the obvious choice and is the wrong one. With it, `limit` is 0 (the
+core pins `max_cpu_preempt_count_per_frame` to 0) and `handle_emu_flip` falls
+through to the arm that flips immediately, so a flip completes the moment it is
+asked for. `flip.elf` - which draws a frame, asks for a flip and waits for it -
+then reported **1454 flips in 120 frames**, twelve a vblank. No console
+presents that way, and a movie recorded against it would be a movie of a
+machine that does not exist.
+
+`_ps3` is the console's own pacing: a VSYNC-mode flip is held until the next
+vblank EVENT, which the vblank thread posts on the machine's clock at
+`vblank_rate`, and - this is the part that matters - `handle_emu_flip` records
+it as `async_flip_requested` and RETURNS, so the RSX thread goes straight back
+to its FIFO loop and `do_local_task` completes the flip later. It never sleeps
+the puller. `flip.elf` reports 119 flips in 120 frames.
+
+Not `infinite`, which also gives `limit = 0`: `sys_rsx` posts an extra vblank
+event per display-queue command in that mode.
+
+| | pinned `_auto` | `none` | `_ps3` (now) |
+|---|---|---|---|
+| MK at 1500 frames | put 0x8a68 / get 0x3504 | put == get == 0x61dc | put == get == 0x61dc |
+| MK gcm label 255 | 38 | 46 | 46 |
+| Injustice at 1500 | put == get == 0x1de4 | put == get == 0x54bc | put == get == 0x54bc |
+| Injustice label 255 | 8 | 39 | 39 |
+| flip.elf, 120 frames | 120 flips | 1454 flips | 119 flips |
+
+### What it moved, and what it did not
+
+Every leg whose program never flips is BYTE-IDENTICAL across the change -
+lv2test native, sandbox, rewind and rerecord; firmware:lle; both pad legs;
+audio:tone; ppu:llvm; both cache object sets; both SPU decoders. Every leg on a
+program that DOES flip moved: video:flip, disc:boot, both disc:install legs,
+pkg:boot and gpu:flip.
+
+That is the change doing exactly what it is for, and the shape of the move says
+so. On echochrome's package and on bejeweled3's disc, **only the RAM digest and
+the machine time differ** - the TTY, the video digest, the audio digest, the
+lag count and the thread count are identical at every report. bejeweled3's
+frame 20 lands at 1333348 us instead of 1333356: eight microseconds of machine
+time that used to be spent sleeping the RSX. A game that stores an elapsed time
+stores the difference, which is chimera#120's shape and the same explanation.
+
+Determinism is untouched: `native:deterministic`, `native == sandbox`, `rewind`
+and `rerecord` all pass, and the gate is 26 passed, 0 failed, 3 skipped.
+
+### The leg: rsx:drain
+
+A leg that would have caught this. On a game whose render thread fences every
+present, two facts must both hold after 1500 frames: the RSX has read
+everything the game submitted (`put == get`), and the game's own per-frame
+fence has moved - gcm label 255, the back-end label a UE3 game writes once per
+present, standing above 15, which is more than one per hundred frames.
+
+One fact alone is not a rule, and the table above is why: the starved RSX left
+Mortal Kombat's buffer 87% unread with its label at 37, while Injustice's
+buffer DRAINED with its label at 8. Either half passes on its own for one of
+the two reproducers.
+
+Its subject is whatever `.iso` sits in `tests/roms-local/rsx-drain/` (a symlink
+does), because the gate may not carry somebody's game. Native only - the
+question is the RSX's, not the sandbox's. It was watched failing on the build
+before the change: `FAIL: rsx:drain - inj.iso: the RSX read everything (put ==
+get == 00001de4) but the game presented 8 frames in 1500`. After it: `PASS -
+put == get == 000054bc and the game's fence label stands at 39`.
+
+It is stated for a game at REST by frame 1500. Both reproducers are, for
+reasons #125 still chases; the day a subject is still drawing at that frame,
+the first fact has to be restated as a bound rather than an equality.
+
+### Two things found in the gate while there
+
+`run-gate.sh` begins by deleting a shared work directory, and on 2026-09-21 two
+agents' concurrent runs wiped each other: the second run's `rm -rf` took the
+first's files while it was reading them, and produced a `pkg:boot` FAIL for a
+package that had booted perfectly. The script now takes an `flock` on
+`waterbox/work/gate.lock` before that `rm -rf`, so a second run waits.
+
+And `GATE_SKIP_GPU_DISC=1` now turns the three GL disc legs into named SKIPs.
+That is not a fix for them - the sandbox GL run on bejeweled3 is still
+OOM-killed and still takes the gate's own shell with it, so the summary line
+never prints and every leg after it is silently absent - but it lets a run that
+needs its summary say which three legs it gave up, instead of ending without
+one (~/chimera/docs/gates.md, modes A and G).

@@ -684,7 +684,28 @@ namespace
       // the flipped image is read back for the frame consumer every frame
       g_recording_mode = recording_mode::rpcs3;
     }
-    g_cfg.video.frame_limit.set(frame_limit_type::_auto);
+    // The console's own flip pacing and no frame limiter. Chimera drives the
+    // frames itself, so the core must never self-limit - and rpcs3's limiter
+    // ("auto", what this pinned before) is served by handle_emu_flip putting
+    // the RSX thread to sleep (lv2_obj::wait_timeout) until its next flip
+    // slot. On a desktop that sleep is host time; here it is the MACHINE's
+    // time, spent by the thread that is also the FIFO puller, and a game that
+    // queues a flip every vblank while its render thread waits on a fence
+    // got: sleep out the frame, flip, execute one pushbuffer command, repeat
+    // (chimera#125: Mortal Kombat's get moved 18,124 bytes in 1500 frames,
+    // twelve bytes a frame, with 21,860 unread). A sleep denominated in
+    // emulated time is a determinism hazard on its own.
+    //
+    // "_ps3" and not "none": with no pacing at all a flip completes the moment
+    // it is asked for, and flip.elf - which waits for each flip before drawing
+    // the next - reported 1454 flips in 120 frames instead of 120; no console
+    // presents twelve frames a vblank. "_ps3" holds a VSYNC-mode flip until
+    // the next vblank EVENT (machine time, posted by the vblank thread at
+    // vblank_rate below), recording it as async_flip_requested and returning
+    // to the FIFO meanwhile, which is what the hardware does; a game in HSYNC
+    // mode flips at once. Not "infinite": sys_rsx posts an extra vblank per
+    // display-queue command in that mode. See docs/PLAN.md.
+    g_cfg.video.frame_limit.set(frame_limit_type::_ps3);
     g_cfg.video.vblank_rate.set(60);
     g_cfg.video.vblank_ntsc.set(false);
     g_cfg.video.multithreaded_rsx.set(false);

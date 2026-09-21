@@ -103,6 +103,17 @@ summary() {
 	exit $fail
 }
 
+# One gate at a time. Two runs at once each began by deleting the other's work
+# directory, and on 2026-09-21 that produced a pkg:boot FAIL for a package that
+# had booted: the second run's rm -rf took the first run's files out from under
+# it while it was reading them. A second run now waits for the first to finish.
+mkdir -p "$here/work"
+exec 9>"$here/work/gate.lock"
+if ! flock -n 9; then
+	echo "gate: another run holds $here/work/gate.lock - waiting for it" >&2
+	flock 9
+fi
+
 rm -rf "$work"
 mkdir -p "$work"
 
@@ -293,7 +304,7 @@ if [ ! -f "$pup" ]; then
 		disc:boot disc:install disc:install:encrypted disc:install:state \
 		pkg:boot pkg:content pkg:licence ppu:llvm \
 		cache:objects cache:warm cache:precompile \
-		spu:interpreter spu:asmjit spu:agree \
+		spu:interpreter spu:asmjit spu:agree rsx:drain \
 		gpu:flip gpu:disc gpu:rewind gpu:context; do
 		skip "$leg - the same firmware"
 	done
@@ -741,6 +752,60 @@ else
 	fi
 fi
 
+# ---- rsx:drain -----------------------------------------------------------
+# The RSX must never be what the game waits for. The core used to pin rpcs3's
+# frame limiter to "auto", and handle_emu_flip serves that limiter by putting
+# the RSX thread to sleep until its next flip slot - a sleep taken in the
+# MACHINE's time here, on the thread that is also the FIFO puller. A game that
+# queues a flip every vblank while its render thread waits on a fence got:
+# sleep out the frame, flip, run one pushbuffer command, repeat (chimera issue
+# #125: Mortal Kombat's get moved 18,124 bytes in 1500 frames, twelve bytes a
+# frame, while 21,860 bytes sat unread; Injustice drained its buffer but
+# presented eight frames in 1500).
+#
+# Two facts, both read off the machine at the end of the run, and both must
+# hold: the RSX has read everything the game submitted (put == get), and the
+# game's own per-frame fence has moved - gcm label 255, the back-end label an
+# Unreal Engine 3 game writes once per present, has advanced more than once per
+# hundred frames. One fact alone is not a rule: the starved RSX left Mortal
+# Kombat's buffer 87% unread with its label at 37, and Injustice's buffer
+# drained with its label at 8.
+#
+# The subject is whatever .iso the user put in tests/roms-local/rsx-drain/ (a
+# symlink will do; both reproducers are UE3 games), and the leg is stated for a
+# game at rest by frame 1500 - both are, for reasons chimera#125 still chases.
+# A game still drawing at that frame is legitimately mid-buffer, and the day
+# one is, the first fact has to be re-stated as a bound. Native only: the
+# question is the RSX's, not the sandbox's.
+drainiso=""
+for f in "$root"/tests/roms-local/rsx-drain/*.iso; do
+	[ -f "$f" ] && { drainiso="$f"; break; }
+done
+if [ -z "$drainiso" ]; then
+	skip "rsx:drain - no .iso in tests/roms-local/rsx-drain/ (would prove: on a game whose render thread fences every present, the RSX reads everything the game submits and the fence label keeps moving - no frame limiter sleeps the FIFO puller)"
+else
+	drainkey=""
+	[ -f "${drainiso%.iso}.dkey" ] && drainkey="--dkey ${drainiso%.iso}.dkey"
+	# shellcheck disable=SC2086
+	CHIMERA_DEBUG_THREADS=1 CHIMERA_PEEK=40300ff0:1 "$native" --work "$work/drain" --firmware "$pup" $drainkey --frames 1500 --report 500 --tty-out "$work/tty-drain-native.txt" "$drainiso" 2>"$work/drain-native.err" | grep '^frame\|^booted' > "$work/drain-native.txt"
+	rsxline="$(grep 'RSX put=' "$work/drain-native.err" | head -1)"
+	put="$(printf '%s' "$rsxline" | sed -n 's/.*put=\([0-9a-f]*\).*/\1/p')"
+	get="$(printf '%s' "$rsxline" | sed -n 's/.*get=\([0-9a-f]*\).*/\1/p')"
+	label="$(sed -n 's/^  40300ff0: \([0-9a-f]*\)$/\1/p' "$work/drain-native.err" | head -1)"
+	labeln="$((0x${label:-0}))"
+	if ! grep -q '^frame  1500' "$work/drain-native.txt"; then
+		failed "rsx:drain - the run did not reach frame 1500 ($(tail -1 "$work/drain-native.err"))"
+	elif [ -z "$put" ] || [ -z "$label" ]; then
+		failed "rsx:drain - no RSX report or no label read at the end of the run (put='$put' label='$label')"
+	elif [ "$put" != "$get" ]; then
+		failed "rsx:drain - $(basename "$drainiso"): after 1500 frames the RSX has $((0x$put - 0x$get)) bytes of the game's pushbuffer unread (put $put, get $get; label 255 at $labeln)"
+	elif [ "$labeln" -le 15 ]; then
+		failed "rsx:drain - $(basename "$drainiso"): the RSX read everything (put == get == $put) but the game presented $labeln frames in 1500 - the fence label must advance more than once per hundred frames"
+	else
+		pass "rsx:drain - $(basename "$drainiso"): after 1500 frames the RSX has read everything the game submitted (put == get == $put) and the game's fence label stands at $labeln (more than 1 per hundred frames); native only"
+	fi
+fi
+
 # ---- gpu:flip and gpu:disc (the GL renderer through the bridge) ----------
 if [ ! -f "$fliprom" ]; then
 	skip "gpu:flip - no tests/roms/flip.elf"
@@ -769,6 +834,17 @@ else
 		skip "gpu:disc - no disc"
 	elif grep -q "gpu bridge: no context" "$work/gflip-native.err"; then
 		skip "gpu:disc - the host offers no GL context"
+	elif [ "${GATE_SKIP_GPU_DISC:-0}" != 0 ]; then
+		# The sandbox GL run on the disc this machine holds never completes
+		# frame 1: it faults guest pages in until the cgroup's OOM killer takes
+		# run-wbx AND the gate's own shell with it, so the summary never prints
+		# and every leg after this one is silently absent (docs/PLAN.md, the
+		# GL_OP_CONTEXT_ID entry; ~/chimera/docs/gates.md, modes A and G).
+		# Until that disc problem is solved a run that needs its summary asks
+		# for a NAMED skip of the three legs rather than a cap nobody survives.
+		skip "gpu:disc - GATE_SKIP_GPU_DISC set: the sandbox GL run on $(basename "$disc") is OOM-killed and takes the gate with it (docs/PLAN.md, 2026-09-21)"
+		skip "gpu:rewind - the same run"
+		skip "gpu:context - the same run"
 	else
 		run_both_gpu gdisc 120 20 "$disc"
 		grep '^frame' "$work/disc-native.txt" | awk '{print $2, $4}' > "$work/gdisc-want.txt"
