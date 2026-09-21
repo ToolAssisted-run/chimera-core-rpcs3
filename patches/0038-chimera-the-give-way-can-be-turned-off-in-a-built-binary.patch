@@ -1,0 +1,44 @@
+diff --git a/rpcs3/Emu/Memory/vm_reservation.h b/rpcs3/Emu/Memory/vm_reservation.h
+--- a/rpcs3/Emu/Memory/vm_reservation.h
++++ b/rpcs3/Emu/Memory/vm_reservation.h
+@@ -74,10 +74,21 @@
+ 	// instructions have been charged already, and on hardware the others were
+ 	// running anyway. Nothing outside a core, where there is no scheduler to
+ 	// give way to.
++	// CHIMERA_SPU_YIELD=0 turns this off in a BUILT binary. It exists so the
++	// negative control costs an environment variable instead of a second
++	// build of a PS3 emulator: the same binary, the same disc, the same frame
++	// count, one knob. A control nobody can afford to run is a control nobody
++	// runs, and this change is one whose whole worth is the difference it
++	// makes. The flag is read once, at startup.
++	extern bool g_reservation_give_way_on;
++
+ 	inline void reservation_give_way()
+ 	{
+ #ifdef CHIMERA_CORE
+-		vsched_yield(0);
++		if (g_reservation_give_way_on)
++		{
++			vsched_yield(0);
++		}
+ #endif
+ 	}
+ 
+diff --git a/rpcs3/Emu/Memory/vm.cpp b/rpcs3/Emu/Memory/vm.cpp
+--- a/rpcs3/Emu/Memory/vm.cpp
++++ b/rpcs3/Emu/Memory/vm.cpp
+@@ -99,6 +99,14 @@
+ 	// (vm_reservation.h: reservation_cpu_alternated)
+ 	u32 g_reservation_last_cpu[65536 / 128]{0};
+ 
++	// Chimera: whether the give-way happens at all, so the negative control is
++	// an environment variable rather than a second build (vm_reservation.h)
++	bool g_reservation_give_way_on = []
++	{
++		const char* off = std::getenv("CHIMERA_SPU_YIELD");
++		return !(off && off[0] == '0');
++	}();
++
+ 	// Pointers to shared memory mirror or zeros for "normal" memory
+ 	alignas(4096) atomic_t<u64> g_shmem[65536]{0};
+ 

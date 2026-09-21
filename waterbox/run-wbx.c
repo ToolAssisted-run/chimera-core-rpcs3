@@ -3,7 +3,7 @@
  * digests in run-native's exact format, so the sandboxed build can be
  * diffed against the native reference.
  *
- * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F]
+ * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--video-out F]
  *        [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]]
  *        [--log-trace CHANS] [--debug-at N]
  *        [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>
@@ -133,7 +133,7 @@ int main(int argc, char **argv)
 	 * state - which is how a thread that never gives way is found. */
 	if (getenv("MB_ALLOW_PTRACE")) prctl(PR_SET_PTRACER, -1L, 0, 0, 0);
 #endif
-	const char *core = NULL, *game = NULL, *ttyOut = NULL, *firmware = NULL, *ramOut = NULL, *dkey = NULL, *settingsJson = NULL, *cacheDir = NULL, *preSpec = NULL;
+	const char *core = NULL, *game = NULL, *ttyOut = NULL, *videoOut = NULL, *firmware = NULL, *ramOut = NULL, *dkey = NULL, *settingsJson = NULL, *cacheDir = NULL, *preSpec = NULL;
 	const char *logTrace = NULL;
 	long debugAt = -1;
 	long frames = 60, report = 10;
@@ -195,6 +195,7 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--cache") && i + 1 < argc) cacheDir = argv[++i];
 		else if (!strcmp(argv[i], "--precompile") && i + 1 < argc) preSpec = argv[++i];
 		else if (!strcmp(argv[i], "--ram-out") && i + 1 < argc) ramOut = argv[++i];
+		else if (!strcmp(argv[i], "--video-out") && i + 1 < argc) videoOut = argv[++i];
 		else if (!strcmp(argv[i], "--press") && i + 1 < argc && presses < 32) {
 			long a, b; int c;
 			if (sscanf(argv[++i], "%ld:%ld:%d", &a, &b, &c) == 3) {
@@ -209,7 +210,7 @@ int main(int argc, char **argv)
 		else game = argv[i];
 	}
 	if (!core || !game) {
-		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>\n");
+		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--video-out F] [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>\n");
 		return 2;
 	}
 
@@ -542,6 +543,21 @@ int main(int argc, char **argv)
 		const uint8_t *ram = (const uint8_t *)GetMemoryDomainPtr(0);
 		FILE *rf = fopen(ramOut, "wb");
 		if (rf) { fwrite(ram, 1, (size_t)GetMemoryDomainSize(0), rf); fclose(rf); }
+	}
+	if (videoOut) {
+		/* the last frame's picture, in run-native's format so one script reads
+		 * either flavour: two little-endian u32 (width, height), then BGRA rows
+		 * top-down. A digest says two pictures differ; this says HOW, which is
+		 * what a report of graphical artifacts needs. */
+		int vw = GetVideoWidth(), vh = GetVideoHeight();
+		const uint8_t *vid = (const uint8_t *)GetVideoBgra();
+		FILE *f = fopen(videoOut, "wb");
+		if (f) {
+			uint32_t hdr[2] = { (uint32_t)vw, (uint32_t)vh };
+			fwrite(hdr, 4, 2, f);
+			if (vid && vw > 0 && vh > 0) fwrite(vid, 4, (size_t)vw * vh, f);
+			fclose(f);
+		}
 	}
 	if (ttyOut) {
 		int64_t tn = GetTtySize();

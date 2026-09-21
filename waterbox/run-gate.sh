@@ -304,7 +304,7 @@ if [ ! -f "$pup" ]; then
 		disc:boot disc:install disc:install:encrypted disc:install:state \
 		pkg:boot pkg:content pkg:licence ppu:llvm \
 		cache:objects cache:warm cache:precompile \
-		spu:interpreter spu:asmjit spu:agree rsx:drain \
+		spu:interpreter spu:asmjit spu:agree rsx:drain spu:barrier \
 		gpu:flip gpu:disc gpu:rewind gpu:context; do
 		skip "$leg - the same firmware"
 	done
@@ -831,6 +831,49 @@ else
 		failed "rsx:drain - $(basename "$drainiso"): the RSX read everything (put == get == $put) but the game presented $labeln frames in 1500 - the fence label must advance more than once per hundred frames"
 	else
 		pass "rsx:drain - $(basename "$drainiso"): after 1500 frames the RSX has read everything the game submitted (put == get == $put) and the game's fence label stands at $labeln (more than 1 per hundred frames); native only"
+	fi
+fi
+
+# ---- spu:barrier ---------------------------------------------------------
+# A lock-free barrier needs two CPUs to be observed at once, and vsched runs
+# one at a time for eighty thousand instructions.
+#
+# Unreal Engine 3's SPU garbage collector decrements a participant count and
+# re-increments it about TEN instructions later. The PPU sleeps while
+# decremented, waiting to be the last participant in. On hardware the other
+# CPUs are running while it looks; here nobody is ever caught idle, the
+# barrier never closes, and the game stops dead in its map load
+# (chimera#125: Injustice and Mortal Kombat, both UE3).
+#
+# The fix gives way after a conditional store to a reservation slot whose
+# previous writer was a different CPU. This leg asks whether the barrier
+# closes, by the same fence label rsx:drain reads: stalled it stands at 39
+# after 750 frames, and the game never gets past the load.
+#
+# NEGATIVE CONTROL, and it costs an environment variable rather than a second
+# build: CHIMERA_SPU_YIELD=0 turns the give-way off in this very binary and
+# the label returns to 39. Run by hand when the leg or the fix changes:
+#   CHIMERA_SPU_YIELD=0 ... run-native --frames 750 ... inj.iso
+# Measured 2026-09-21 on Injustice: off 39 (90 s), on 4735 (410 s). The extra
+# time is the collector actually running; a game that never reaches this
+# barrier pays nothing (Resident Evil 5, 300 frames: 125 s off, 124 s on).
+if [ -z "$drainiso" ]; then
+	skip "spu:barrier - no .iso in tests/roms-local/rsx-drain/ (would prove: a UE3 game's SPU garbage collector gets past its participant barrier, which needs one CPU to observe another's idle window)"
+else
+	barkey=""
+	[ -f "${drainiso%.iso}.dkey" ] && barkey="--dkey ${drainiso%.iso}.dkey"
+	# shellcheck disable=SC2086
+	CHIMERA_PEEK=40300ff0:1 "$native" --work "$work/barrier" --firmware "$pup" $barkey --frames 750 --report 750 "$drainiso" 2>"$work/barrier.err" | grep '^frame' > "$work/barrier.txt"
+	blabel="$(sed -n 's/^  40300ff0: \([0-9a-f]*\)$/\1/p' "$work/barrier.err" | head -1)"
+	blabeln="$((0x${blabel:-0}))"
+	if ! grep -q '^frame   750' "$work/barrier.txt"; then
+		failed "spu:barrier - the run did not reach frame 750 ($(tail -1 "$work/barrier.err"))"
+	elif [ -z "$blabel" ]; then
+		failed "spu:barrier - no fence label read at the end of the run"
+	elif [ "$blabeln" -le 1000 ]; then
+		failed "spu:barrier - $(basename "$drainiso"): the fence label stands at $blabeln after 750 frames, which is where it sits when the SPU garbage collector's barrier never closes (39). The give-way after a contended conditional store is not reaching the machine"
+	else
+		pass "spu:barrier - $(basename "$drainiso"): the fence label stands at $blabeln after 750 frames, so the SPU garbage collector's participant barrier closes (it stalls at 39 with CHIMERA_SPU_YIELD=0); native only"
 	fi
 fi
 

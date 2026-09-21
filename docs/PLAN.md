@@ -2210,3 +2210,46 @@ not be the only thing built this way.
   which wall each game reaches first.
 - **Tile registers, ZCULL, the trophy thread** - by the previous round, on the
   issue.
+
+- **The SPU garbage-collector barrier, and the give-way that closes it
+  (2026-09-21, chimera#125). SHIPPED.** Unreal Engine 3's collector
+  decrements a participant count and re-increments it about ten instructions
+  later; the PPU sleeps while decremented, waiting to be the last participant
+  in. A vsched slice is eighty thousand instructions, so nobody is ever caught
+  in that ten-instruction idle window, the barrier never closes, and Injustice
+  and Mortal Kombat stop dead in their map load.
+
+  The fix gives way after a conditional store to a reservation slot whose
+  previous writer was a different CPU (patch 0037), reusing the emulator's own
+  reservation hash so no new notion of a cache line is introduced. Measured on
+  Injustice, 750 frames, native, the gcm fence label the gate reads:
+
+  | | wall | label 255 |
+  |---|---|---|
+  | give-way off | 90 s | 39 - the stall |
+  | give-way on | 410 s | 4735 |
+
+  **The 4.6x is not overhead, it is progress**: the stalled run is doing
+  nothing. A game that never reaches this barrier pays nothing at all -
+  Resident Evil 5, 300 frames: 125 s off, 124 s on. Deterministic: three runs
+  with it on agree byte for byte.
+
+  Waiting was the wrong signal and that shaped the design: of 33.4 million
+  conditional stores, EIGHT found a reservation waiter registered and 149
+  found another CPU holding a reservation, because the window in which a
+  participant would be seen waiting is the same ten instructions the bug is
+  made of.
+
+  **Patch 0038 makes the negative control affordable**: CHIMERA_SPU_YIELD=0
+  turns the give-way off in a BUILT binary, so proving the fix does something
+  costs an environment variable rather than a second build of a PS3 emulator.
+  Every number above was taken that way, one binary, one knob.
+
+  **It moves the machine.** Resident Evil 5's RAM digest changes with the
+  give-way on, as any scheduler change must, so movies recorded before it
+  will not replay after it. The gate's legs compare native against sandbox
+  rather than against stored digests, so they are unaffected.
+
+  Still open: the games do not BOOT yet - the barrier was what stopped them,
+  and what they do next has not been looked at. The full gate has not been
+  re-run since; `spu:barrier` is the new leg.

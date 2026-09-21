@@ -1,0 +1,114 @@
+diff --git a/rpcs3/Emu/Memory/vm_reservation.h b/rpcs3/Emu/Memory/vm_reservation.h
+--- a/rpcs3/Emu/Memory/vm_reservation.h
++++ b/rpcs3/Emu/Memory/vm_reservation.h
+@@ -34,6 +34,53 @@
+ 	void reservation_update(u32 addr);
+ 	std::pair<bool, u64> try_reservation_update(u32 addr);
+ 
++	// Chimera: which CPU last completed a conditional store on each of the 512
++	// slots reservation_acquire hashes every address into. Same slots, so the
++	// same aliasing the emulator's own reservation table already has, and no
++	// new notion of "a line" anywhere.
++	//
++	// A conditional store publishes something another CPU may be about to
++	// read. On hardware the other CPUs are running while it does; on vsched
++	// one thread holds the machine for eighty thousand instructions, which is
++	// long enough for a participant in a lock-free protocol to publish a state
++	// and retract it again with nobody having been able to look (chimera#125:
++	// Unreal Engine 3's garbage collector re-increments its participant count
++	// about ten instructions after decrementing it, so its barrier never
++	// closes). Giving way after EVERY successful atomic fixes that and costs
++	// 6x. Giving way when the slot's previous conditional store came from
++	// another CPU costs, on Mortal Kombat's stuck frames, one give-way in 227.
++	//
++	// It is a statement about sharing, not about waiting: nobody in that
++	// barrier ever waits on the line (eight of 33.4 million stores found a
++	// reservation waiter registered, 149 found another CPU holding a
++	// reservation), because the window in which they would be seen waiting is
++	// the same ten instructions the bug is made of.
++	inline bool reservation_cpu_alternated(u32 addr, u32 cpu_id)
++	{
++		extern u32 g_reservation_last_cpu[65536 / 128];
++
++		u32& last = g_reservation_last_cpu[(addr & 0xff80) / 128];
++
++		if (last == cpu_id)
++		{
++			return false;
++		}
++
++		last = cpu_id;
++		return true;
++	}
++
++	// Hand the machine to the next runnable CPU, charging nothing: the
++	// instructions have been charged already, and on hardware the others were
++	// running anyway. Nothing outside a core, where there is no scheduler to
++	// give way to.
++	inline void reservation_give_way()
++	{
++#ifdef CHIMERA_CORE
++		vsched_yield(0);
++#endif
++	}
++
+ 	struct alignas(8) reservation_waiter_t
+ 	{
+ 		u32 wait_flag = 0;
+diff --git a/rpcs3/Emu/Memory/vm.cpp b/rpcs3/Emu/Memory/vm.cpp
+--- a/rpcs3/Emu/Memory/vm.cpp
++++ b/rpcs3/Emu/Memory/vm.cpp
+@@ -95,6 +95,10 @@
+ 	// Reservation stats
+ 	alignas(4096) u8 g_reservations[65536 / 128 * 64]{0};
+ 
++	// Chimera: the CPU that last completed a conditional store on each slot
++	// (vm_reservation.h: reservation_cpu_alternated)
++	u32 g_reservation_last_cpu[65536 / 128]{0};
++
+ 	// Pointers to shared memory mirror or zeros for "normal" memory
+ 	alignas(4096) atomic_t<u64> g_shmem[65536]{0};
+ 
+@@ -2303,6 +2307,7 @@
+ 			};
+ 
+ 			std::memset(g_reservations, 0, sizeof(g_reservations));
++			std::memset(g_reservation_last_cpu, 0, sizeof(g_reservation_last_cpu));
+ 			std::memset(g_shmem, 0, sizeof(g_shmem));
+ 			std::memset(g_range_lock_set, 0, sizeof(g_range_lock_set));
+ 			std::memset(g_range_lock_bits, 0, sizeof(g_range_lock_bits));
+diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
+--- a/rpcs3/Emu/Cell/SPUThread.cpp
++++ b/rpcs3/Emu/Cell/SPUThread.cpp
+@@ -3574,6 +3574,13 @@
+ 			}
+ 
+ 			raddr = 0;
++
++			// Chimera: this store changed a line another CPU is also doing
++			// atomics on, so give way before it is undone (chimera#125)
++			if (vm::reservation_cpu_alternated(addr, id))
++			{
++				vm::reservation_give_way();
++			}
+ 		}
+ 
+ 		perf0.reset();
+diff --git a/rpcs3/Emu/Cell/PPUThread.cpp b/rpcs3/Emu/Cell/PPUThread.cpp
+--- a/rpcs3/Emu/Cell/PPUThread.cpp
++++ b/rpcs3/Emu/Cell/PPUThread.cpp
+@@ -3826,6 +3826,14 @@
+ 			ppu.res_notify_postpone_streak = 0;
+ 		}
+ 
++		// Chimera: the same as the SPU's putllc - a line another CPU is also
++		// doing atomics on has just changed, so give way before it changes
++		// back (chimera#125)
++		if (vm::reservation_cpu_alternated(addr, ppu.id))
++		{
++			vm::reservation_give_way();
++		}
++
+ 		static_cast<void>(ppu.test_stopped());
+ 
+ 		if (addr == ppu.last_faddr)
