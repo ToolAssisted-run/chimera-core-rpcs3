@@ -15,6 +15,7 @@
 #include "Utilities/JIT.h"
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/PPUDisAsm.h"
+#include "Emu/Cell/SPUDisAsm.h"
 #include "Emu/Cell/SPUThread.h"
 #include "Emu/RSX/Null/NullGSRender.h"
 #include "Emu/RSX/GSFrameBase.h"
@@ -1823,6 +1824,44 @@ void chimera_rpcs3_disasm(uint32_t addr, int count)
   fflush(stderr);
 }
 
+// Debugging: an SPU's local store, disassembled (index = the SPU's position in
+// idm order, the one the thread dump lists), and dumped raw to a file so a
+// loop can be read offline. A worker that never goes idle explains itself
+// only in its own code: what it polls, what it reads the time from, and what
+// it would have to see to leave.
+void chimera_rpcs3_spu_disasm(int index, uint32_t addr, int count)
+{
+  int i = 0;
+  idm::select<named_thread<spu_thread>>([&](u32 id, spu_thread& t)
+  {
+    if (i++ != index)
+      return;
+    fprintf(stderr, "== SPU %08x local store at %05x (%d)\n", id, addr, count);
+    SPUDisAsm dis(cpu_disasm_mode::normal, t.ls);
+    for (int k = 0; k < count; k++)
+    {
+      const u32 at = (addr + k * 4) & 0x3fffc;
+      dis.disasm(at);
+      fprintf(stderr, "  %05x: %08x  %s\n", at, +*reinterpret_cast<const be_t<u32>*>(t.ls + at), dis.last_opcode.c_str());
+      dis.last_opcode.clear();
+    }
+  });
+  fflush(stderr);
+}
+
+void chimera_rpcs3_spu_ls_dump(const char* dir)
+{
+  idm::select<named_thread<spu_thread>>([&](u32 id, spu_thread& t)
+  {
+    const std::string path = std::string(dir) + "/spu-" + fmt::format("%08x", id) + ".ls";
+    if (FILE* f = fopen(path.c_str(), "wb"))
+    {
+      fwrite(t.ls, 1, 0x40000, f);
+      fclose(f);
+    }
+  });
+}
+
 // Debugging: guest memory as big-endian words. A spinning thread polls an
 // address, and the address is usually a field of an object a register points
 // at, so one level of indirection is allowed: "@ADDR+OFF" reads the word at
@@ -1902,22 +1941,27 @@ void chimera_rpcs3_debug_threads(void)
   });
   idm::select<named_thread<spu_thread>>([](u32 id, spu_thread& t)
   {
+    const auto ev = t.ch_events.load();
     fprintf(stderr, "  SPU %08x pc=%05x state=%08x status=%08x inbox=%u outbox=%u"
                     " tagmask=%08x tagstat=%u tagupd=%u mfcq=%u barrier=%08x fence=%08x"
-                    " events=%08x stallmask=%08x\n",
+                    " events=%08x mask=%08x waiting=%u snr1=%u snr2=%u stallmask=%08x\n",
             id, t.pc, static_cast<u32>(t.state.load()), t.status_npc.load().status,
             t.ch_in_mbox.get_count(), t.ch_out_mbox.get_count(),
             t.ch_tag_mask, t.ch_tag_stat.get_count(), t.ch_tag_upd,
             t.mfc_size, t.mfc_barrier, t.mfc_fence,
-            static_cast<u32>(t.ch_events.load().events), t.ch_stall_mask);
-    // the instructions around where it is parked: an SPU that is not moving is
-    // almost always sitting on a channel read, and the opcode names which one
-    for (int k = -2; k <= 2; k++)
+            static_cast<u32>(ev.events), static_cast<u32>(ev.mask), static_cast<u32>(ev.waiting),
+            t.ch_snr1.get_count(), t.ch_snr2.get_count(), t.ch_stall_mask);
+    // the instructions around where it is parked, disassembled: an SPU that is
+    // not moving is almost always sitting on a channel read, and the opcode
+    // names which one; the ones before it say what it did last
+    SPUDisAsm dis(cpu_disasm_mode::normal, t.ls);
+    for (int k = -8; k <= 3; k++)
     {
       const u32 at = (t.pc + k * 4) & 0x3fffc;
-      const u32 w = *reinterpret_cast<const be_t<u32>*>(t.ls + at);
-      fprintf(stderr, "    ls %05x: %08x  op11=%03x ra=%02x rt=%02x%s\n",
-              at, w, w >> 21, (w >> 7) & 0x7f, w & 0x7f, k == 0 ? "  <== pc" : "");
+      dis.disasm(at);
+      fprintf(stderr, "    ls %05x: %08x  %s%s\n", at, +*reinterpret_cast<const be_t<u32>*>(t.ls + at),
+              dis.last_opcode.c_str(), k == 0 ? "  <== pc" : "");
+      dis.last_opcode.clear();
     }
   });
   fflush(stderr);

@@ -89,6 +89,8 @@ void chimera_rpcs3_debug_threads(void);
 // offset, which is how a field of an object a global points at is reached in
 // one go. Both to stderr, both diagnosis, never machine state.
 void chimera_rpcs3_disasm(uint32_t addr, int count);
+void chimera_rpcs3_spu_disasm(int index, uint32_t addr, int count);
+void chimera_rpcs3_spu_ls_dump(const char* dir);
 void chimera_rpcs3_peek(uint32_t addr, int32_t offset, int count, int deref);
 
 // The renderer the project asked for ("null" or "opengl-hw"), before init;

@@ -319,6 +319,25 @@ int main(int argc, char** argv)
       spec = comma + 1;
     }
   }
+  // CHIMERA_SPU_DISASM=IDX:ADDR:N[,...]: an SPU's local store disassembled
+  // (IDX = its position in the thread dump); CHIMERA_SPU_LS=DIR dumps every
+  // SPU's local store raw into DIR, for reading a worker's loop offline.
+  if (const char* spec = getenv("CHIMERA_SPU_DISASM"))
+  {
+    while (*spec)
+    {
+      int idx = 0, n = 0;
+      unsigned long a = 0;
+      if (sscanf(spec, "%d:%lx:%d", &idx, &a, &n) == 3)
+        chimera_rpcs3_spu_disasm(idx, (uint32_t)a, n);
+      const char* comma = strchr(spec, ',');
+      if (!comma)
+        break;
+      spec = comma + 1;
+    }
+  }
+  if (const char* dir = getenv("CHIMERA_SPU_LS"))
+    chimera_rpcs3_spu_ls_dump(dir);
   // CHIMERA_PEEK=[@]ADDR[+OFF]:N[,...]: guest memory as big-endian words; the
   // leading @ dereferences ADDR first, so a field of an object a global points
   // at can be read without a second run.
