@@ -29,6 +29,13 @@ extern "C" int chimera_gl_host_init(char* err, int errlen);
 extern "C" const char* chimera_gl_host_description(void);
 extern "C" uintptr_t chimera_gl_host_dispatch(uintptr_t op, uintptr_t a, uintptr_t b, uintptr_t c, uintptr_t d, uintptr_t e);
 extern "C" void chimera_rpcs3_install_gpu_bridge(uint64_t addr);
+// Moves the context id, which is what the engine does on a state load. The
+// renderer notices at its next local task and rebuilds its GL objects. Here so
+// that the REBUILD can be driven on its own, with no state restored: the
+// renderer's teardown and setup are the half of a load that touches the GL
+// objects, and a bug in them is otherwise only reachable through a savestate
+// round trip that costs minutes on a real game.
+extern "C" void chimera_gl_host_state_loaded(void);
 #endif
 
 static void on_alarm(int)
@@ -82,6 +89,11 @@ int main(int argc, char** argv)
   int preIndex = -1, preCount = 0, preFirmware = 1;
   struct { long first, count; int index; } press[32];
   int presses = 0;
+  // --gl-rebuild-at N[,N...]: the frames after which the context id moves, so
+  // the renderer rebuilds. See the declaration above for why this is separable
+  // from a state load at all.
+  long rebuildAt[32];
+  int rebuilds = 0;
   for (int i = 1; i < argc; i++)
   {
     if (!strcmp(argv[i], "--frames") && i + 1 < argc)
@@ -170,12 +182,21 @@ int main(int argc, char** argv)
         presses++;
       }
     }
+    else if (!strcmp(argv[i], "--gl-rebuild-at") && i + 1 < argc)
+    {
+      for (const char* p = argv[++i]; *p && rebuilds < 32;)
+      {
+        rebuildAt[rebuilds++] = atol(p);
+        while (*p && *p != ',') p++;
+        if (*p == ',') p++;
+      }
+    }
     else
       game = argv[i];
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--rap licence.rap]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--ram-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--rap licence.rap]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--ram-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] [--gl-rebuild-at N[,N...]] [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -248,6 +269,15 @@ int main(int argc, char** argv)
     chimera_rpcs3_frame();
     if (!chimera_rpcs3_input_was_read())
       lag++;
+#ifdef CHIMERA_GL_BRIDGE
+    for (int ri = 0; ri < rebuilds; ri++)
+      if (rebuildAt[ri] == f)
+      {
+        fprintf(stderr, "gl: the context id moves after frame %ld; the renderer will rebuild\n", f);
+        fflush(stderr);
+        chimera_gl_host_state_loaded();
+      }
+#endif
     if (f % report == 0 || f == frames)
     {
       int64_t tn;

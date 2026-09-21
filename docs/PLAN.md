@@ -1335,6 +1335,87 @@ optimisation. No user interface, no networking, no real audio or input devices.
   system dialog is unreachable on the null renderer**, which is what every leg
   but the gpu ones runs. Driving that installer needs a renderer.
 
+- **Dead or Alive 5 Last Round dies in the main menu (2026-09-21, chimera#127).**
+  Reported against chimera 09d76ccd with this core at 8dd8727. NOT FIXED; what
+  follows is what the evidence says and what has been ruled out, so the next
+  person does not start from guesswork.
+
+  The guest's own last words, out of `minibox-diag.log`:
+
+      rpcs3 fatal: RSX [0x05b8bf0] Thread terminated due to fatal error:
+      Verification failed (object: 0x0)
+      (in .../Emu/RSX/GL/../Common/surface_store.h:622, in function
+       'void rsx::surface_store<Traits>::free_rsx_memory()')
+
+  Line 622 is `ensure(surface->has_refs()); // "Surface memory double free"`.
+  A surface in the cache had its reference count at zero when the cache came to
+  free it. The RSX thread died there; every other thread then waited on it, and
+  what miniBox reported - a 26-thread deadlock at frame 742 - is the
+  CONSEQUENCE, not the cause. Chimera handled the death correctly: the dialog,
+  the frame, the inputs safe. (The process died ninety seconds later of an
+  unrelated host bug, miniBox's fault handler reading a layout pointer that a
+  destroyed machine had left behind. Fixed in miniBox; see chimera's design log
+  for 2026-09-21. The two are independent and neither causes the other.)
+
+  **The session had no state loads, and that rules out a whole family.** The
+  report's screenshot shows the OSD: `13 fps`, `545/431 (Finished)`, then two
+  numbers - 92 in the alert colour and 0 under it. In `OSDManager.Draw`'s
+  order, with the default positions (y=42, y=56), those are the lag counter and
+  the RERECORD COUNT. Zero rerecords: nothing was rewound, no state was loaded,
+  so the context id never moved and the renderer never rebuilt. Every GL crash
+  this core has had before went through that rebuild - issue #110's teardown
+  order (patch 0032), issue #43's moved context id (patch 0021), the black
+  picture of 2026-09-17 (patches 0024/0025) - and none of them is this. This
+  one happens in ordinary forward play.
+
+  **Confirmed by running it.** `run-native --gl-rebuild-at 620,630,640` (new,
+  below) forces the renderer to tear down and build again three times over
+  while the menu is on screen, with no state restored. The machine carries on:
+  no assert, no change of behaviour. So the teardown path is not it either.
+
+  **It does not reproduce headless on Linux in 900 frames.** With the default
+  settings - PPU interpreter, GL through the bridge on Mesa's llvmpipe - the
+  game boots, plays its menu video and sits in the menu for 900 frames with
+  main memory different at every report and no assert. So whatever the surface
+  cache did wrong needs something this run did not have: a real GPU's timing,
+  the reported core commit, or a decoder setting the crash note does not
+  record.
+
+  **Found on the way, and it is its own bug: with `ppu_decoder=llvm` the
+  machine stops dead at frame 640.** Two runs reach frame 640 with the same
+  main-memory digest `b496354fcaf8bd52` and stay there for as long as they are
+  left - one for eighteen minutes - with the process burning a core.
+  `chimera_rpcs3_debug_ppu` on the stopped machine (`kill -SEGV` on the runner,
+  whose fault handler prints the report) shows all 86 threads parked and the
+  virtual clock stopped at 11.778 s: every PPU is waiting, so what is burning
+  the core is the RSX, and by the rule in patch 0030's entry above, a busy
+  process with a frozen frame counter is a spin that never reaches vsched. The
+  interpreter runs straight past the same point, so this is the recompiler's
+  timing, not the game's. Reproduce with
+  `CHIMERA_PPU_DECODER=llvm run-native --renderer opengl-hw --frames 800`.
+
+  One difference from the reported build that must be closed before any of this
+  is called a reproduction attempt: this tree carries patches 0034 and 0035
+  (the two RSX FIFO fixes of 2026-09-20, commits d8d78d4 and 1268e8b) which the
+  reported core at 8dd8727 does NOT. And the decoder the user ran is unknown -
+  13 fps suggests the LLVM recompiler rather than the default interpreter, but
+  the crash note does not say. Worth fixing on its own: **the crash note should
+  carry the core's settings**, or a report like this cannot be re-run.
+
+  Where to go next, in order: the GTX 1060 through the frontend (a real GPU
+  gets past frame 640), the reported core commit rather than this tree, and an
+  instrument on `free_rsx_memory` that names the surface and the call site
+  before the ensure fires (drafted, not applied - `std::source_location` as a
+  defaulted argument gives the caller for free).
+
+  **New harness: `run-native --gl-rebuild-at N[,N...]`.** It calls
+  `chimera_gl_host_state_loaded`, which moves the context id exactly as the
+  engine does on a state load, so the renderer's teardown and build-again can
+  be driven with NO state restored. That separation is worth having on its own:
+  every previous crash in this area was only reachable through a savestate
+  round trip that costs minutes on a real game, and the two halves of a load -
+  the memory restore and the GL rebuild - had never been tested apart.
+
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
   interpreter reaches the window through vm::write and ppu_feed_data, but
