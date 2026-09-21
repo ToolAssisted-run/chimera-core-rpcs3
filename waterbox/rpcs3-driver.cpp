@@ -137,6 +137,33 @@ namespace
     chimera_log.error("%s", what);
   }
 
+  // A boot that was refused leaves the emulator's object manager (g_fxo)
+  // populated: Emulator::Load creates every object before it decrypts the
+  // executable, and a Load that returns an error destroys none of them.
+  // Nothing else does either - Emulator::Kill returns at once on a machine
+  // that is already stopped - so the objects live until the process exits,
+  // where the typemap's own destructor ensure()s they are gone and aborts.
+  // That is how the native reference died with SIGABRT AFTER printing the
+  // licence refusal (chimera#123): the sentence was right and the exit code
+  // was 134. In the sandbox the box is dropped without running destructors,
+  // so it never showed there. Taken down here, once, on every refusal after
+  // the emulator was asked to boot.
+  void discard_refused_machine()
+  {
+    if (!Emu.IsStopped())
+    {
+      Emu.Kill(false);
+      const u64 deadline = vsched_now_ns() + 30ull * 1000000000ull;
+      while (!Emu.IsStopped(true) && vsched_now_ns() < deadline)
+      {
+        run_main_queue();
+        vsched_yield_default();
+      }
+      run_main_queue();
+    }
+    Emu.CleanUp();
+  }
+
   // ---- the frame's input, output and the machine's view of them ----------
   constexpr int PORTS = 7;
   constexpr int BUTTONS = 17;  // Up Down Left Right Select Start L3 R3 Triangle Circle Cross Square L1 R1 L2 R2 PS
@@ -1542,11 +1569,13 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
                  "already decrypted image.");
     else
       fail(fmt::format("boot failed: %s", r));
+    discard_refused_machine();
     return 0;
   }
   if (!Emu.IsReady())
   {
     fail(fmt::format("boot did not reach the ready state (state %d)", static_cast<int>(Emu.GetStatus(false))));
+    discard_refused_machine();
     return 0;
   }
   // A disc game's executable, handed over without its disc. EBOOT.BIN is the
@@ -1581,6 +1610,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
            "and then waits forever. Give the core the whole disc instead: either a single "
            ".iso image, or the dumped folder packed into one .zip or .7z, which is read "
            "without being unpacked.");
+      discard_refused_machine();
       return 0;
     }
   }
