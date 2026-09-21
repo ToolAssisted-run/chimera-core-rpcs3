@@ -625,16 +625,44 @@ fi
 # says REQUIRE_LICENSE is NPDRM: without the account's .rap its executable
 # does not decrypt, and rpcs3 says only "Failed to decrypt content", which
 # names neither the cause nor the cure.
+#
+# The refusal has to be a REFUSAL: the runner says the sentence and returns
+# 1. It used to say the sentence and then die - SIGABRT in a static
+# destructor, exit 134 - and this leg passed on the sentence alone
+# (chimera#123; ~/chimera/docs/gates.md, mode B: nobody had watched it fail).
+# So the exit code is part of the claim now, in both flavours, and once more
+# as a precompile session, which is the shape the report came in: the
+# frontend's precompile step opens the package on its own and is refused.
+refused_cleanly() {
+	# $1 name, $2 expected exit code, $3 what ran
+	rc="$(cat "$work/$1.rc")"
+	if ! grep -q 'licensed content and the project carries no licence' "$work/$1.err"; then
+		if grep -q '^booted' "$work/$1-out.txt"; then
+			failed "pkg:licence - $3 says REQUIRE_LICENSE but booted with no licence at all"
+		else
+			failed "pkg:licence - $3 failed without saying a licence was missing ($(tail -1 "$work/$1.err"))"
+		fi
+		return 1
+	fi
+	if [ "$rc" != "$2" ]; then
+		failed "pkg:licence - $3 said which licence is missing and then exited $rc instead of $2 ($(grep -a 'fatal\|Aborted\|Segmentation' "$work/$1.err" | tail -1))"
+		return 1
+	fi
+	return 0
+}
 if [ -z "$pkglicensed" ]; then
-	skip "pkg:licence - no purchased .pkg (REQUIRE_LICENSE) with its .rap in tests/roms-local (would prove: such a title boots with its licence and names the missing licence without it)"
+	skip "pkg:licence - no purchased .pkg (REQUIRE_LICENSE) with its .rap in tests/roms-local (would prove: such a title boots with its licence and names the missing licence without it, and returns rather than dying)"
 else
-	"$native" --work "$work/pkg-nolic" --firmware "$pup" --frames 1 --report 1 "$pkglicensed" 2>"$work/pkg-nolic.err" | grep '^booted' > "$work/pkg-nolic.txt"
-	if grep -q 'licensed content and the project carries no licence' "$work/pkg-nolic.err"; then
-		pass "pkg:licence - $(basename "$pkglicensed" | cut -c1-40): boots with its .rap in the Licence slot, and without it says which licence is missing instead of failing to decrypt"
-	elif [ -s "$work/pkg-nolic.txt" ]; then
-		failed "pkg:licence - $(basename "$pkglicensed" | cut -c1-40) says REQUIRE_LICENSE but booted with no licence at all"
-	else
-		failed "pkg:licence - without its licence the package failed without saying a licence was missing ($(tail -1 "$work/pkg-nolic.err"))"
+	lic="$(basename "$pkglicensed" | cut -c1-40)"
+	"$native" --work "$work/pkg-nolic" --firmware "$pup" --frames 1 --report 1 "$pkglicensed" > "$work/pkg-nolic-out.txt" 2>"$work/pkg-nolic.err"; echo $? > "$work/pkg-nolic.rc"
+	rm -rf "$work/pkg-nolic-cache"
+	"$native" --work "$work/pkg-nolic-pre" --firmware "$pup" --cache "$work/pkg-nolic-cache" --precompile 0/1 "$pkglicensed" > "$work/pkg-nolic-pre-out.txt" 2>"$work/pkg-nolic-pre.err"; echo $? > "$work/pkg-nolic-pre.rc"
+	if [ "$have_wbx" = 1 ]; then
+		"$wbx" "$core" --firmware "$pup" --frames 1 --report 1 "$pkglicensed" > "$work/pkg-nolic-wbx-out.txt" 2>"$work/pkg-nolic-wbx.err"; echo $? > "$work/pkg-nolic-wbx.rc"
+	fi
+	if refused_cleanly pkg-nolic 1 "$lic natively" && refused_cleanly pkg-nolic-pre 1 "$lic natively, as a precompile session," \
+		&& { [ "$have_wbx" != 1 ] || refused_cleanly pkg-nolic-wbx 1 "$lic in the sandbox"; }; then
+		pass "pkg:licence - $lic: boots with its .rap in the Licence slot, and without it says which licence is missing and returns 1 - as a run and as a precompile session, $(vs_sandbox)"
 	fi
 fi
 

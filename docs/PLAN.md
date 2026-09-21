@@ -1217,6 +1217,21 @@ optimisation. No user interface, no networking, no real audio or input devices.
   each flavour reproduces ITSELF exactly, which is what a movie rests on, and
   not that the two flavours reproduce each other.
 
+  Re-measured on current main after the wall-clock fix (patch 0033), --ram-out,
+  300 frames, null renderer (chimera#120, the three titles the issue names):
+  Prince of Persia (BLUS30214, plain iso) is now 0 bytes - native == sandbox,
+  read both off the Windows share and off a local copy - and Bejeweled 3
+  (BLUS30865) is 0. echochrome (pkg + rap) still differs, 43 bytes in 256 MiB,
+  and the words are what the issue guessed: big-endian doubles holding frame
+  times (1981.975 native / 1981.960 box; elapsed deltas 0.000156 / 0.000155 s)
+  and small tick counters (0x14d4 / 0x14d1), the two machines microseconds
+  apart in virtual time. A game CAN observe them - it stored them - so this is
+  not "state a movie never reads"; the honest guarantee is the narrower one:
+  each flavour is bit-deterministic run to run (two native runs with different
+  ASLR are byte-identical, checked here), and a movie replays in ONE flavour,
+  so a native/sandbox difference is not a desync. Because the three are not all
+  equal, `pkg:boot` is left reporting the comparison, NOT tightened to fail.
+
   Also measured: Super Stardust HD is SLOW here - 42 threads, about half a
   minute of wall time per frame on the PPU interpreter, and the RSX FIFO asks
   for a bigger wake-up delay in the log. It boots and it runs; it is not what
@@ -1415,6 +1430,14 @@ optimisation. No user interface, no networking, no real audio or input devices.
   every previous crash in this area was only reachable through a savestate
   round trip that costs minutes on a real game, and the two halves of a load -
   the memory restore and the GL rebuild - had never been tested apart.
+
+- **A licensed .pkg with no .rap crashes while compiling, and half of it is the core's (2026-09-21, chimera#123).** Five licensed titles (After Burner Climax, DuckTales Remastered, House of the Dead 4, Resogun, Super Street Fighter II Turbo HD) each crashed at the frontend's Pre-compiled modules step with a minibox-diag.log; two trials (Hard Corps Uprising, Sonic 4 Ep II) were fine. The five diag logs all show the SAME fault: a WRITE in host code at ntdll's heap coalesce (`mov %ax,0xc(%rdi,%rdx,8)`, `[0 block(s) registered]` - the box already torn down), i.e. late process teardown, not the guest. The trials are demos (no REQUIRE_LICENSE) and compile; the five are NPDRM and the reporter has no .rap. The logs decide the reading: it is a licensed pkg WITHOUT its .rap that crashes during precompile, AFTER the graceful refusal text is emitted (reading (a)). With the .rap, echochrome precompiles (152/155) and boots.
+
+  It is TWO crashes on one refused path, reproduced headless with echochrome (NPUA80134) + its .rap in tests/roms-local:
+
+  (A) FIXED, and it is the core's. `Emulator::Load` creates every g_fxo object BEFORE it decrypts the NPDRM executable; a Load that returns `decryption_error` destroys none of them, and `Emulator::Kill` returns at once on a machine that never ran, so the objects live until process exit where `manual_typemap::~manual_typemap()` ensure()s they are gone and aborts. The native reference died with SIGABRT (exit 134) AFTER printing the licence sentence - proven by name: `run-native --precompile 0/1 echochrome.pkg` (no rap) exits 134 on the pre-fix build, exit 1 (clean refusal) after; with the rap it precompiles either way. The sandbox never showed it on Linux (the box is dropped without running guest static dtors). Fix: `chimera_rpcs3_init` takes a refused machine down (`discard_refused_machine`: `Emu.Kill` + pump-to-stopped + `Emu.CleanUp`, the last of which is `g_fxo->clear()` and nulls the typemap) on every refusal AFTER `Emu.BootGame` was asked. No effect on the success path (with-rap still 152/155, exit 0). The `pkg:licence` gate leg is tightened to match (gates.md mode B - it had passed on the sentence alone): it now requires the refusal to RETURN 1, in both flavours and once more as a `--precompile` session (the shape the report came in), and it goes red on the pre-fix build (`exited 134 instead of 1`) and green after.
+
+  (B) STILL OPEN, and it is not the core's g_fxo. The Windows SANDBOX still writes that ntdll teardown fault with the FIXED core.wbx (stock engine, GTX 1060 box), so it is not (A); it also fires for a CONTENT pkg refused before `Emu.Load` ever runs (no g_fxo at all); and withholding the GL bridge does not remove it (not the bridge). It does NOT reproduce on Linux - the Linux frontend and run-wbx exit 64/1 cleanly on the same refused pkg with the same core, broken or fixed - and the Windows SUCCESS path (Super Stardust, no licence) tears down clean (exit 1, no diag), matching the reporter (demos compile, licensed crash). So (B) is a Windows-only host-side heap corruption planted on the refused-init path and surfacing when ntdll walks the heap at process exit; the stuck 1-thread Chimera.exe it leaves cannot be taskkill'd. Not localized: Linux ASan on `chimera-run` OOMs the box under the mandated 16-18G cap (SKIP, cap not raised), the fault is Windows-only so Linux gdb/valgrind cannot see it, and Windows PageHeap/gflags via an IFEO key was refused as persistence. Next step for whoever has the box: Application Verifier or PageHeap on Chimera.exe, then the abort/free is in `ce_session_free`/`wbx_destroy_host` of a session whose Init returned 0 (created + mounted + Init'd, never sealed).
 
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
