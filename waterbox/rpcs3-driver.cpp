@@ -260,7 +260,7 @@ namespace
   // the renderer: what the project asked for, and whether a GPU answers
   bool s_renderer_opengl = false;
   bool s_gpu = false;
-  bool s_write_color_buffers = true;
+  bool s_write_color_buffers = false;
   char s_spu_decoder[16] = "asmjit";
   char s_ppu_decoder[16] = "interpreter";
   // a precompile session: boot, compile every Nth module of the sweep, stop

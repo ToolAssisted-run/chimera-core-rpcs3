@@ -121,7 +121,7 @@ ECL_EXPORT int Init(void)
   chimera_rpcs3_set_ppu_decoder(ppuDecoder);
   // whether finished render targets are written back into the console's
   // memory, where a game that reads its own picture expects them
-  chimera_rpcs3_set_write_color_buffers(wbx_setting_bool("writeColorBuffers", 1));
+  chimera_rpcs3_set_write_color_buffers(wbx_setting_bool("writeColorBuffers", 0));
   // which controller ports have a pad in them (port1..port7): before the pad
   // handler binds, which is at boot, and before the frontend asks which
   // controls exist, which is after Init
