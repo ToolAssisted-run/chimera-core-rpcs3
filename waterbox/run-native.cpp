@@ -294,6 +294,54 @@ int main(int argc, char** argv)
   }
   if (getenv("CHIMERA_DEBUG"))
     chimera_rpcs3_debug_ppu();
+  // CHIMERA_DEBUG_THREADS=1: the same report run-wbx's DebugThreads gives -
+  // every CPU thread, where it is and what lv2 wait it is parked in - for a
+  // machine that has gone quiet by the end of the run.
+  if (getenv("CHIMERA_DEBUG_THREADS"))
+    chimera_rpcs3_debug_threads();
+  // CHIMERA_DISASM=0xADDR:N[,0xADDR:N...]: the guest's own instructions there,
+  // for a thread that is spinning rather than parked - the loop says what it
+  // polls and nothing else does.
+  if (const char* spec = getenv("CHIMERA_DISASM"))
+  {
+    unsigned long a = 0;
+    int n = 0;
+    while (*spec)
+    {
+      if (sscanf(spec, "%lx:%d", &a, &n) == 2 || sscanf(spec, "0x%lx:%d", &a, &n) == 2)
+      {
+        fprintf(stderr, "== guest code at %08lx (%d)\n", a, n);
+        chimera_rpcs3_disasm((uint32_t)a, n);
+      }
+      const char* comma = strchr(spec, ',');
+      if (!comma)
+        break;
+      spec = comma + 1;
+    }
+  }
+  // CHIMERA_PEEK=[@]ADDR[+OFF]:N[,...]: guest memory as big-endian words; the
+  // leading @ dereferences ADDR first, so a field of an object a global points
+  // at can be read without a second run.
+  if (const char* spec = getenv("CHIMERA_PEEK"))
+  {
+    while (*spec)
+    {
+      const int deref = (*spec == '@');
+      const char* p = spec + deref;
+      unsigned long a = 0;
+      long off = 0;
+      int n = 0;
+      if (sscanf(p, "%lx+%lx:%d", &a, (unsigned long*)&off, &n) == 3 || sscanf(p, "%lx:%d", &a, &n) == 2)
+      {
+        fprintf(stderr, "== guest memory at %s%08lx+%ld (%d)\n", deref ? "@" : "", a, off, n);
+        chimera_rpcs3_peek((uint32_t)a, (int32_t)off, n, deref);
+      }
+      const char* comma = strchr(spec, ',');
+      if (!comma)
+        break;
+      spec = comma + 1;
+    }
+  }
   if (cacheDir)
     fprintf(stderr, "compile cache: %llu stored, %llu fetched (%s)\n", (unsigned long long)chimera_rpcs3_cache_stored(), (unsigned long long)chimera_rpcs3_cache_fetched(), chimera_cache_host_description());
   if (chimera_rpcs3_fault_count())
