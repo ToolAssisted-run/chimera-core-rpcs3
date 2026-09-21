@@ -2040,3 +2040,150 @@ OOM-killed and still takes the gate's own shell with it, so the summary line
 never prints and every leg after it is silently absent - but it lets a run that
 needs its summary say which three legs it gave up, instead of ending without
 one (~/chimera/docs/gates.md, modes A and G).
+
+## What both of #125's games are really waiting for (2026-09-21)
+
+With the limiter gone (above) the RSX is no longer the problem: the FIFO drains
+in both reproducers, the fence labels advance, and both games then stop in the
+same place - `main_thread` parked in `sys_timer_usleep`, every worker in
+`sys_event_queue_receive`, the RSX idle, held for 150 seconds of machine time
+with the TTY not growing by a byte (Mortal Kombat 2453 bytes at frame 1500 and
+still 2453 at frame 9000).
+
+**It is not a graphics stall at all. Both games are stuck in Unreal Engine 3's
+SPU garbage collection**, and the cause is that a lock-free barrier written for
+a machine with six SPUs running side by side cannot terminate on a scheduler
+that runs one thread at a time.
+
+### What main_thread polls, read off the guest
+
+`CHIMERA_DISASM` at `main_thread`'s return address gives the loop. Injustice,
+at `0x00efcb24` (Mortal Kombat's is the same routine at `0x0133c6a0` - same
+shape, same calls, different addresses):
+
+```
+  n1 = cellSyncLFQueueSize(q1)          # 0x1503f64, an import stub
+  n2 = cellSyncLFQueueSize(q2)          # same stub, second queue
+  if (error) return
+  if (n1 + n2 != 0) { usleep(50); continue }      # 0xefcbc4
+  old = atomic_dec(counter)             # lwarx/stwcx at 0xefcb38, r20+r17
+  if (old == 1) { recheck both queues; if still empty -> DONE }
+  usleep(50)                            # 0xefcb9c - sleeps DECREMENTED
+  atomic_inc(counter)                   # 0xefcbac
+  continue
+```
+
+`main_thread`'s `cia` is inside that `usleep` with `lr = 0xefcbac`, which is
+the return address of the call at `0xefcb9c` - the one on the `old != 1` path.
+So the queues ARE empty and the thing it is waiting for is the counter: a
+participant count at `0x35a53b00` (Injustice) / `0x35dd1f00` (MK) that must
+reach 1, meaning "everyone else is idle too".
+
+The counter reads 3 or 4 at every sample, at frame 300, 600, 900 and 9000.
+
+### Who writes it: measured, not inferred
+
+Two hardware watchpoints under gdb (`gdb --args`, `ptrace_scope` is 1 so `-p`
+cannot attach), one on the address through `vm::g_base_addr` and one through
+`g_sudo_addr`, logging the writer's backtrace. In the single frame 71 of
+Injustice:
+
+| writer | writes | through |
+|---|---|---|
+| SPU[0x0000100] | 10,201 | `spu_thread::do_putllc` |
+| SPU[0x2000100] | 10,197 | `spu_thread::do_putllc` |
+| SPU[0x3000100] | 10,128 | `spu_thread::do_putllc` |
+| SPU[0x1000100] | 10,071 | `spu_thread::do_putllc` |
+| PPU[0x1000000] | 85 | `ppu_stwcx` |
+
+40,682 writes in one frame, values cycling 2, 3, 4 (1 appears 120 times, 5
+appears 29). The counter is not stuck and nobody has died: it is being written
+tens of thousands of times a frame and never settles.
+
+`CHIMERA_SPU_LS` dumps each SPU's local store, and the strings in it name the
+code: `SPURSTASK MODULE`, `SPU Size mismatch in GCMarkTask!
+FGCMarkTaskSetParameters`, `FQueueEntry`, `Error during cellSyncLFQueueSize`.
+It is UE3's garbage-collector mark task running as a SPURS task - and MK's last
+TTY line is `Log: () Collecting garbage`.
+
+Disassembling the SPU side (`CHIMERA_SPU_DISASM`) gives the other half of the
+protocol, at `0x6350`:
+
+```
+  brsl 0x6770        # atomic_dec(counter), GETLLAR/PUTLLC at 0x67c8..0x6820
+  ceqi r4,r3,1       # was it 1?
+  brnz 0x64e0        # yes: I am the last, go and finish
+  brsl 0x6830        # no: atomic_inc(counter) IMMEDIATELY
+  br   0x58b4        # and round again
+```
+
+There is the asymmetry that decides it. **The PPU sleeps while decremented**;
+each SPU re-increments about ten instructions after decrementing. So an SPU's
+"I am idle" state exists for ten instructions of a slice that is 80,000
+instructions long, and the only participant that can observe it is one that
+happens to run inside that window. On a real PS3 the six SPUs run at the same
+time and the count genuinely reaches 1; here it cannot, so nobody is ever last,
+so the GC never completes and the map load never finishes.
+
+### Proved by making the participants visible to each other
+
+One experimental line, in `spu_thread::process_mfc_cmd`'s `MFC_PUTLLC_CMD`
+arm: after a successful atomic store, give way. Nothing else changed.
+
+| | TTY lines | gcm label 255 | where it got to |
+|---|---|---|---|
+| MK, drained, no yield | 60 | 46 | `Collecting garbage`, forever |
+| MK, limiter left ON | 128 | 38 | the legal screen (RSX starved instead) |
+| **MK, yield on atomics** | **185** | **1582** | its own frame 2222, streaming sound packages |
+| Injustice, no yield | 0 | 39 | nothing |
+| **Injustice, yield** | 0 | **7817** | audio digest changing, 62 threads |
+
+Both games are through the wall and running. The instrument was run against
+itself first (~/chimera/docs/gates.md, mode H): the SAME binary with the
+experiment's environment variable unset produces frame lines BYTE-IDENTICAL to
+the build without the patch, in both games, so what moved them is the yield and
+not the rebuild.
+
+It also explains the limiter asymmetry that looked so strange: with the limiter
+ON, MK got FURTHER (past the GC, to the legal screen) even though its RSX was
+crawling. The limiter's sleep is machine time on a thread that is not executing
+instructions, so it changes how often each participant is scheduled relative to
+the others - and some of those schedules do let the barrier close. It was never
+the graphics that helped; it was the accident of a different interleaving.
+
+### Not committed, and why
+
+The one-line yield is **not** the fix to ship, and it is not committed:
+
+- **Cost.** 1500 frames of MK take 122 s without it and 727 s with it; Injustice
+  133 s against 769 s. Roughly 40,000 scheduler switches a frame, for every
+  game that uses SPU atomics, whether or not it has this problem.
+- **It moves every digest in the core**, on every title that touches an SPU
+  atomic - a second core-wide rebaseline on the same day as the limiter's.
+- **The placement is not established.** "Give way after every successful
+  PUTLLC" is the sledgehammer that proves the mechanism. The narrow version -
+  give way only when another CPU holds a reservation on the line just written,
+  which is exactly when a participant is waiting to observe it - should be as
+  correct and far cheaper, and it has not been measured.
+
+What IS established, and is the thing to build on: **a lock-free protocol in
+which a participant publishes a state and retracts it a few instructions later
+cannot make progress under a scheduler that runs one thread to a long quantum.**
+That is a property of vsched, not of these two games, and UE3's GC barrier will
+not be the only thing built this way.
+
+### Ruled out by measurement, for #125
+
+- **The RSX and the FIFO.** `put == get`, FIFO idle, label advancing (above).
+- **A fixed phase relation in the scheduler.** vsched rebuilt with a
+  deterministic pseudo-random slice - an LCG giving between 1/8 and 9/8 of the
+  usual 80,000 instructions, so no two switches land alike - reproduces the
+  same stall in both games (MK label 0x26, Injustice counter 4, both main
+  threads in the same loop). A different schedule is not enough; what is needed
+  is a switch inside a ten-instruction window.
+- **The SPU decoder.** asmjit instead of the interpreter: same stall, same
+  place, in both games.
+- **The frame limiter.** Fixed, and the stall is unchanged by it except for
+  which wall each game reaches first.
+- **Tile registers, ZCULL, the trophy thread** - by the previous round, on the
+  issue.
