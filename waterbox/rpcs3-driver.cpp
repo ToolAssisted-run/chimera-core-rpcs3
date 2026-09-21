@@ -14,6 +14,7 @@
 #include "Emu/Memory/vm.h"
 #include "Utilities/JIT.h"
 #include "Emu/Cell/PPUThread.h"
+#include "Emu/Cell/PPUDisAsm.h"
 #include "Emu/Cell/SPUThread.h"
 #include "Emu/RSX/Null/NullGSRender.h"
 #include "Emu/RSX/GSFrameBase.h"
@@ -1801,6 +1802,56 @@ int chimera_rpcs3_is_running(void)
   return Emu.IsRunning() ? 1 : 0;
 }
 
+// Debugging: the guest's own PPU code, disassembled, to stderr. A thread that
+// is not parked in an lv2 wait but spinning is polling something, and the only
+// place that says what is the loop itself.
+void chimera_rpcs3_disasm(uint32_t addr, int count)
+{
+  PPUDisAsm dis(cpu_disasm_mode::normal, vm::g_sudo_addr);
+  for (int i = 0; i < count; i++)
+  {
+    const u32 pc = addr + i * 4;
+    if (!vm::check_addr(pc, vm::page_readable, 4))
+    {
+      fprintf(stderr, "  %08x: unmapped\n", pc);
+      continue;
+    }
+    dis.disasm(pc);
+    fprintf(stderr, "  %08x: %08x  %s\n", pc, +*vm::get_super_ptr<const be_t<u32>>(pc), dis.last_opcode.c_str());
+    dis.last_opcode.clear();
+  }
+  fflush(stderr);
+}
+
+// Debugging: guest memory as big-endian words. A spinning thread polls an
+// address, and the address is usually a field of an object a register points
+// at, so one level of indirection is allowed: "@ADDR+OFF" reads the word at
+// ADDR and dumps from there plus OFF.
+void chimera_rpcs3_peek(uint32_t addr, int32_t offset, int count, int deref)
+{
+  u32 base = addr;
+  if (deref)
+  {
+    if (!vm::check_addr(addr, vm::page_readable, 4))
+    {
+      fprintf(stderr, "  %08x: unmapped (cannot dereference)\n", addr);
+      return;
+    }
+    base = *vm::get_super_ptr<const be_t<u32>>(addr);
+    fprintf(stderr, "  [%08x] = %08x\n", addr, base);
+  }
+  base += offset;
+  for (int i = 0; i < count; i++)
+  {
+    const u32 at = base + i * 4;
+    if (!vm::check_addr(at, vm::page_readable, 4))
+      fprintf(stderr, "  %08x: unmapped\n", at);
+    else
+      fprintf(stderr, "  %08x: %08x\n", at, +*vm::get_super_ptr<const be_t<u32>>(at));
+  }
+  fflush(stderr);
+}
+
 // Debugging: every CPU thread, where it is and what it last called, to
 // stderr. For a machine that has gone quiet: a PPU parked in an lv2 wait
 // names the HLE function it is parked in, which is usually the whole answer.
@@ -1809,6 +1860,34 @@ void chimera_rpcs3_debug_threads(void)
   fprintf(stderr, "== machine: status=%d time=%lluus vsched=%d threads switches=%llu\n",
           static_cast<int>(Emu.GetStatus(false)), (unsigned long long)(vsched_now_ns() / 1000),
           vsched_thread_count(), (unsigned long long)vsched_switch_count());
+  // The RSX: where its FIFO is and what it is sitting on. A machine whose
+  // picture has stopped is often a pushbuffer the RSX has not finished, and
+  // put != get says so at a glance.
+  if (const auto render = rsx::get_current_renderer(); render && render->dma_address)
+  {
+    const auto& dma = *vm::_ptr<RsxDmaControl>(render->dma_address);
+    const u32 get_pos = dma.get.load();
+    fprintf(stderr, "  RSX put=%08x get=%08x ref=%u state=%08x idle=%d cmd=%08x args_left=%u"
+                    " fifo_pos=%08x label_addr=%08x async_flip=%u\n",
+            u32{dma.put.load()}, get_pos, u32{dma.ref.load()}, static_cast<u32>(render->state.load()),
+            render->is_fifo_idle() ? 1 : 0,
+            render->fifo_ctrl ? render->fifo_ctrl->last_cmd() : 0u,
+            render->fifo_ctrl ? render->fifo_ctrl->get_remaining_args_count() : 0u,
+            render->fifo_ctrl ? render->fifo_ctrl->get_pos() : 0u,
+            render->label_addr,
+            static_cast<u32>(render->async_flip_requested.load()));
+    // the command words the RSX is standing on, in the IO-mapped pushbuffer
+    for (int i = -2; i <= 5; i++)
+    {
+      const u32 off = get_pos + i * 4;
+      const u32 ea = render->iomap_table.ea[off >> 20] == umax ? umax : render->iomap_table.get_addr(off);
+      if (ea == umax || !vm::check_addr(ea, vm::page_readable, 4))
+        fprintf(stderr, "    fifo %08x: unmapped\n", off);
+      else
+        fprintf(stderr, "    fifo %08x (ea %08x): %08x%s\n", off, ea,
+                +*vm::get_super_ptr<const be_t<u32>>(ea), i == 0 ? "  <== get" : "");
+    }
+  }
   idm::select<named_thread<ppu_thread>>([](u32 id, ppu_thread& p)
   {
     const auto name = p.ppu_tname.load();

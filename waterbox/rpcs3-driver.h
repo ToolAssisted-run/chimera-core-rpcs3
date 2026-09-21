@@ -82,6 +82,14 @@ void chimera_rpcs3_debug_ppu(void);
 // Every CPU thread, where it is and what it last called - for a machine that
 // has gone quiet. Written to stderr; never machine state.
 void chimera_rpcs3_debug_threads(void);
+// The guest's own instructions and memory, for a thread that is spinning
+// rather than parked in an lv2 wait: the loop says what it polls, and the
+// polled word says whether the wait is reasonable. peek reads big-endian
+// words; with deref it reads the word at addr first and dumps from there plus
+// offset, which is how a field of an object a global points at is reached in
+// one go. Both to stderr, both diagnosis, never machine state.
+void chimera_rpcs3_disasm(uint32_t addr, int count);
+void chimera_rpcs3_peek(uint32_t addr, int32_t offset, int count, int deref);
 
 // The renderer the project asked for ("null" or "opengl-hw"), before init;
 // opengl-hw draws only when a GPU bridge was installed (waterbox/gl-shim.cpp)
