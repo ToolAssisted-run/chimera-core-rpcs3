@@ -133,7 +133,7 @@ jobs:
           echo "sha=$(git -C extern/rpcs3 rev-parse HEAD:3rdparty/llvm/llvm)" >> "$GITHUB_OUTPUT"
           echo "rpcs3=$(git -C extern/rpcs3 rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache LLVM (hours to build; changes only when the pin does)
+      - name: Cache the host LLVM (hours to build; changes only when the pin does)
         # The v2 in the key is load-bearing. Caches under the old key hold a
         # build/llvm-native with ONLY llvm-tblgen in it, because that was all
         # this job ever built; actions/cache re-saves nothing on an exact key
@@ -142,10 +142,23 @@ jobs:
         # of it. Bumping the key makes the first run store the full tree.
         uses: actions/cache@v4
         with:
-          path: |
-            build/llvm-native
-            build/llvm-guest
-          key: rpcs3-llvm-v2-${{ runner.os }}-${{ hashFiles('waterbox/build-llvm.sh') }}-${{ steps.llvm-pin.outputs.sha }}
+          path: build/llvm-native
+          key: rpcs3-llvm-native-v2-${{ runner.os }}-${{ hashFiles('waterbox/build-llvm.sh') }}-${{ steps.llvm-pin.outputs.sha }}
+
+      - name: Cache the guest LLVM (also keyed on the guest toolchain)
+        # A separate cache from the host's, because the GUEST's is compiled
+        # with the miniBox sysroot's flags and has to be rebuilt when they
+        # change. It was not, and that cost every RPCS3 push from 2026-09-21
+        # onward: -mno-red-zone reached the sysroot, this key did not move,
+        # every run restored a guest LLVM built without it, and check-wbx
+        # refused the core over the 3,192 red-zone operands that LLVM alone
+        # carried. Six consecutive runs red, nothing published. The flag lives
+        # in miniBox's meson.build and the musl specs generator, so the key
+        # hashes both; the host LLVM is untouched by them and keeps its cache.
+        uses: actions/cache@v4
+        with:
+          path: build/llvm-guest
+          key: rpcs3-llvm-guest-v3-${{ runner.os }}-${{ hashFiles('waterbox/build-llvm.sh', 'chimera-checkout/extern/chimera-common-minibox/meson.build', 'chimera-checkout/extern/chimera-common-minibox/extern/musl/tools/musl-gcc.specs.sh') }}-${{ steps.llvm-pin.outputs.sha }}
 
       - name: Cache the native reference's CMake tree
         # rpcs3_emu built a second time for the HOST. Unlike LLVM this one
