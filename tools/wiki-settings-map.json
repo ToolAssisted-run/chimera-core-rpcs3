@@ -1,0 +1,261 @@
+{
+  "_comment": [
+    "Every Setting name the RPCS3 wiki's per-game Configuration tables use, and",
+    "what it becomes in this core. 'setting' names the declared setting it maps",
+    "onto, with 'values' translating the wiki's option text; null means the core",
+    "does not expose it, with 'why'. tools/wiki-import.py REFUSES a harvest that",
+    "contains a name not listed here, so the wiki cannot grow a recommendation",
+    "that this core silently ignores. A value missing from 'values' is reported",
+    "per game as unsupported - it is never rounded to the nearest option."
+  ],
+  "Accurate PPU 128 reservations": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Accurate RSX reservation access": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Accurate SPU DMA": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Allow Host GPU Labels": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Anisotropic filter": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Anti-aliasing": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Asynchronous texture streaming": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Audio buffer duration": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Audio format": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Camera input": {
+    "setting": null,
+    "why": "no camera device is emulated here"
+  },
+  "Camera settings": {
+    "setting": null,
+    "why": "no camera device is emulated here"
+  },
+  "Debug console mode": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Default resolution": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Delay each odd MFC Command": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Disable SPU GETLLAR Spin Optimization": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Disable ZCull occlusion queries": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Disable vertex cache": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Driver wake-up delay": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Emulate Special Depth Comparison": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Enable SPU loop detection": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Enable buffering": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Enable time stretching": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Firmware libraries": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Force CPU blit emulation": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Framelimit": {
+    "setting": null,
+    "why": "the frame rate is the frontend's, fixed by the movie; a limiter would tie the machine to the host clock"
+  },
+  "Handle RSX memory tiling": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Keyboard handler": {
+    "setting": null,
+    "why": "input comes from the frontend's controllers"
+  },
+  "LOD bias offset": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Maximum SPURS threads": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Microphone type": {
+    "setting": null,
+    "why": "no microphone device is emulated here"
+  },
+  "Mouse handler": {
+    "setting": null,
+    "why": "input comes from the frontend's controllers"
+  },
+  "Move handler": {
+    "setting": null,
+    "why": "no PlayStation Move device is emulated here"
+  },
+  "Multithreaded RSX": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Network Status": {
+    "setting": null,
+    "why": "the machine is offline by construction"
+  },
+  "Network status": {
+    "setting": null,
+    "why": "the machine is offline by construction"
+  },
+  "PPU decoder": {
+    "setting": "ppu_decoder",
+    "values": {
+      "Interpreter (static)": "interpreter",
+      "Recompiler (LLVM)": "llvm"
+    }
+  },
+  "PPU thread count": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "PSN Status": {
+    "setting": null,
+    "why": "the machine is offline by construction"
+  },
+  "PSN status": {
+    "setting": null,
+    "why": "the machine is offline by construction"
+  },
+  "Preferred SPU threads": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "RSX FIFO accuracy": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Read color buffers": {
+    "setting": "readColorBuffers",
+    "values": {
+      "On": true,
+      "Off": false
+    }
+  },
+  "Read depth buffer": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Renderer": {
+    "setting": "renderer",
+    "values": {
+      "OpenGL": "opengl-hw"
+    }
+  },
+  "Resolution scale": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Resolution scale threshold": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "SPU block size": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "SPU decoder": {
+    "setting": "spu_decoder",
+    "values": {
+      "Interpreter (static)": "interpreter",
+      "Recompiler (ASMJIT)": "asmjit"
+    }
+  },
+  "SPU xfloat accuracy": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Shader mode": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Shader quality": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "Sleep timers accuracy": {
+    "setting": null,
+    "why": "timing is pinned for reproducibility and not exposed"
+  },
+  "Strict rendering mode": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "VBlank NTSC Fixup": {
+    "setting": null,
+    "why": "the vblank rate is pinned and not exposed"
+  },
+  "VSync": {
+    "setting": null,
+    "why": "the frame rate is the frontend's, fixed by the movie"
+  },
+  "Vblank rate": {
+    "setting": null,
+    "why": "the vblank rate is pinned; changing it is a different machine and is not exposed"
+  },
+  "Write color buffers": {
+    "setting": "writeColorBuffers",
+    "values": {
+      "On": true,
+      "Off": false
+    }
+  },
+  "Write depth buffer": {
+    "setting": null,
+    "why": "not exposed by this core"
+  },
+  "ZCULL accuracy": {
+    "setting": null,
+    "why": "not exposed by this core"
+  }
+}

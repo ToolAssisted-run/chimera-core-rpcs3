@@ -43,7 +43,7 @@ SZ_SRCS := 7zAlloc.c 7zArcIn.c 7zBuf.c 7zCrc.c 7zCrcOpt.c 7zDec.c 7zStream.c Cpu
            LzmaDec.c Lzma2Dec.c Bcj2.c Bra.c Bra86.c BraIA64.c Delta.c Ppmd7.c Ppmd7Dec.c
 SZ_OBJS := $(patsubst %.c,$(O)/7z/%.o,$(SZ_SRCS))
 
-OBJS := $(O)/rpcs3-driver.o $(O)/archive.o $(O)/sevenzip.o $(SZ_OBJS) $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/wbx-entry.o $(O)/guest-syscalls.o $(O)/vsched.o $(O)/gl-shim.o $(O)/gl-bridge-guest.o $(O)/gl-traps.o $(O)/glad-gl.o $(O)/generated-assets.o $(UPSTREAM_OBJS)
+OBJS := $(O)/rpcs3-driver.o $(O)/archive.o $(O)/sevenzip.o $(SZ_OBJS) $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/wbx-entry.o $(O)/guest-syscalls.o $(O)/vsched.o $(O)/gl-shim.o $(O)/gl-bridge-guest.o $(O)/gl-traps.o $(O)/glad-gl.o $(O)/generated-assets.o $(O)/wiki-compat.o $(UPSTREAM_OBJS)
 
 all: $(OBJS)
 
@@ -93,6 +93,12 @@ generated-assets.cpp: gen-assets.py $(ROOT)/extern/rpcs3/rpcs3/Emu/localized_str
 	python3 gen-assets.py $(ROOT)/extern/rpcs3/bin/Icons/ui $@ $(ROOT)/extern/rpcs3/rpcs3/Emu/localized_string_id.h $(ROOT)/extern/rpcs3/rpcs3/rpcs3qt/localized_emu.h
 
 $(O)/generated-assets.o: generated-assets.cpp chimera-assets.h
+
+# what the RPCS3 wiki says about each title, generated from the committed table
+wiki-compat.cpp: gen-wiki-compat.py wiki-compat.json
+	python3 gen-wiki-compat.py wiki-compat.json $@
+
+$(O)/wiki-compat.o: wiki-compat.cpp wiki-compat.h
 	@mkdir -p $(O)
 	g++ $(SPECS) $(WBFLAGS) -I. $(CXXINCS) -c -o $@ $<
 

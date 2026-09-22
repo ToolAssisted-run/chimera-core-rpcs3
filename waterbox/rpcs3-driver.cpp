@@ -80,6 +80,7 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 #include "sevenzip.h"
 #include "memfs.h"
 #include "rpcs3-driver.h"
+#include "wiki-compat.h"
 #include <unistd.h>
 #include "chimera-assets.h"
 #include "cache-bridge.h"
@@ -1649,6 +1650,59 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     });
     g_booted = true;
     return 1;
+  }
+  // WHAT THE RPCS3 WIKI SAYS ABOUT THIS GAME, with where it came from.
+  // The table is a snapshot shipped inside the core (wiki-compat.json, CC BY-SA
+  // 4.0, via tools/wiki-import.py), so it is versioned with the core that reads
+  // it. Four cases, and they must not read alike: a page that recommends
+  // settings, a page that recommends NONE (which is information - the game
+  // needs no tuning), a title the wiki has no page for, and a title the
+  // snapshot does not know at all. Only the last has no compatibility to give.
+  //
+  // This REPORTS; it applies nothing. The recommended values are named in the
+  // project's own setting names so the reader can set them, but the project's
+  // settings are what this machine runs on.
+  {
+    const std::string tid = Emu.GetTitleID();
+    const chimera_wiki_entry* w = chimera_wiki_find(tid.c_str());
+    std::string line;
+    if (tid.empty())
+      line = "RPCS3 compatibility: this executable carries no title id, so it cannot be looked up.";
+    else if (!w)
+      line = fmt::format("RPCS3 compatibility: %s is not in the RPCS3 compatibility list or wiki "
+                         "(snapshot %s); no status or settings are recorded for it.",
+                         tid, chimera_wiki_compat_snapshot);
+    else
+    {
+      // the STATUS is the compatibility list's; the SETTINGS are the wiki's
+      line = fmt::format("RPCS3 compatibility list (%s): %s [%s] is %s.",
+                         chimera_wiki_compat_snapshot, w->title, tid, w->status);
+      if (w->kind == 'p')
+        line += " The RPCS3 wiki has no page for it.";
+      else if (w->kind == 'u')
+        line += fmt::format(" The RPCS3 wiki has a page for it, but this snapshot (%s) did not read it: %s",
+                            chimera_wiki_snapshot, w->page);
+      else
+      {
+        line += fmt::format(" RPCS3 wiki (%s):", chimera_wiki_snapshot);
+        if (w->kind == 'n')
+          line += " no settings are recommended.";
+        else
+        {
+          if (*w->apply && *w->unsupported)
+            line += fmt::format(" recommends %s. Also recommended, but not available in this core: %s.",
+                                w->apply, w->unsupported);
+          else if (*w->apply)
+            line += fmt::format(" recommends %s.", w->apply);
+          else
+            line += fmt::format(" recommends only settings this core does not have: %s.", w->unsupported);
+        }
+        line += fmt::format(" Source: %s (CC BY-SA 4.0)", w->page);
+      }
+    }
+    chimera_log.notice("%s", line);
+    fprintf(stderr, "%s\n", line.c_str());
+    fflush(stderr);
   }
   Emu.Run(true);
   // A third time, and this is the one that counts: Emulator::Run() calls

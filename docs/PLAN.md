@@ -2338,3 +2338,76 @@ not be the only thing built this way.
   taken once at a composite-heavy moment and reused, or one of the wiki's own
   named cases (Demon's Souls and Persona 5 both ask for Write color buffers
   on; Demon's Souls also asks for a resolution-scale threshold).
+
+## What the RPCS3 wiki says about a game, reported at boot (issue #131, 2026-09-22)
+
+When a title boots, the core now prints one line saying what the RPCS3 project
+says about it, and where each fact came from:
+
+    RPCS3 compatibility list (2026-09-22): The Elder Scrolls IV: Oblivion
+    [BLUS30007] is Ingame. RPCS3 wiki (2026-09-22): recommends
+    writeColorBuffers=true. Also recommended, but not available in this core:
+    Resolution scale threshold: 135 x 135. Source:
+    https://wiki.rpcs3.net/index.php?curid=1067 (CC BY-SA 4.0)
+
+The STATUS is the compatibility list's; the SETTINGS are the wiki's. Five
+cases, and they must not read alike:
+
+| Case | What the line says |
+|---|---|
+| page with recommendations | the ones this core can express, then the ones it cannot |
+| page with none | "no settings are recommended" - information: the game needs no tuning |
+| page exists, not read | links it and says this snapshot did not read it |
+| listed, no page | "the RPCS3 wiki has no page for it" |
+| not listed at all | not in the compatibility list or wiki; nothing recorded |
+
+It REPORTS; it applies nothing. Auto-applying would change the machine of every
+existing project whose game is in the table, and a project cannot tell the core
+whether a setting left at its default was chosen - so that is the user's
+decision, not this commit's.
+
+**The data, and how it got here.** Three inputs, all committed so the table can
+be rebuilt without asking anyone again:
+
+1. `tools/wiki-harvest-2026-09-22.json` - the per-game Configuration tables,
+   read in a browser session by `tools/wiki-harvest.js` (the wiki is behind a
+   Cloudflare challenge that a browser passes by being one). 2,178 pages. Only
+   setting names and values; the Notes column is prose and was not kept.
+2. `tools/wiki-ids.json` - every one of the compatibility list's 6,754 title ids
+   and the wiki page it links to, from its public API by
+   `tools/wiki-resolve-ids.py`.
+3. `tools/wiki-settings-map.json` - all 59 setting names the wiki uses, and
+   what each becomes here. `tools/wiki-import.py` REFUSES a harvest containing a
+   name the map does not list.
+
+`tools/wiki-import.py` joins them into `waterbox/wiki-compat.json`, which
+`gen-wiki-compat.py` compiles into the core at build time. Licence and
+attribution travel in the package (`WIKI-DATA-NOTICE.txt`, CC BY-SA 4.0), and
+the derived table is itself released under CC BY-SA 4.0.
+
+**Two findings that shaped it.**
+
+This core exposes five of the wiki's 59 settings (write and read color
+buffers, the PPU and SPU decoders, the renderer). Of 2,344 title ids with
+recommendations, 1,245 have at least one it can express. The rest are named,
+not dropped. One value has nowhere to go: the wiki distinguishes the SPU
+interpreter "static" from "dynamic", and this core's interpreter IS the static
+one, so "dynamic" is reported as unavailable rather than rounded.
+
+The first page list linked only half the titles. The compatibility API answers
+a question about one id with its whole regional family, and the first resolver
+struck the siblings off its to-do list but recorded only the id it had asked
+about - 3,213 of 6,754 ids linked to nothing, Oblivion USA among them. Every
+member of an answer is recorded now, and 6,561 ids link to a page.
+
+**Still open:** 76 linked pages (211 title ids) were never read by the first
+harvest. `rpcs3-wiki-harvest-remaining.js` reads just those; the importer
+merges harvests. Until then those titles report their page as unread.
+
+**Packaging is blocked, and not by this.** check-wbx refuses to package any
+RPCS3 build today: its prebuilt guest libraries (FFmpeg, dav1d, LLVM, LZMA,
+zstd) predate -mno-red-zone. The currently published core carries 35,960
+red-zone operands; this build 22,067, none in the new code. It is a packaging
+lint, not a load-time refusal, so existing cores still run - but they are
+exposed to the Windows exception-delivery corruption that broke the flycast JIT
+until those libraries are rebuilt.

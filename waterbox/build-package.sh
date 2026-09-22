@@ -69,8 +69,9 @@ cp "$here/waterbox.config" "$staging/waterbox.config"
 cp "$here/default_keybinds.json" "$staging/default_keybinds.json"
 cp "$here/file_slots.json" "$staging/file_slots.json"
 
-# No assets: a PS3 core ships no data files of its own; the firmware is the
-# user's and arrives through the firmware channel.
+# No asset FILES: the firmware is the user's and arrives through the firmware
+# channel. The one piece of data this core carries - the RPCS3 wiki table - is
+# compiled into core.wbx (wiki-compat.cpp), and its licence travels below.
 
 # the terms travel with the binary: this package may be downloaded on its
 # own, and the emulator inside it is somebody else's work under somebody

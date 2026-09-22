@@ -1,0 +1,32 @@
+RPCS3 per-game compatibility and recommended settings
+======================================================
+
+This core carries a table of what the RPCS3 project says about each PlayStation 3
+title - its compatibility status and the emulator settings its wiki recommends -
+so it can report them when a game boots. The table is compiled into the core
+from waterbox/wiki-compat.json in the chimera-core-rpcs3 repository.
+
+Title:   RPCS3 Wiki, per-game "Configuration" tables; RPCS3 Compatibility List
+Author:  The contributors of the RPCS3 wiki and compatibility list
+Source:  https://wiki.rpcs3.net/  and  https://rpcs3.net/compatibility
+Licence: The RPCS3 wiki's content is licensed under the Creative Commons
+         Attribution-ShareAlike 4.0 International licence (CC BY-SA 4.0):
+         https://creativecommons.org/licenses/by-sa/4.0/
+
+What was taken, and what was not
+---------------------------------
+Only setting NAMES and option VALUES were kept - facts about a game, such as
+"Write color buffers: On". The Notes column of each table, which is the
+contributors' own prose, was NOT kept. Setting names were translated into this
+core's own setting names by tools/wiki-settings-map.json; each entry links back
+to the wiki page it came from, and the table records the date it was read.
+
+Changes made: the tables were read in a browser session on the snapshot date
+recorded in wiki-compat.json, reduced to names and values, joined to title ids
+through the compatibility list's public API, and translated as described above.
+
+ShareAlike
+----------
+In keeping with the licence, the derived table (waterbox/wiki-compat.json) is
+itself made available under CC BY-SA 4.0. Nothing in it is endorsed by the RPCS3
+project; errors of translation are this core's, not theirs.

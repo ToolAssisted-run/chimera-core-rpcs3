@@ -94,10 +94,16 @@ generated-assets.cpp: gen-assets.py $(ROOT)/extern/rpcs3/rpcs3/Emu/localized_str
 	python3 gen-assets.py $(ROOT)/extern/rpcs3/bin/Icons/ui $@ $(ROOT)/extern/rpcs3/rpcs3/Emu/localized_string_id.h $(ROOT)/extern/rpcs3/rpcs3/rpcs3qt/localized_emu.h
 
 $(O)/generated-assets.o: generated-assets.cpp chimera-assets.h
+
+# what the RPCS3 wiki says about each title, generated from the committed table
+wiki-compat.cpp: gen-wiki-compat.py wiki-compat.json
+	python3 gen-wiki-compat.py wiki-compat.json $@
+
+$(O)/wiki-compat.o: wiki-compat.cpp wiki-compat.h
 	@mkdir -p $(O)
 	$(CXX) -O1 -I. -c -o $@ $<
 
-$(O)/run-native: $(O)/run-native.o $(O)/rpcs3-driver.o $(O)/archive.o $(O)/sevenzip.o $(SZ_OBJS) $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/vsched.o $(O)/gl-shim.o $(O)/gl-bridge-guest.o $(O)/gl-traps.o $(O)/glad-gl.o $(O)/gl-host.o $(O)/cache-host.o $(O)/generated-assets.o $(UPSTREAM_OBJS) $(LIBS)
+$(O)/run-native: $(O)/run-native.o $(O)/rpcs3-driver.o $(O)/archive.o $(O)/sevenzip.o $(SZ_OBJS) $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/vsched.o $(O)/gl-shim.o $(O)/gl-bridge-guest.o $(O)/gl-traps.o $(O)/glad-gl.o $(O)/gl-host.o $(O)/cache-host.o $(O)/generated-assets.o $(O)/wiki-compat.o $(UPSTREAM_OBJS) $(LIBS)
 	$(CXX) -o $@ $(filter %.o,$^) -Wl,--start-group $(LIBS) -Wl,--end-group -lpthread -lm -ldl -lrt -lasound -lEGL
 
 clean:

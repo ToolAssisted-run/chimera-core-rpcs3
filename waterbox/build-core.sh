@@ -64,7 +64,7 @@ g++ -specs "$sr/lib/musl-gcc.specs" -mcmodel=large -fno-pic -fno-pie \
 	"$here"/obj-guest/upstream/Input/pad_thread.o "$here"/obj-guest/upstream/Input/product_info.o \
 	"$here"/obj-guest/upstream/Input/ps_move_tracker.o "$here"/obj-guest/upstream/Input/ps_move_config.o \
 	"$here"/obj-guest/upstream/rpcs3_version.o \
-	"$here"/obj-guest/gl-shim.o "$here"/obj-guest/gl-bridge-guest.o "$here"/obj-guest/gl-traps.o "$here"/obj-guest/glad-gl.o "$here"/obj-guest/generated-assets.o \
+	"$here"/obj-guest/gl-shim.o "$here"/obj-guest/gl-bridge-guest.o "$here"/obj-guest/gl-traps.o "$here"/obj-guest/glad-gl.o "$here"/obj-guest/generated-assets.o "$here"/obj-guest/wiki-compat.o \
 	"$mbuild/source/guest/cxxglue.c.o" "$mbuild/source/guest/emulibc.c.o" \
 	-Wl,--start-group $libs -Wl,--end-group \
 	-L"$sr/lib" -lstdc++ -lgcc -lgcc_eh -lc

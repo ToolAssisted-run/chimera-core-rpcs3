@@ -145,6 +145,14 @@
       "commit": "{submodule:extern/rpcs3/3rdparty/llvm/llvm}",
       "file": "extern/rpcs3/3rdparty/llvm/llvm/llvm/LICENSE.TXT",
       "sourceUrl": "https://github.com/llvm/llvm-project/archive/{commit}.tar.gz"
+    },
+    {
+      "name": "RPCS3 wiki and compatibility list (per-game data)",
+      "license": "CC-BY-SA-4.0",
+      "url": "https://wiki.rpcs3.net/",
+      "commit": "{selfCommit}",
+      "file": "waterbox/WIKI-DATA-NOTICE.txt",
+      "sourceUrl": "https://github.com/ToolAssisted-run/chimera-core-rpcs3/blob/{commit}/waterbox/wiki-compat.json"
     }
   ]
 }
