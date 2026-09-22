@@ -68,6 +68,7 @@ import random
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -124,14 +125,41 @@ def page_name(title):
     return title.strip().replace(" ", "_")
 
 
-def wayback_url(page):
+def wayback_url(page, tries=4):
+    """The archived copy of a page, or None - and ASKING is distinguished from
+    being told no.
+
+    This returned None on any exception once, and the archive answers 429 when
+    it has had enough: a run over two thousand pages then reported almost all
+    of them unarchived, including two this very session had read. An error that
+    wears the costume of an absence is gates.md mode C, and it produced a
+    confidently wrong list. So a 429 is backed off and retried, and anything
+    still unresolved raises rather than quietly counting as missing.
+    """
     quoted = urllib.parse.quote(f"wiki.rpcs3.net/index.php?title={page}", safe="")
-    try:
-        got = fetch_json(WAYBACK_AVAIL.format(quoted), timeout=45)
-    except Exception:  # noqa: BLE001
-        return None
-    closest = got.get("archived_snapshots", {}).get("closest", {})
-    return closest.get("url") if closest.get("available") else None
+    delay = 5.0
+    for attempt in range(tries):
+        try:
+            got = fetch_json(WAYBACK_AVAIL.format(quoted), timeout=45)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 503) and attempt < tries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise WaybackUnavailable(f"{page}: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            if attempt < tries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise WaybackUnavailable(f"{page}: {exc}") from exc
+        closest = got.get("archived_snapshots", {}).get("closest", {})
+        return closest.get("url") if closest.get("available") else None
+    raise WaybackUnavailable(page)
+
+
+class WaybackUnavailable(RuntimeError):
+    """The archive could not be asked - which is not the same as no snapshot."""
 
 
 CONFIG_ANCHOR = 'id="Configuration"'
