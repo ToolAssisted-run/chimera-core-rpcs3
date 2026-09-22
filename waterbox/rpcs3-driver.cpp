@@ -261,6 +261,7 @@ namespace
   bool s_renderer_opengl = false;
   bool s_gpu = false;
   bool s_write_color_buffers = false;
+  bool s_read_color_buffers = false;
   char s_spu_decoder[16] = "asmjit";
   char s_ppu_decoder[16] = "interpreter";
   // a precompile session: boot, compile every Nth module of the sweep, stop
@@ -708,6 +709,7 @@ namespace
       // as the RSX's is: a game that draws from its own picture (Oblivion's
       // save thumbnail) reads pixels there, not black
       g_cfg.video.write_color_buffers.set(s_write_color_buffers);
+      g_cfg.video.read_color_buffers.set(s_read_color_buffers);
       // the flipped image is read back for the frame consumer every frame
       g_recording_mode = recording_mode::rpcs3;
     }
@@ -2036,6 +2038,11 @@ void chimera_rpcs3_debug_ppu(void)
 extern "C" void chimera_rpcs3_set_renderer(const char* name)
 {
   s_renderer_opengl = name && (strcmp(name, "opengl-hw") == 0 || strcmp(name, "opengl") == 0);
+}
+
+extern "C" void chimera_rpcs3_set_read_color_buffers(int on)
+{
+  s_read_color_buffers = on != 0;
 }
 
 extern "C" void chimera_rpcs3_set_write_color_buffers(int on)

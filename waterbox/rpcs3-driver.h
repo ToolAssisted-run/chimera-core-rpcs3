@@ -103,6 +103,7 @@ void chimera_rpcs3_set_ppu_decoder(const char* name);
 // 1 (the default) to write finished color buffers back into the console's
 // memory, where a game that reads its own picture expects them; before init
 void chimera_rpcs3_set_write_color_buffers(int on);
+void chimera_rpcs3_set_read_color_buffers(int on);
 // 1 when the GL renderer is drawing through the bridge
 int chimera_rpcs3_gpu_active(void);
 // a fault on a guest page (address, write?): 1 when the renderer handled it

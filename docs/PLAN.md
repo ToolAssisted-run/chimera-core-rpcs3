@@ -2253,3 +2253,88 @@ not be the only thing built this way.
   Still open: the games do not BOOT yet - the barrier was what stopped them,
   and what they do next has not been looked at. The full gate has not been
   re-run since; `spu:barrier` is the new leg.
+
+- **The wiki's per-game recommendations, and why the core is the bottleneck
+  (2026-09-22, chimera#131).** The ask was to take RPCS3's per-game
+  recommendations as defaults. Three findings, in the order they mattered.
+
+  **1. The machine-readable API has no settings.**
+  `rpcs3.net/compatibility?api=v1&export` is 6754 title ids with four fields
+  each - status, date, update, patchsets - and nothing about configuration.
+  The per-title form (`api=v1&g=ID`) adds title, status, commit, pr, network
+  and a `wiki-id`, and answers for the whole regional family at once. The
+  patchsets are worth having on their own: 4558 official update packages with
+  their SHA1s.
+
+  **2. The settings live on the wiki, which is closed to automation.**
+  Every path on wiki.rpcs3.net answers 403 behind a Cloudflare challenge -
+  api.php, Special:Export, index.php, robots.txt alike - and a browser user
+  agent does not help. Defeating that is not on the table. The Internet
+  Archive serves the pages with no challenge, and holds about half: on a
+  60-title sample (seed 1131), 31 of 55 distinct pages were readable and 11 of
+  those carried a settings table. Extrapolated over roughly 4000 distinct
+  games that is ~2200 pages readable and ~700-800 games with recommendations,
+  with ~600 games' recommendations unreachable. `tools/wiki-settings.py
+  --missing-list` writes those out as links for people to fetch by hand, which
+  is the honest way to close a gap a script should not.
+
+  **3. They are not prose, and that was never the hard part.** The
+  recommendations are a templated table - `Setting | Option | Notes` - with the
+  same introductory sentence on every page. Extraction is mechanical. The hard
+  part is that THIS CORE DECLARES 11 SETTINGS, SEVEN OF WHICH ARE CONTROLLER
+  PORTS, and exactly one of the fifteen setting names the wiki uses has a
+  counterpart here: writeColorBuffers. A harvest today would produce values
+  with nowhere to put them. The database is worth exactly as much as the knobs
+  the core exposes.
+
+  **The triage, then.** The wiki's vocabulary splits cleanly, and the rule is
+  the one from chimera#122: a knob the game can observe is a core setting
+  pinned by the project; a knob that only paces the host has no business here.
+
+  | wiki setting | upstream key | decision |
+  |---|---|---|
+  | Write color buffers | Write Color Buffers | already declared |
+  | Read color buffers | Read Color Buffers | ADD - the RSX reads a target back into console memory, which is memory the game sees |
+  | Resolution scale | Resolution Scale | ADD - xemu's equivalent moved 1.5 MB of guest RAM (chimera#122); expect the same shape |
+  | Resolution scale threshold | Minimum Scalable Dimension | ADD - it decides WHICH targets scale, so it is part of the same machine |
+  | ZCULL accuracy | Relaxed ZCULL Sync | ADD - it changes what the depth query reports, and a game can branch on it |
+  | Anti-aliasing | MSAA | ADD - changes the pixels in a target the game may read back |
+  | SPU block size | SPU Block Size | ADD - recompiler granularity, and this core has just learned how much scheduling granularity matters (patch 0037) |
+  | Framelimit | Frame Limit | NO - pinned to _ps3 deliberately; a limiter that spends the machine's time was chimera#125's other half |
+  | Vblank rate | Vblank Rate | NO - the movie's clock is the machine's, not a preference |
+  | Sleep timers accuracy | Sleep Timers Accuracy | NO - host pacing; "as host" is a determinism hazard by name |
+  | Multithreaded RSX | Multithreaded RSX | NO - vsched is cooperative and single-threaded on purpose |
+  | Asynchronous texture streaming | Asynchronous Texture Streaming | NO - host threading |
+  | Enable buffering | Enable Buffering | NO - audio buffering, host side |
+  | Microphone type | Microphone Type | NO - no such input device here |
+
+  Every ADD has to be measured the #122 way before it is believed: run the
+  setting at two values over the same frames and compare every memory domain,
+  the audio, the lag count and the picture. A setting that changes memory is
+  part of the machine and its description must say so; one that changes only
+  the picture is a display option; one that changes neither is inert and gets
+  reported rather than shipped.
+
+  **readColorBuffers is declared and wired (2026-09-22), and NOT yet proved.**
+  It is the read counterpart of a setting this core already had, applied at the
+  same place - `g_cfg.video.read_color_buffers` in init, line 711, well before
+  `Emu.BootGame` - and the guest reads it (`readColorBuffers` is in the built
+  core.wbx, which is newer than the wbx-entry that reads it: the instrument was
+  checked before the result was believed).
+
+  What the measurement says so far: on Resident Evil 5 through the GL bridge,
+  120 frames, both values give byte-identical RAM, an identical picture and an
+  identical audio digest. That is NOT evidence the setting is inert. At frame
+  120 that machine is still booting - its lag counter stands at 118 - so
+  nothing has yet drawn from a buffer it filled earlier, which is the only
+  thing this setting changes. It is a subject that cannot tell, which is
+  gates.md mode F, and the honest reading is "not yet measured" rather than
+  "no effect".
+
+  What a real measurement needs is a game in gameplay, and chimera#128 showed
+  what that costs here: Dengeki Bunko took 5300 frames and about nine minutes
+  a run to reach its title screen natively, and the same disc OOM-killed a
+  16 GiB sandbox before frame 1300 on GL. So this wants either a savestate
+  taken once at a composite-heavy moment and reused, or one of the wiki's own
+  named cases (Demon's Souls and Persona 5 both ask for Write color buffers
+  on; Demon's Souls also asks for a resolution-scale threshold).
