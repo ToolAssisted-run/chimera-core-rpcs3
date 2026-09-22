@@ -110,10 +110,12 @@
   function finish(all, reason) {
     const withSettings = Object.values(all).filter((v) => v.settings && v.settings.length).length;
     const none = Object.values(all).filter((v) => v.settings && !v.settings.length).length;
-    const noSection = Object.values(all).filter((v) => v.settings === null).length;
+    const noPage = Object.values(all).filter((v) => v.noPage).length;
+    const noSection = Object.values(all).filter((v) => v.settings === null && !v.noPage).length;
     console.log(`%c${reason}: ${Object.keys(all).length} pages read, ` +
                 `${withSettings} with settings, ${none} with an empty table, ` +
-                `${noSection} with no Configuration section`,
+                `${noSection} with no Configuration section, ` +
+                `${noPage} with no wiki page at all`,
                 'font-weight:bold');
     download({ source: 'wiki.rpcs3.net, read in a browser session',
                licence: 'page content CC BY-SA 4.0; only setting names and values are kept',
@@ -137,10 +139,25 @@
         : `/index.php?title=${encodeURIComponent(page.title.replace(/ /g, '_'))}`;
       try {
         const res = await fetch(url, { credentials: 'same-origin' });
+        if (res.status === 404) {
+          // A TITLE WITH NO PAGE IS A FACT, NOT A FAILURE. The page list comes
+          // from the compatibility API, which knows games the wiki has never
+          // had an article for, so a 404 is simply "nobody wrote one". Record
+          // it and carry on.
+          //
+          // This used to `break` along with every other non-ok status, so one
+          // missing article stopped the whole run and the message blamed an
+          // expired clearance - which sent the reader to reload a tab that was
+          // working perfectly. It cost a 2,178-page harvest 826 pages.
+          done[key] = { title: page.title, ids: page.ids || [],
+                        status: page.status || null, settings: null, noPage: true };
+          localStorage.setItem(DONE_KEY, JSON.stringify(done));
+          continue;
+        }
         if (!res.ok) {
-          // A 403 here means the clearance expired: reload the page in this tab,
-          // let the check pass, and paste the snippet again. Stopping rather
-          // than hammering a gate that is telling us no.
+          // 403 is the clearance expiring, 429 is asking too fast. Both mean
+          // stop: reload the page in this tab, let the check pass, and paste
+          // the snippet again rather than hammering a gate saying no.
           console.error(`stopped at ${page.title}: HTTP ${res.status}. ` +
                         `Reload the tab, let the challenge pass, and paste this again - ` +
                         `it resumes from here.`);
