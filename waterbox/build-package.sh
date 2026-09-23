@@ -106,7 +106,10 @@ with open(path, "w") as f:
 PYVER
 
 # ---- provenance: what built this exact package (inputs only) ----
-gccver="$(gcc -dumpfullversion)"
+# the compiler the guest tree was CONFIGURED with (guest-toolchain.cmake pins
+# gcc-13 where it exists), not whichever gcc is first on PATH
+guest_cxx="$(sed -n 's/^set(CMAKE_CXX_COMPILER "\(.*\)")$/\1/p' "$root"/build/guest/CMakeFiles/*/CMakeCXXCompiler.cmake 2>/dev/null | head -1)"
+gccver="$("${guest_cxx:-gcc}" -dumpfullversion)"
 musl_version="$(cat "$mb/extern/musl/VERSION" 2>/dev/null || echo unknown)"
 binutils_version="$(ld --version | head -1 | grep -o '[0-9][0-9.]*$' || echo unknown)"
 os_id="$(. /etc/os-release 2>/dev/null && printf '%s %s' "${ID:-unknown}" "${VERSION_ID:-}" || echo unknown)"

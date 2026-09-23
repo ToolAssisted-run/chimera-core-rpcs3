@@ -12,6 +12,17 @@ endif()
 
 execute_process(COMMAND gcc -dumpfullversion OUTPUT_VARIABLE GCCVER OUTPUT_STRIP_TRAILING_WHITESPACE)
 
+# The compiler is PINNED to 13 where it exists, as native.mk and CI pin theirs:
+# g++ 14 dies with an internal compiler error in abseil's any_invocable.h (the
+# NP sources, through protobuf), and treats zstd's undeclared qsort_r - musl
+# 1.2.0 has none; nothing links it - as an error rather than a warning. CI's
+# runner defaults to 13, so a fresh configure there never met either; a fresh
+# configure on a machine whose default is 14 met both.
+find_program(GUEST_GCC NAMES gcc-13 gcc NO_CMAKE_FIND_ROOT_PATH)
+find_program(GUEST_GXX NAMES g++-13 g++ NO_CMAKE_FIND_ROOT_PATH)
+set(CMAKE_C_COMPILER "${GUEST_GCC}")
+set(CMAKE_CXX_COMPILER "${GUEST_GXX}")
+
 # This directory, wherever the checkout happens to be. It used to be one
 # developer's absolute path: on that machine the headers were found (from the
 # WRONG tree, whichever clone that path pointed at), and everywhere else - a
