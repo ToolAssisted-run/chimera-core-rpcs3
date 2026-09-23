@@ -791,20 +791,25 @@ fi
 # frame, while 21,860 bytes sat unread; Injustice drained its buffer but
 # presented eight frames in 1500).
 #
-# Two facts, both read off the machine at the end of the run, and both must
-# hold: the RSX has read everything the game submitted (put == get), and the
-# game's own per-frame fence has moved - gcm label 255, the back-end label an
-# Unreal Engine 3 game writes once per present, has advanced more than once per
-# hundred frames. One fact alone is not a rule: the starved RSX left Mortal
-# Kombat's buffer 87% unread with its label at 37, and Injustice's buffer
-# drained with its label at 8.
+# The rule is the game's PRESENT RATE: gcm label 255, the back-end label an
+# Unreal Engine 3 game writes once per present, must have advanced at least
+# once per four frames of the run (15 a second at 60). A starved RSX cannot
+# meet it, whatever the buffer looks like: Mortal Kombat starved left its
+# buffer 87% unread with the label at 37 in 1500 frames, and Injustice starved
+# drained its buffer with the label at 8.
+#
+# It used to be two facts - the buffer fully read (put == get), and the label
+# above one per hundred frames - which described a game at REST by frame 1500.
+# Both reproducers were at rest, and for the wrong reason: stuck in UE3's SPU
+# garbage-collection barrier (#125, closed by 274287a), which a drained buffer
+# and a label of 39 passed. Once the barrier closed the game kept drawing, a
+# drawing game is mid-buffer at any given frame (17,204 bytes in flight, label
+# 7807), and the old leg failed the healthy machine. put and get are still
+# reported, for whoever reads the result.
 #
 # The subject is whatever .iso the user put in tests/roms-local/rsx-drain/ (a
-# symlink will do; both reproducers are UE3 games), and the leg is stated for a
-# game at rest by frame 1500 - both are, for reasons chimera#125 still chases.
-# A game still drawing at that frame is legitimately mid-buffer, and the day
-# one is, the first fact has to be re-stated as a bound. Native only: the
-# question is the RSX's, not the sandbox's.
+# symlink will do; both reproducers are UE3 games). Native only: the question
+# is the RSX's, not the sandbox's.
 drainiso=""
 for f in "$root"/tests/roms-local/rsx-drain/*.iso; do
 	[ -f "$f" ] && { drainiso="$f"; break; }
@@ -825,12 +830,10 @@ else
 		failed "rsx:drain - the run did not reach frame 1500 ($(tail -1 "$work/drain-native.err"))"
 	elif [ -z "$put" ] || [ -z "$label" ]; then
 		failed "rsx:drain - no RSX report or no label read at the end of the run (put='$put' label='$label')"
-	elif [ "$put" != "$get" ]; then
-		failed "rsx:drain - $(basename "$drainiso"): after 1500 frames the RSX has $((0x$put - 0x$get)) bytes of the game's pushbuffer unread (put $put, get $get; label 255 at $labeln)"
-	elif [ "$labeln" -le 15 ]; then
-		failed "rsx:drain - $(basename "$drainiso"): the RSX read everything (put == get == $put) but the game presented $labeln frames in 1500 - the fence label must advance more than once per hundred frames"
+	elif [ "$labeln" -lt 375 ]; then
+		failed "rsx:drain - $(basename "$drainiso"): its per-present label 255 moved only to $labeln in 1500 frames, less than once per four frames - the RSX or the game is stalled (put $put, get $get)"
 	else
-		pass "rsx:drain - $(basename "$drainiso"): after 1500 frames the RSX has read everything the game submitted (put == get == $put) and the game's fence label stands at $labeln (more than 1 per hundred frames); native only"
+		pass "rsx:drain - $(basename "$drainiso"): its per-present label 255 stands at $labeln after 1500 frames (at least one per four frames required); put $put, get $get; native only"
 	fi
 fi
 
