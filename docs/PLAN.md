@@ -2453,3 +2453,37 @@ the wiki at all.
   non-solid .7z; nothing for a bare executable. It answers
   `{"title_id", "values", "note"}`, where the note is the same sentence the boot
   prints (`wiki_note`).
+
+## A surface tag is read the way the super pointer reads it (issue #128, 2026-09-23)
+
+Dengeki Bunko: Fighting Climax Ignition on the GL renderer through the GPU
+bridge showed a box of the picture drawn at twice its size, and died with
+`surface_store.h` "Verification failed" in `free_rsx_memory` - a render target
+freed with its reference count already at zero. Reproduced on a GTX 1060,
+deterministic at the same RSX command every run; never on run-native, which
+draws through its own GL without the bridge's frame pacing and never reached
+the same point. It is not MSAA (Anti-aliasing off crashes the same), and
+neither Strict rendering mode nor Force CPU blit is a workaround (the second
+draws nothing at all).
+
+**The cause was ours, one level down.** The surface cache checks whether a
+render target is still what it drew by reading a few tag words from guest
+memory through `vm::g_sudo_addr` (`sync_tag`, `test`). Upstream that is a second
+mapping page protection never reaches; here it IS the guest view (patch 0007).
+A tag on a page the RSX had locked faulted into the access-violation handler
+from OUTSIDE the texture cache - patch 0029's window only covers faults taken
+inside it - and the handler invalidated cache sections, releasing surface
+references while the surface cache was walking its own targets. A
+source-location diagnostic put the double free in `invalidate_surface_address`
+on a colour target, and the early "FBO check failed" and failed resolve blit
+went away with the same fix.
+
+Patch 0042 opens the pages a tag read touches, through the same window a fault
+inside the cache gets (`chimera_rpcs3_super_access` in the driver), before the
+read. With it the game runs through the intro and the attract demo to its main
+menu on the GPU, no box, no crash.
+
+On the way, three upstream fixes in the same area were backported as 0039-0041
+(reuse of discarded render targets in surface splitting, the flush predictor
+with surface-cache blit targets, reuse of blit target sections). They moved the
+crash later without removing it; they stay because they are upstream's.

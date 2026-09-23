@@ -2550,6 +2550,31 @@ extern "C" void chimera_rpcs3_note_protect(const void* pointer, usz size, int pr
   memset(&s_page_belief[first], static_cast<uint8_t>(prot + 1), last - first + 1);
 }
 
+// The surface cache reads its memory tags through the super pointer, which
+// upstream never faults; here it is the guest view (patch 0007), and a tag on
+// a page the RSX locked faulted into the access-violation handler OUTSIDE the
+// texture cache - which invalidated cache sections, releasing surface
+// references while the surface cache was walking its own targets. Dengeki
+// Bunko freed a render target twice for it (chimera#128). The read gets the
+// window a fault inside the cache gets, before it happens.
+extern "C" void chimera_rpcs3_super_access(u32 address, u32 length)
+{
+  if (!length)
+    return;
+  const u32 first = address / 4096;
+  const u32 last = static_cast<u32>((static_cast<u64>(address) + length - 1) / 4096);
+  for (u32 page = first; page <= last && page < (1u << 20); page++)
+  {
+    if (believed(page) == utils::protection::rw)
+      continue;
+    bool open = false;
+    for (unsigned i = 0; i < s_window_count && !open; i++)
+      open = (s_window_pages[i] == page);
+    if (!open)
+      open_window(page);
+  }
+}
+
 extern "C" uint64_t chimera_rpcs3_window_count(void)
 {
   return s_windows_opened;

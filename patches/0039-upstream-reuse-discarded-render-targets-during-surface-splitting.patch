@@ -1,0 +1,180 @@
+commit a659805470a64ae8dae94ba06add4ab5d19c7822
+Author: Yahfz <17715080+Yahfz@users.noreply.github.com>
+Date:   Wed Sep 16 05:06:56 2026 -0300
+
+    rsx: Reuse discarded render targets during surface splitting
+    
+    Co-authored-by: kd-11 <15904127+kd-11@users.noreply.github.com>
+
+diff --git a/rpcs3/Emu/RSX/Common/surface_store.h b/rpcs3/Emu/RSX/Common/surface_store.h
+index 817192730..967267261 100644
+--- a/rpcs3/Emu/RSX/Common/surface_store.h
++++ b/rpcs3/Emu/RSX/Common/surface_store.h
+@@ -86,6 +86,38 @@ namespace rsx
+ 		surface_store(const surface_store&) = delete;
+ 
+ 	private:
++		surface_storage_type find_reusable_matching_surface(surface_type ref, u16 width, u16 height, surface_type excluded_surface)
++		{
++			const auto [new_w, new_h] = rsx::apply_resolution_scale<true>(
++				ref->resolution_scaling_config, width, height,
++				ref->template get_surface_width<rsx::surface_metrics::pixels>(),
++				ref->template get_surface_height<rsx::surface_metrics::pixels>());
++
++			for (auto it = invalidated_resources.begin(); it != invalidated_resources.end(); ++it)
++			{
++				auto& surface = *it;
++				if (surface.get() == ref || surface.get() == excluded_surface ||
++					surface->has_refs() || !surface->old_contents.empty())
++				{
++					continue;
++				}
++
++				if (surface->width() != new_w || surface->height() != new_h ||
++					surface->samples() != ref->samples() || surface->get_spp() != ref->get_spp() ||
++					surface->format_class() != ref->format_class() ||
++					!Traits::is_reusable_surface(surface.get(), ref))
++				{
++					continue;
++				}
++
++				auto result = std::move(surface);
++				invalidated_resources.erase(it);
++				return result;
++			}
++
++			return {};
++		}
++
+ 		template <bool is_depth_surface>
+ 		void split_surface_region(command_list_type cmd, u32 address, surface_type prev_surface, u16 width, u16 height, u8 bpp, rsx::surface_antialiasing aa)
+ 		{
+@@ -141,6 +173,10 @@ namespace rsx
+ 					// Memory requirements can be altered when cloning
+ 					free_rsx_memory(Traits::get(sink));
+ 				}
++				else
++				{
++					sink = find_reusable_matching_surface(region.source, region.width, region.height, invalidated);
++				}
+ 
+ 				Traits::clone_surface(cmd, sink, region.source, new_address, region, region.source->resolution_scaling_config);
+ 				allocate_rsx_memory(Traits::get(sink));
+diff --git a/rpcs3/Emu/RSX/GL/GLRenderTargets.h b/rpcs3/Emu/RSX/GL/GLRenderTargets.h
+index aa37fd331..703899d19 100644
+--- a/rpcs3/Emu/RSX/GL/GLRenderTargets.h
++++ b/rpcs3/Emu/RSX/GL/GLRenderTargets.h
+@@ -240,6 +240,14 @@ struct gl_render_target_traits
+ 		return result;
+ 	}
+ 
++	static bool is_reusable_surface(const gl::render_target* surface, const gl::render_target* ref)
++	{
++		return surface->id() && surface->get_internal_format() == ref->get_internal_format();
++	}
++
++	static void prepare_for_reuse(gl::command_context&, gl::render_target*)
++	{}
++
+ 	static
+ 	void clone_surface(
+ 		gl::command_context& cmd,
+@@ -247,6 +255,12 @@ struct gl_render_target_traits
+ 		u32 address, barrier_descriptor_t& prev,
+ 		const rsx::surface_scaling_config_t& scaling_config)
+ 	{
++		const bool initialize = !sink || !sink->has_refs();
++		if (sink && initialize)
++		{
++			prepare_for_reuse(cmd, sink.get());
++		}
++
+ 		if (!sink)
+ 		{
+ 			auto internal_format = static_cast<GLenum>(ref->get_internal_format());
+@@ -257,6 +271,13 @@ struct gl_render_target_traits
+ 				ref->get_surface_height<rsx::surface_metrics::pixels>());
+ 
+ 			sink = std::make_unique<gl::render_target>(new_w, new_h, ref->samples(), internal_format, ref->format_class());
++		}
++
++		if (initialize)
++		{
++			sink->reset();
++			sink->msaa_flags = rsx::surface_state_flags::ready;
++			sink->stencil_init_flags = ref->stencil_init_flags;
+ 			sink->add_ref();
+ 
+ 			sink->memory_usage_flags = rsx::surface_usage_flags::storage;
+@@ -272,6 +293,10 @@ struct gl_render_target_traits
+ 			sink->set_rsx_pitch(ref->get_rsx_pitch());
+ 			sink->set_surface_dimensions(prev.width, prev.height, ref->get_rsx_pitch());
+ 			sink->set_native_component_layout(ref->get_native_component_layout());
++			if (sink->resolve_surface)
++			{
++				static_cast<gl::viewable_image*>(sink->resolve_surface.get())->set_native_component_layout(ref->get_native_component_layout());
++			}
+ 			sink->queue_tag(address);
+ 		}
+ 
+diff --git a/rpcs3/Emu/RSX/VK/VKRenderTargets.h b/rpcs3/Emu/RSX/VK/VKRenderTargets.h
+index 3ee5010d8..2a8b93560 100644
+--- a/rpcs3/Emu/RSX/VK/VKRenderTargets.h
++++ b/rpcs3/Emu/RSX/VK/VKRenderTargets.h
+@@ -365,12 +365,30 @@ namespace vk
+ 			return ds;
+ 		}
+ 
++		static bool is_reusable_surface(const vk::render_target* surface, const vk::render_target* ref)
++		{
++			return surface->value && surface->format() == ref->format() &&
++				surface->info.usage == ref->info.usage && surface->info.flags == ref->info.flags;
++		}
++
++		static void prepare_for_reuse(vk::command_buffer&, vk::render_target* surface)
++		{
++			surface->reset_surface_counters();
++			surface->last_rw_access_tag = 0;
++		}
++
+ 		static void clone_surface(
+ 			vk::command_buffer& cmd,
+ 			std::unique_ptr<vk::render_target>& sink, vk::render_target* ref,
+ 			u32 address, barrier_descriptor_t& prev,
+ 			const rsx::surface_scaling_config_t& scaling_config)
+ 		{
++			const bool initialize = !sink || !sink->has_refs();
++			if (sink && initialize)
++			{
++				prepare_for_reuse(cmd, sink.get());
++			}
++
+ 			if (!sink)
+ 			{
+ 				const auto [new_w, new_h] = rsx::apply_resolution_scale<true>(
+@@ -392,6 +410,12 @@ namespace vk
+ 					VMM_ALLOCATION_POOL_SURFACE_CACHE,
+ 					ref->format_class());
+ 
++			}
++
++			if (initialize)
++			{
++				sink->reset();
++				sink->msaa_flags = rsx::surface_state_flags::ready;
+ 				sink->add_ref();
+ 
+ 				sink->sample_layout = ref->sample_layout;
+@@ -401,7 +425,11 @@ namespace vk
+ 				sink->format_info = ref->format_info;
+ 				sink->memory_usage_flags = rsx::surface_usage_flags::storage;
+ 				sink->state_flags = rsx::surface_state_flags::erase_bkgnd;
+-				sink->native_component_map = ref->native_component_map;
++				sink->set_native_component_layout(ref->native_component_map);
++				if (sink->resolve_surface)
++				{
++					sink->resolve_surface->set_native_component_layout(ref->native_component_map);
++				}
+ 				sink->sample_layout = ref->sample_layout;
+ 				sink->stencil_init_flags = ref->stencil_init_flags;
+ 				sink->native_pitch = static_cast<u32>(prev.width) * ref->get_bpp() * ref->samples_x;

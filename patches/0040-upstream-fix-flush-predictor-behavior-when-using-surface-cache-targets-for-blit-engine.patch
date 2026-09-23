@@ -1,0 +1,94 @@
+commit a90c841b39e005e50b9fccaf5bb2a6e1d0dc4738
+Author: kd-11 <karokidii@gmail.com>
+Date:   Thu Sep 17 18:08:51 2026 +0300
+
+    rsx: Fix flush predictor behavior when using surface cache targets for blit engine
+
+diff --git a/rpcs3/Emu/RSX/Common/texture_cache.h b/rpcs3/Emu/RSX/Common/texture_cache.h
+index 49983eaa2..c8d902c8c 100644
+--- a/rpcs3/Emu/RSX/Common/texture_cache.h
++++ b/rpcs3/Emu/RSX/Common/texture_cache.h
+@@ -1829,6 +1829,7 @@ namespace rsx
+ 
+ 					// Fake RTT cache hit
+ 					dst_subres.surface = dst_surface;
++					dst_subres.base_address = section_attr.address;
+ 					dst_is_render_target = true;
+ 
+ 					dest_texture = dst_surface->get_surface(rsx::surface_access::transfer_write);
+@@ -3798,16 +3799,17 @@ namespace rsx
+ 
+ 			if (cached_dest)
+ 			{
+-				result.real_dst_address = cached_dest->get_section_base();
+-				result.real_dst_size = cached_dest->get_section_size();
++				result.dst_range = utils::address_range32::start_length(
++					cached_dest->get_section_base(),
++					cached_dest->get_section_size());
+ 			}
+ 			else
+ 			{
+ 				ensure(dst_is_render_target);
+ 				dst_subres.surface->on_write_copy(rsx::get_shared_tag(), false, raster_type);
+ 
+-				result.real_dst_address = dst_base_address;
+-				result.real_dst_size = dst.pitch * dst_dimensions.height;
++				// We use the full surface range here. Blit resources are always locked after writing regardless of WCB/WDB settings.
++				result.dst_range = dst_subres.surface->get_memory_range();
+ 			}
+ 
+ 			return result;
+diff --git a/rpcs3/Emu/RSX/Common/texture_cache_helpers.h b/rpcs3/Emu/RSX/Common/texture_cache_helpers.h
+index e6789e84a..b381449fa 100644
+--- a/rpcs3/Emu/RSX/Common/texture_cache_helpers.h
++++ b/rpcs3/Emu/RSX/Common/texture_cache_helpers.h
+@@ -49,16 +49,10 @@ namespace rsx
+ 	struct blit_op_result
+ 	{
+ 		bool succeeded = false;
+-		u32 real_dst_address = 0;
+-		u32 real_dst_size = 0;
++		utils::address_range32 dst_range{};
+ 
+ 		blit_op_result(bool success) : succeeded(success)
+ 		{}
+-
+-		inline address_range32 to_address_range() const
+-		{
+-			return address_range32::start_length(real_dst_address, real_dst_size);
+-		}
+ 	};
+ 
+ 	struct blit_target_properties
+diff --git a/rpcs3/Emu/RSX/GL/GLTextureCache.h b/rpcs3/Emu/RSX/GL/GLTextureCache.h
+index f7f293aba..28cd84b46 100644
+--- a/rpcs3/Emu/RSX/GL/GLTextureCache.h
++++ b/rpcs3/Emu/RSX/GL/GLTextureCache.h
+@@ -945,9 +945,9 @@ namespace gl
+ 
+ 			if (result.succeeded)
+ 			{
+-				if (result.real_dst_size)
++				if (result.dst_range.valid())
+ 				{
+-					flush_if_cache_miss_likely(cmd, result.to_address_range());
++					flush_if_cache_miss_likely(cmd, result.dst_range);
+ 				}
+ 
+ 				return true;
+diff --git a/rpcs3/Emu/RSX/VK/VKTextureCache.cpp b/rpcs3/Emu/RSX/VK/VKTextureCache.cpp
+index 5329daee0..4b4d14bcd 100644
+--- a/rpcs3/Emu/RSX/VK/VKTextureCache.cpp
++++ b/rpcs3/Emu/RSX/VK/VKTextureCache.cpp
+@@ -1686,9 +1686,9 @@ namespace vk
+ 
+ 		if (reply.succeeded)
+ 		{
+-			if (reply.real_dst_size)
++			if (reply.dst_range.valid())
+ 			{
+-				flush_if_cache_miss_likely(cmd, reply.to_address_range());
++				flush_if_cache_miss_likely(cmd, reply.dst_range);
+ 			}
+ 
+ 			return true;

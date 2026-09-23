@@ -1,0 +1,39 @@
+--- a/rpcs3/Emu/RSX/Common/surface_utils.h
++++ b/rpcs3/Emu/RSX/Common/surface_utils.h
+@@ -6,6 +6,16 @@
+ #include "../rsx_utils.h"
+ #include "Emu/Memory/vm.h"
+ 
++#ifdef CHIMERA_CORE
++// chimera: in this core the "sudo" view is the guest view itself (patch 0007),
++// so a read through it can land on a page the RSX locked and fault into the
++// access-violation handler - which invalidates cache sections, and with them
++// surface references, in the middle of the surface cache's own loop. Upstream
++// such a read never faults. This opens the pages the way a fault inside the
++// texture cache already does (see chimera_rpcs3_on_fault), before the read.
++extern "C" void chimera_rpcs3_super_access(u32 address, u32 length);
++#endif
++
+ #define ENABLE_SURFACE_CACHE_DEBUG 0
+ 
+ namespace rsx
+@@ -468,6 +478,9 @@ namespace rsx
+ 		{
+ 			for (auto &e : memory_tag_samples)
+ 			{
++#ifdef CHIMERA_CORE
++				chimera_rpcs3_super_access(e.first, 8);
++#endif
+ 				e.second = *reinterpret_cast<nse_t<u64, 1>*>(vm::g_sudo_addr + e.first);
+ 			}
+ 		}
+@@ -481,6 +494,9 @@ namespace rsx
+ 		{
+ 			for (const auto& e : memory_tag_samples)
+ 			{
++#ifdef CHIMERA_CORE
++				chimera_rpcs3_super_access(e.first, 8);
++#endif
+ 				if (e.second != *reinterpret_cast<nse_t<u64, 1>*>(vm::g_sudo_addr + e.first))
+ 					return false;
+ 			}
