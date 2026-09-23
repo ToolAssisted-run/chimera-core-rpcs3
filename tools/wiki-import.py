@@ -32,7 +32,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("harvest", nargs="+",
-                    help="one or more harvests; later files add pages, and fill in any the earlier ones lacked")
+                    help="one or more harvests; for a page more than one has, the newest wins")
     ap.add_argument("--out", default=os.path.join(HERE, "..", "waterbox", "wiki-compat.json"))
     ap.add_argument("--map", default=os.path.join(HERE, "wiki-settings-map.json"))
     ap.add_argument("--ids", default=os.path.join(HERE, "wiki-ids.json"),
@@ -46,9 +46,9 @@ def main():
     harvest = harvests[0]
     names = json.load(open(a.map, encoding="utf-8"))
     pages = {}
-    for h in harvests:
-        for k, v in h["pages"].items():
-            pages.setdefault(k, v)
+    # in the order given, so a NEWER harvest named later wins for a page both have
+    for h in sorted(harvests, key=lambda h: h.get("harvested") or ""):
+        pages.update(h["pages"])
     # the snapshot is the NEWEST harvest's date: the table is as current as that
     harvest = max(harvests, key=lambda h: h.get("harvested") or "")
 
@@ -62,8 +62,16 @@ def main():
         return 1
 
     snapshot = (harvest.get("harvested") or "")[:10]
-    compat_date = a.compat_date or snapshot
     resolved = json.load(open(a.ids, encoding="utf-8"))
+    # the compatibility list's date is when IT was read, recorded in the map by
+    # the resolver - not the harvest's, which is a different source on a
+    # different day. Falling back to the harvest date once stamped every status
+    # with a day the list was never fetched on.
+    compat_date = a.compat_date or resolved.get("_fetched")
+    if not compat_date:
+        print("REFUSED: the id map records no _fetched date; pass --compat-date", file=sys.stderr)
+        return 1
+    resolved = {k: v for k, v in resolved.items() if not k.startswith("_")}
 
     # one entry per harvested wiki PAGE, keyed by its curid
     by_page = {}

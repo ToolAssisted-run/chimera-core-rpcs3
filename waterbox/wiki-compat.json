@@ -2,7 +2,7 @@
  "_provenance": {
   "source": "https://wiki.rpcs3.net/ - the per-game Configuration tables",
   "compatibility": "https://rpcs3.net/compatibility - the status of each title",
-  "snapshot": "2026-09-22",
+  "snapshot": "2026-09-23",
   "compatibility_snapshot": "2026-09-22",
   "licence": "The RPCS3 wiki's content is licensed CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/).",
   "attribution": "Recommended settings compiled by the contributors of the RPCS3 wiki.",
@@ -75,9 +75,11 @@
   "BCAS20050": {
    "title": "Afrika",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1262",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "BCAS20051": {
@@ -252,7 +254,7 @@
   "BCAS20159": {
    "title": "Ape Escape",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1271",
    "apply": {},
    "unsupported": []
@@ -2153,7 +2155,7 @@
   "BCES01186": {
    "title": "Ape Escape",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1271",
    "apply": {},
    "unsupported": []
@@ -3290,9 +3292,11 @@
   "BCJS30021": {
    "title": "Afrika",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1262",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "BCJS30022": {
@@ -4983,10 +4987,16 @@
   "BLES00039": {
    "title": "Armored Core 4",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1130",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic"
+   ]
   },
   "BLES00041": {
    "title": "World Snooker Championship 2007",
@@ -5579,9 +5589,11 @@
   "BLES00168": {
    "title": "Army of TWO",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=558",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "BLES00169": {
@@ -6536,10 +6548,17 @@
   "BLES00370": {
    "title": "Armored Core: For Answer",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1276",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic",
+    "Handle RSX memory tiling: On"
+   ]
   },
   "BLES00371": {
    "title": "Naruto: Ultimate Ninja Storm",
@@ -6787,7 +6806,7 @@
   "BLES00406": {
    "title": "007: Quantum of Solace",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1255",
    "apply": {},
    "unsupported": []
@@ -6877,7 +6896,7 @@
   "BLES00422": {
    "title": "Alone in the Dark: Inferno",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1026",
    "apply": {},
    "unsupported": []
@@ -7061,7 +7080,7 @@
   "BLES00472": {
    "title": "50 Cent: Blood On The Sand",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=553",
    "apply": {},
    "unsupported": []
@@ -7553,7 +7572,7 @@
   "BLES00585": {
    "title": "Aliens vs. Predator",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1025",
    "apply": {},
    "unsupported": []
@@ -7561,7 +7580,7 @@
   "BLES00586": {
    "title": "Aliens vs. Predator",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1025",
    "apply": {},
    "unsupported": []
@@ -7720,7 +7739,7 @@
   "BLES00639": {
    "title": "Ashes Cricket 2009",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1033",
    "apply": {},
    "unsupported": []
@@ -7788,10 +7807,12 @@
   "BLES00659": {
    "title": "Army of TWO: The 40th Day",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=557",
    "apply": {},
-   "unsupported": []
+   "unsupported": [
+    "Resolution scale threshold: 512 x 512"
+   ]
   },
   "BLES00660": {
    "title": "Vancouver 2010",
@@ -7842,7 +7863,7 @@
   "BLES00669": {
    "title": "Assassin's Creed II",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1279",
    "apply": {},
    "unsupported": []
@@ -7850,7 +7871,7 @@
   "BLES00670": {
    "title": "Assassin's Creed II",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1279",
    "apply": {},
    "unsupported": []
@@ -8040,7 +8061,7 @@
   "BLES00704": {
    "title": "Alpha Protocol",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=363",
    "apply": {},
    "unsupported": []
@@ -8273,7 +8294,7 @@
   "BLES00751": {
    "title": "Assassin's Creed II",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1279",
    "apply": {},
    "unsupported": []
@@ -8399,7 +8420,7 @@
   "BLES00772": {
    "title": "Arthur and the Revenge of Maltazard",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1032",
    "apply": {},
    "unsupported": []
@@ -8531,7 +8552,7 @@
   "BLES00796": {
    "title": "2010 FIFA World Cup South Africa",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1013",
    "apply": {},
    "unsupported": []
@@ -8876,7 +8897,7 @@
   "BLES00899": {
    "title": "Assassin's Creed II",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1279",
    "apply": {},
    "unsupported": []
@@ -8900,10 +8921,14 @@
   "BLES00909": {
    "title": "Assassin's Creed: Brotherhood",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1282",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter"
+   },
+   "unsupported": [
+    "Strict rendering mode: On"
+   ]
   },
   "BLES00912": {
    "title": "Virtua Tennis 4",
@@ -9795,7 +9820,7 @@
   "BLES01102": {
    "title": "Ar Tonelico Qoga: Knell of Ar Ciel",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1273",
    "apply": {},
    "unsupported": []
@@ -10372,7 +10397,7 @@
   "BLES01232": {
    "title": "Anarchy Reigns",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1265",
    "apply": {},
    "unsupported": []
@@ -10488,10 +10513,17 @@
   "BLES01265": {
    "title": "Alice: Madness Returns",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1023",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Resolution scale threshold: 592x592",
+    "Accurate RSX reservation access: On",
+    "Driver wake-up delay: 200",
+    "Force CPU blit emulation: On"
+   ]
   },
   "BLES01266": {
    "title": "Dance! It's Your Stage",
@@ -10646,7 +10678,7 @@
   "BLES01295": {
    "title": "Arcana Heart 3",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=559",
    "apply": {},
    "unsupported": []
@@ -11372,10 +11404,18 @@
   "BLES01440": {
    "title": "Armored Core V",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1275",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic",
+    "PSN status: RPCN"
+   ]
   },
   "BLES01442": {
    "title": "WRC 2: FIA World Rally Championship",
@@ -11666,7 +11706,7 @@
   "BLES01500": {
    "title": "Absolute Supercars",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1016",
    "apply": {},
    "unsupported": []
@@ -11799,7 +11839,7 @@
   "BLES01529": {
    "title": "Adidas miCoach",
    "status": "Intro",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1261",
    "apply": {},
    "unsupported": []
@@ -12007,7 +12047,7 @@
   "BLES01604": {
    "title": "Air Conflicts: Pacific Carriers",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=349",
    "apply": {},
    "unsupported": []
@@ -12272,25 +12312,37 @@
   "BLES01667": {
    "title": "Assassin's Creed III",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1280",
-   "apply": {},
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
    "unsupported": []
   },
   "BLES01668": {
    "title": "Assassin's Creed III",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1280",
-   "apply": {},
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
    "unsupported": []
   },
   "BLES01669": {
    "title": "Assassin's Creed III",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1280",
-   "apply": {},
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
    "unsupported": []
   },
   "BLES01671": {
@@ -12437,7 +12489,7 @@
   "BLES01697": {
    "title": "Alien: Isolation",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1264",
    "apply": {},
    "unsupported": []
@@ -12666,7 +12718,7 @@
   "BLES01732": {
    "title": "Angry Birds Trilogy",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1267",
    "apply": {},
    "unsupported": []
@@ -12819,9 +12871,11 @@
   "BLES01763": {
    "title": "Army of TWO: The Devil's Cartel",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1104",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "BLES01764": {
@@ -12947,9 +13001,11 @@
   "BLES01783": {
    "title": "ArcaniA: The Complete Tale",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1182",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "BLES01784": {
@@ -13286,7 +13342,7 @@
   "BLES01858": {
    "title": "Air Conflicts: Vietnam",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=348",
    "apply": {},
    "unsupported": []
@@ -13374,7 +13430,7 @@
   "BLES01875": {
    "title": "AFL Live 2",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=344",
    "apply": {},
    "unsupported": []
@@ -13421,26 +13477,44 @@
   "BLES01882": {
    "title": "Assassin's Creed IV: Black Flag",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1281",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
+   "unsupported": [
+    "Resolution scale threshold: 640 x 640"
+   ]
   },
   "BLES01883": {
    "title": "Assassin's Creed IV: Black Flag",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1281",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
+   "unsupported": [
+    "Resolution scale threshold: 640 x 640"
+   ]
   },
   "BLES01884": {
    "title": "Assassin's Creed IV: Black Flag",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1281",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
+   "unsupported": [
+    "Resolution scale threshold: 640 x 640"
+   ]
   },
   "BLES01885": {
    "title": "The Elder Scrolls V: Skyrim",
@@ -13523,10 +13597,17 @@
   "BLES01898": {
    "title": "Armored Core: Verdict Day",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1277",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic"
+   ]
   },
   "BLES01899": {
    "title": "Ben 10 Omniverse 2",
@@ -13805,7 +13886,7 @@
   "BLES01961": {
    "title": "Adventure Time: Explore the Dungeon Because I DON'T KNOW!",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=342",
    "apply": {},
    "unsupported": []
@@ -13851,9 +13932,13 @@
   "BLES01968": {
    "title": "Assassin's Creed III",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1280",
-   "apply": {},
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
    "unsupported": []
   },
   "BLES01969": {
@@ -14345,7 +14430,7 @@
   "BLES02063": {
    "title": "Adventure Time: The Secret of the Nameless Kingdom",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=343",
    "apply": {},
    "unsupported": []
@@ -14431,7 +14516,7 @@
   "BLES02087": {
    "title": "Ar Nosurge: Ode to an Unborn Star",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=371",
    "apply": {},
    "unsupported": []
@@ -14560,9 +14645,9 @@
    ]
   },
   "BLES02126": {
-   "title": "Arcana Heart 3: Love Max!!!!!",
+   "title": "Arcana Heart 3",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=559",
    "apply": {},
    "unsupported": []
@@ -15116,12 +15201,16 @@
    "unsupported": []
   },
   "BLET70013": {
-   "title": "Assassin's Creed: Brotherhood - Multiplayer Beta",
+   "title": "Assassin's Creed: Brotherhood",
    "status": "Intro",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1282",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter"
+   },
+   "unsupported": [
+    "Strict rendering mode: On"
+   ]
   },
   "BLET70016": {
    "title": "Battlefield 3",
@@ -15720,7 +15809,7 @@
   "BLJM60185": {
    "title": "Assassin's Creed II",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1279",
    "apply": {},
    "unsupported": []
@@ -15852,7 +15941,7 @@
   "BLJM60222": {
    "title": "2010 FIFA World Cup South Africa",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1013",
    "apply": {},
    "unsupported": []
@@ -16036,7 +16125,7 @@
   "BLJM60305": {
    "title": "Anarchy Reigns",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1265",
    "apply": {},
    "unsupported": []
@@ -16579,7 +16668,7 @@
   "BLJM60521": {
    "title": "Akatsuki No Goei Trinity",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=409",
    "apply": {},
    "unsupported": []
@@ -17069,7 +17158,7 @@
   "BLJM61080": {
    "title": "Air Conflicts: Vietnam",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=348",
    "apply": {},
    "unsupported": []
@@ -17356,7 +17445,7 @@
   "BLJM61150": {
    "title": "Ar Nosurge: Ode to an Unborn Star",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=371",
    "apply": {},
    "unsupported": []
@@ -17396,9 +17485,13 @@
   "BLJM61174": {
    "title": "Assassin's Creed III",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1280",
-   "apply": {},
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
    "unsupported": []
   },
   "BLJM61175": {
@@ -18203,7 +18296,7 @@
   "BLJS10056": {
    "title": "50 Cent: Blood On The Sand",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=553",
    "apply": {},
    "unsupported": []
@@ -18315,7 +18408,7 @@
   "BLJS10081": {
    "title": "Another Century's Episode R",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1269",
    "apply": {},
    "unsupported": []
@@ -18731,7 +18824,7 @@
   "BLJS10174": {
    "title": "Accel World: Gin'yoku no Kakusei",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=338",
    "apply": {},
    "unsupported": []
@@ -18739,7 +18832,7 @@
   "BLJS10176": {
    "title": "Accel World: Kasoku no Chouten",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=339",
    "apply": {},
    "unsupported": []
@@ -19084,7 +19177,7 @@
   "BLJS10241": {
    "title": "AKB1/149 Renai Sousenkyo",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=764",
    "apply": {},
    "unsupported": []
@@ -19253,9 +19346,9 @@
    ]
   },
   "BLJS10274": {
-   "title": "Arcana Heart 3: Love Max!!!!!",
+   "title": "Arcana Heart 3",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=559",
    "apply": {},
    "unsupported": []
@@ -19621,7 +19714,7 @@
   "BLJS93008": {
    "title": ".hack//Versus",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=321",
    "apply": {},
    "unsupported": []
@@ -20046,10 +20139,16 @@
   "BLUS30027": {
    "title": "Armored Core 4",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1130",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic"
+   ]
   },
   "BLUS30028": {
    "title": "Enchanted Arms",
@@ -20239,10 +20338,14 @@
   "BLUS30049": {
    "title": "All-Pro Football 2K8",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=765",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Force CPU blit emulation: On"
+   ]
   },
   "BLUS30050": {
    "title": "Rock Band",
@@ -20302,9 +20405,11 @@
   "BLUS30057": {
    "title": "Army of TWO",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=558",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "BLUS30058": {
@@ -21271,10 +21376,17 @@
   "BLUS30187": {
    "title": "Armored Core: For Answer",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1276",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic",
+    "Handle RSX memory tiling: On"
+   ]
   },
   "BLUS30188": {
    "title": "NHL 2K9",
@@ -21347,7 +21459,7 @@
   "BLUS30198": {
    "title": "007: Quantum of Solace",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1255",
    "apply": {},
    "unsupported": []
@@ -21514,7 +21626,7 @@
   "BLUS30232": {
    "title": "Alone in the Dark: Inferno",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1026",
    "apply": {},
    "unsupported": []
@@ -21530,9 +21642,11 @@
   "BLUS30235": {
    "title": "AC/DC Live: Rock Band Track Pack",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1258",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "BLUS30241": {
@@ -21644,7 +21758,7 @@
   "BLUS30256": {
    "title": "50 Cent: Blood On The Sand",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=553",
    "apply": {},
    "unsupported": []
@@ -22221,7 +22335,7 @@
   "BLUS30340": {
    "title": "Aliens vs. Predator",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1025",
    "apply": {},
    "unsupported": []
@@ -22229,7 +22343,7 @@
   "BLUS30341": {
    "title": "Alpha Protocol",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=363",
    "apply": {},
    "unsupported": []
@@ -22383,7 +22497,7 @@
   "BLUS30364": {
    "title": "Assassin's Creed II",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1279",
    "apply": {},
    "unsupported": []
@@ -22591,9 +22705,11 @@
   "BLUS30399": {
    "title": "Afrika",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1262",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "BLUS30400": {
@@ -22674,10 +22790,12 @@
   "BLUS30408": {
    "title": "Army of TWO: The 40th Day",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=557",
    "apply": {},
-   "unsupported": []
+   "unsupported": [
+    "Resolution scale threshold: 512 x 512"
+   ]
   },
   "BLUS30409": {
    "title": "Cabela's Outdoor Adventures",
@@ -23087,7 +23205,7 @@
   "BLUS30474": {
    "title": "2010 FIFA World Cup South Africa",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1013",
    "apply": {},
    "unsupported": []
@@ -23358,10 +23476,18 @@
   "BLUS30516": {
    "title": "Armored Core V",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1275",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic",
+    "PSN status: RPCN"
+   ]
   },
   "BLUS30517": {
    "title": "Battlefield: Bad Company 2",
@@ -23509,10 +23635,14 @@
   "BLUS30537": {
    "title": "Assassin's Creed: Brotherhood",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1282",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter"
+   },
+   "unsupported": [
+    "Strict rendering mode: On"
+   ]
   },
   "BLUS30538": {
    "title": "Batman: Arkham City",
@@ -23949,10 +24079,17 @@
   "BLUS30607": {
    "title": "Alice: Madness Returns",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1023",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Resolution scale threshold: 592x592",
+    "Accurate RSX reservation access: On",
+    "Driver wake-up delay: 200",
+    "Force CPU blit emulation: On"
+   ]
   },
   "BLUS30608": {
    "title": "Fight Night Champion",
@@ -24105,7 +24242,7 @@
   "BLUS30632": {
    "title": "Anarchy Reigns",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1265",
    "apply": {},
    "unsupported": []
@@ -24132,7 +24269,7 @@
   "BLUS30639": {
    "title": "Ar Tonelico Qoga: Knell of Ar Ciel",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1273",
    "apply": {},
    "unsupported": []
@@ -25172,7 +25309,7 @@
   "BLUS30832": {
    "title": "Alien: Isolation",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1264",
    "apply": {},
    "unsupported": []
@@ -25850,9 +25987,13 @@
   "BLUS30991": {
    "title": "Assassin's Creed III",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1280",
-   "apply": {},
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
    "unsupported": []
   },
   "BLUS30996": {
@@ -26140,7 +26281,7 @@
   "BLUS31054": {
    "title": "Angry Birds Trilogy",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1267",
    "apply": {},
    "unsupported": []
@@ -26233,9 +26374,11 @@
   "BLUS31069": {
    "title": "Army of TWO: The Devil's Cartel",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1104",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "BLUS31075": {
@@ -26424,9 +26567,11 @@
   "BLUS31158": {
    "title": "ArcaniA: The Complete Tale",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1182",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "BLUS31159": {
@@ -26689,18 +26834,31 @@
   "BLUS31193": {
    "title": "Assassin's Creed IV: Black Flag",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1281",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
+   "unsupported": [
+    "Resolution scale threshold: 640 x 640"
+   ]
   },
   "BLUS31194": {
    "title": "Armored Core: Verdict Day",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1277",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic"
+   ]
   },
   "BLUS31195": {
    "title": "Falling Skies The Game",
@@ -26865,7 +27023,7 @@
   "BLUS31214": {
    "title": "Adventure Time: Explore the Dungeon Because I DON'T KNOW!",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=342",
    "apply": {},
    "unsupported": []
@@ -27009,7 +27167,7 @@
   "BLUS31320": {
    "title": "Air Conflicts: Vietnam",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=348",
    "apply": {},
    "unsupported": []
@@ -27304,9 +27462,9 @@
    "unsupported": []
   },
   "BLUS31424": {
-   "title": "Arcana Heart 3: Love Max!!!!!",
+   "title": "Arcana Heart 3",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=559",
    "apply": {},
    "unsupported": []
@@ -27480,7 +27638,7 @@
   "BLUS31450": {
    "title": "Adventure Time: The Secret of the Nameless Kingdom",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=343",
    "apply": {},
    "unsupported": []
@@ -27658,7 +27816,7 @@
   "BLUS31478": {
    "title": "Ar Nosurge: Ode to an Unborn Star",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=371",
    "apply": {},
    "unsupported": []
@@ -27674,10 +27832,16 @@
   "BLUS31483": {
    "title": "Assassin's Creed IV: Black Flag",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1281",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
+   "unsupported": [
+    "Resolution scale threshold: 640 x 640"
+   ]
   },
   "BLUS31488": {
    "title": "The Walking Dead: Season 2",
@@ -27828,10 +27992,13 @@
   "BLUS31526": {
    "title": "Adventure Time: Finn and Jake Investigations",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1018",
    "apply": {},
-   "unsupported": []
+   "unsupported": [
+    "Anisotropic filter: Auto",
+    "Sleep timers accuracy: As Host"
+   ]
   },
   "BLUS31527": {
    "title": "Call of Duty: Black Ops 3",
@@ -28039,7 +28206,7 @@
   "BLUS31587": {
    "title": "Aegis of Earth: Protonovus Assault",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1019",
    "apply": {},
    "unsupported": []
@@ -28358,7 +28525,7 @@
   "NPEA00008": {
    "title": "Aqua Vita",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1272",
    "apply": {},
    "unsupported": []
@@ -28714,7 +28881,7 @@
   "NPEA00137": {
    "title": ".detuned",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=319",
    "apply": {},
    "unsupported": []
@@ -28900,7 +29067,7 @@
   "NPEA00205": {
    "title": "Acceleration of Suguri X Edition",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=340",
    "apply": {},
    "unsupported": []
@@ -30896,9 +31063,9 @@
    "unsupported": []
   },
   "NPEA90088": {
-   "title": "PlayStation Move Ape Escape Demo",
+   "title": "Ape Escape",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1271",
    "apply": {},
    "unsupported": []
@@ -31298,7 +31465,7 @@
   "NPEB00026": {
    "title": "1942: Joint Strike",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=322",
    "apply": {},
    "unsupported": []
@@ -31548,7 +31715,7 @@
   "NPEB00080": {
    "title": "3 on 3 NHL Arcade",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=323",
    "apply": {},
    "unsupported": []
@@ -31822,7 +31989,7 @@
   "NPEB00160": {
    "title": "Anarchy: Rush Hour",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1266",
    "apply": {},
    "unsupported": []
@@ -31924,7 +32091,7 @@
   "NPEB00175": {
    "title": "After Burner Climax",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=345",
    "apply": {},
    "unsupported": []
@@ -32186,7 +32353,7 @@
   "NPEB00260": {
    "title": "Alien Breed: Impact",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=357",
    "apply": {},
    "unsupported": []
@@ -32319,7 +32486,7 @@
   "NPEB00305": {
    "title": "Armageddon Riders",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=375",
    "apply": {},
    "unsupported": []
@@ -32497,7 +32664,7 @@
   "NPEB00346": {
    "title": "Alien Breed 3: Descent",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=356",
    "apply": {},
    "unsupported": []
@@ -32781,7 +32948,7 @@
   "NPEB00415": {
    "title": "Alex Kidd in Miracle World",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=353",
    "apply": {},
    "unsupported": []
@@ -32924,7 +33091,7 @@
   "NPEB00462": {
    "title": "Assassin's Creed II",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1279",
    "apply": {},
    "unsupported": []
@@ -33104,7 +33271,7 @@
   "NPEB00526": {
    "title": "Altered Beast",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=364",
    "apply": {},
    "unsupported": []
@@ -33443,7 +33610,7 @@
   "NPEB00598": {
    "title": "Arkedo Series - 01 Jump!",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1030",
    "apply": {},
    "unsupported": []
@@ -33463,23 +33630,27 @@
   "NPEB00600": {
    "title": "Assassin's Creed: Brotherhood",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1282",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter"
+   },
+   "unsupported": [
+    "Strict rendering mode: On"
+   ]
   },
   "NPEB00614": {
-   "title": "Arkedo Series - 02 Swap!",
+   "title": "Arkedo Series - 01 Jump!",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1030",
    "apply": {},
    "unsupported": []
   },
   "NPEB00615": {
-   "title": "Arkedo Series - 03 Pixel!",
+   "title": "Arkedo Series - 01 Jump!",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1030",
    "apply": {},
    "unsupported": []
@@ -34492,7 +34663,7 @@
   "NPEB00872": {
    "title": "Adam's Venture: Chronicles",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=341",
    "apply": {},
    "unsupported": []
@@ -35193,7 +35364,7 @@
   "NPEB01088": {
    "title": "Alien Rage",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=358",
    "apply": {},
    "unsupported": []
@@ -35236,9 +35407,13 @@
   "NPEB01099": {
    "title": "Assassin's Creed III",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1280",
-   "apply": {},
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
    "unsupported": []
   },
   "NPEB01104": {
@@ -35333,7 +35508,7 @@
   "NPEB01127": {
    "title": "A-Men",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=335",
    "apply": {},
    "unsupported": []
@@ -35706,17 +35881,21 @@
   "NPEB01216": {
    "title": "Army of TWO: The Devil's Cartel",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1104",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "NPEB01217": {
    "title": "Army of TWO: The Devil's Cartel",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1104",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "NPEB01218": {
@@ -35806,7 +35985,7 @@
   "NPEB01235": {
    "title": "Angry Birds Trilogy",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1267",
    "apply": {},
    "unsupported": []
@@ -35846,7 +36025,7 @@
   "NPEB01246": {
    "title": "Anarchy Reigns",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1265",
    "apply": {},
    "unsupported": []
@@ -35966,7 +36145,7 @@
   "NPEB01289": {
    "title": "Air Conflicts: Pacific Carriers",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=349",
    "apply": {},
    "unsupported": []
@@ -36446,10 +36625,16 @@
   "NPEB01396": {
    "title": "Assassin's Creed IV: Black Flag",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1281",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
+   "unsupported": [
+    "Resolution scale threshold: 640 x 640"
+   ]
   },
   "NPEB01397": {
    "title": "NPEB01397",
@@ -36772,7 +36957,7 @@
   "NPEB01816": {
    "title": "Air Conflicts: Vietnam",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=348",
    "apply": {},
    "unsupported": []
@@ -36870,7 +37055,7 @@
   "NPEB01844": {
    "title": "Anna - Extended Edition",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1028",
    "apply": {},
    "unsupported": []
@@ -36940,7 +37125,7 @@
   "NPEB01872": {
    "title": "Aabs Animals",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1015",
    "apply": {},
    "unsupported": []
@@ -37131,7 +37316,7 @@
   "NPEB01910": {
    "title": "Abyss Odyssey",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=408",
    "apply": {},
    "unsupported": []
@@ -37163,7 +37348,7 @@
   "NPEB01921": {
    "title": "Alien: Isolation",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1264",
    "apply": {},
    "unsupported": []
@@ -37549,7 +37734,7 @@
   "NPEB02032": {
    "title": "Another World",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=367",
    "apply": {},
    "unsupported": []
@@ -37762,7 +37947,7 @@
   "NPEB02108": {
    "title": "Ar Nosurge: Ode to an Unborn Star",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=371",
    "apply": {},
    "unsupported": []
@@ -37852,7 +38037,7 @@
   "NPEB02133": {
    "title": "Aaru's Awakening",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=337",
    "apply": {},
    "unsupported": []
@@ -37948,7 +38133,7 @@
   "NPEB02164": {
    "title": "A Boy and His Blob",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=334",
    "apply": {},
    "unsupported": []
@@ -38143,12 +38328,15 @@
    ]
   },
   "NPEB02234": {
-   "title": "Adventure Time: Finn and Jake Investigations Demo",
+   "title": "Adventure Time: Finn and Jake Investigations",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1018",
    "apply": {},
-   "unsupported": []
+   "unsupported": [
+    "Anisotropic filter: Auto",
+    "Sleep timers accuracy: As Host"
+   ]
   },
   "NPEB02235": {
    "title": "Tales of Zestiria",
@@ -38345,7 +38533,7 @@
   "NPEB02323": {
    "title": "Adam's Venture: Chronicles",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=341",
    "apply": {},
    "unsupported": []
@@ -38478,7 +38666,7 @@
   "NPEB02458": {
    "title": "99Vidas",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=3378",
    "apply": {},
    "unsupported": []
@@ -38545,12 +38733,18 @@
    ]
   },
   "NPEB90009": {
-   "title": "Armored Core 4 Trial Version",
+   "title": "Armored Core 4",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1130",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic"
+   ]
   },
   "NPEB90011": {
    "title": "Gauntlet II Demo",
@@ -39044,9 +39238,9 @@
    "unsupported": []
   },
   "NPEB90079": {
-   "title": "1942: Joint Strike Trial",
+   "title": "1942: Joint Strike",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=322",
    "apply": {},
    "unsupported": []
@@ -39309,9 +39503,9 @@
    ]
   },
   "NPEB90117": {
-   "title": "Alone in the Dark: Inferno Demo",
+   "title": "Alone in the Dark: Inferno",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1026",
    "apply": {},
    "unsupported": []
@@ -39807,12 +40001,14 @@
    "unsupported": []
   },
   "NPEB90201": {
-   "title": "Army of TWO: The 40th Day Demo",
+   "title": "Army of TWO: The 40th Day",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=557",
    "apply": {},
-   "unsupported": []
+   "unsupported": [
+    "Resolution scale threshold: 512 x 512"
+   ]
   },
   "NPEB90202": {
    "title": "MX vs. ATV Reflex",
@@ -39931,9 +40127,9 @@
    "unsupported": []
   },
   "NPEB90216": {
-   "title": "Aliens vs. Predator Demo",
+   "title": "Aliens vs. Predator",
    "status": "Intro",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1025",
    "apply": {},
    "unsupported": []
@@ -39987,9 +40183,9 @@
    "unsupported": []
   },
   "NPEB90228": {
-   "title": "2010 FIFA World Cup South Africa Demo",
+   "title": "2010 FIFA World Cup South Africa",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1013",
    "apply": {},
    "unsupported": []
@@ -41350,19 +41546,21 @@
    "unsupported": []
   },
   "NPEB90469": {
-   "title": "Air Conflicts: Pacific Carriers Demo",
+   "title": "Air Conflicts: Pacific Carriers",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=349",
    "apply": {},
    "unsupported": []
   },
   "NPEB90470": {
-   "title": "Army of TWO: The Devil's Cartel Demo",
+   "title": "Army of TWO: The Devil's Cartel",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1104",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "NPEB90471": {
@@ -42571,12 +42769,19 @@
    "unsupported": []
   },
   "NPHB00033": {
-   "title": "Armored Core: For Answer Demo",
+   "title": "Armored Core: For Answer",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1276",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic",
+    "Handle RSX memory tiling: On"
+   ]
   },
   "NPHB00034": {
    "title": "Bionic Commando Rearmed",
@@ -42616,9 +42821,9 @@
    "unsupported": []
   },
   "NPHB00042": {
-   "title": "1942: Joint Strike Trial",
+   "title": "1942: Joint Strike",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=322",
    "apply": {},
    "unsupported": []
@@ -43030,9 +43235,9 @@
    "unsupported": []
   },
   "NPHB00198": {
-   "title": "2010 FIFA World Cup South Africa Demo",
+   "title": "2010 FIFA World Cup South Africa",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1013",
    "apply": {},
    "unsupported": []
@@ -44462,9 +44667,9 @@
    "unsupported": []
   },
   "NPJA90173": {
-   "title": "PlayStation Move Ape Escape Demo",
+   "title": "Ape Escape",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1271",
    "apply": {},
    "unsupported": []
@@ -44666,7 +44871,7 @@
   "NPJB00009": {
    "title": "Angel Love Online",
    "status": "Loadable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=4174",
    "apply": {},
    "unsupported": []
@@ -44674,7 +44879,7 @@
   "NPJB00019": {
    "title": "3 on 3 NHL Arcade",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=323",
    "apply": {},
    "unsupported": []
@@ -44813,9 +45018,9 @@
    ]
   },
   "NPJB00094": {
-   "title": "SEGA Ages Online: Alex Kidd no Miracle World",
+   "title": "Alex Kidd in Miracle World",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=353",
    "apply": {},
    "unsupported": []
@@ -45465,7 +45670,7 @@
   "NPJB00575": {
    "title": "Alien Rage",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=358",
    "apply": {},
    "unsupported": []
@@ -45632,15 +45837,15 @@
   "NPJB00738": {
    "title": "Angel Senki",
    "status": "Loadable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=4469",
    "apply": {},
    "unsupported": []
   },
   "NPJB00745": {
-   "title": "Angel Love Online Re-Release",
+   "title": "Angel Love Online",
    "status": "Loadable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=4174",
    "apply": {},
    "unsupported": []
@@ -45756,7 +45961,7 @@
   "NPJB00823": {
    "title": "Asdivine Hearts",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=377",
    "apply": {},
    "unsupported": []
@@ -46047,12 +46252,19 @@
    ]
   },
   "NPJB90067": {
-   "title": "Armored Core: For Answer Demo",
+   "title": "Armored Core: For Answer",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1276",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic",
+    "Handle RSX memory tiling: On"
+   ]
   },
   "NPJB90068": {
    "title": "Need for Speed: ProStreet",
@@ -46627,9 +46839,9 @@
    "unsupported": []
   },
   "NPJB90446": {
-   "title": "Max Anarchy Demo",
+   "title": "Anarchy Reigns",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1265",
    "apply": {},
    "unsupported": []
@@ -47269,9 +47481,9 @@
    "unsupported": []
   },
   "NPJB90788": {
-   "title": "Aegis of Earth: Protonovus Assault Trial Version",
+   "title": "Aegis of Earth: Protonovus Assault",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1019",
    "apply": {},
    "unsupported": []
@@ -47498,7 +47710,7 @@
   "NPUA30036": {
    "title": "Akimi Village",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=352",
    "apply": {},
    "unsupported": []
@@ -48807,7 +49019,7 @@
   "NPUA80008": {
    "title": ".detuned",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=319",
    "apply": {},
    "unsupported": []
@@ -49113,7 +49325,7 @@
   "NPUA80127": {
    "title": "Aqua Vita",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1272",
    "apply": {},
    "unsupported": []
@@ -50454,7 +50666,7 @@
   "NPUB30024": {
    "title": "1942: Joint Strike",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=322",
    "apply": {},
    "unsupported": []
@@ -50502,7 +50714,7 @@
   "NPUB30033": {
    "title": "Age of Booty",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1021",
    "apply": {},
    "unsupported": []
@@ -50666,7 +50878,7 @@
   "NPUB30058": {
    "title": "3 on 3 NHL Arcade",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=323",
    "apply": {},
    "unsupported": []
@@ -50969,7 +51181,7 @@
   "NPUB30106": {
    "title": "Anarchy: Rush Hour",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1266",
    "apply": {},
    "unsupported": []
@@ -51153,7 +51365,7 @@
   "NPUB30141": {
    "title": "Alien Breed: Impact",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=357",
    "apply": {},
    "unsupported": []
@@ -51211,7 +51423,7 @@
   "NPUB30151": {
    "title": "After Burner Climax",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=345",
    "apply": {},
    "unsupported": []
@@ -51777,7 +51989,7 @@
   "NPUB30275": {
    "title": "Absolute Supercars",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1016",
    "apply": {},
    "unsupported": []
@@ -51947,10 +52159,12 @@
   "NPUB30308": {
    "title": "All Zombies Must Die!",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=361",
    "apply": {},
-   "unsupported": []
+   "unsupported": [
+    "Anisotropic filter: Auto"
+   ]
   },
   "NPUB30309": {
    "title": "Deadliest Warrior: The Game",
@@ -52037,7 +52251,7 @@
   "NPUB30323": {
    "title": "Alex Kidd in Miracle World",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=353",
    "apply": {},
    "unsupported": []
@@ -52109,7 +52323,7 @@
   "NPUB30336": {
    "title": "Alien Breed 3: Descent",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=356",
    "apply": {},
    "unsupported": []
@@ -52528,7 +52742,7 @@
   "NPUB30423": {
    "title": "Assassin's Creed II",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1279",
    "apply": {},
    "unsupported": []
@@ -52546,7 +52760,7 @@
   "NPUB30425": {
    "title": "Arcana Heart 3",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=559",
    "apply": {},
    "unsupported": []
@@ -52758,7 +52972,7 @@
   "NPUB30459": {
    "title": "Altered Beast",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=364",
    "apply": {},
    "unsupported": []
@@ -53111,10 +53325,14 @@
   "NPUB30522": {
    "title": "Assassin's Creed: Brotherhood",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1282",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter"
+   },
+   "unsupported": [
+    "Strict rendering mode: On"
+   ]
   },
   "NPUB30523": {
    "title": "Far Cry 2",
@@ -53224,10 +53442,17 @@
   "NPUB30545": {
    "title": "Alice: Madness Returns",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1023",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Resolution scale threshold: 592x592",
+    "Accurate RSX reservation access: On",
+    "Driver wake-up delay: 200",
+    "Force CPU blit emulation: On"
+   ]
   },
   "NPUB30547": {
    "title": "NCAA Football 12",
@@ -54277,9 +54502,9 @@
    ]
   },
   "NPUB30703": {
-   "title": "Arkedo Series",
+   "title": "Arkedo Series - 01 Jump!",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1030",
    "apply": {},
    "unsupported": []
@@ -54982,9 +55207,13 @@
   "NPUB30826": {
    "title": "Assassin's Creed III",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1280",
-   "apply": {},
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
    "unsupported": []
   },
   "NPUB30828": {
@@ -55152,7 +55381,7 @@
   "NPUB30863": {
    "title": "Alien Rage",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=358",
    "apply": {},
    "unsupported": []
@@ -55176,7 +55405,7 @@
   "NPUB30867": {
    "title": "Adam's Venture: Chronicles",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=341",
    "apply": {},
    "unsupported": []
@@ -55221,7 +55450,7 @@
   "NPUB30878": {
    "title": "A-Men",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=335",
    "apply": {},
    "unsupported": []
@@ -55633,9 +55862,11 @@
   "NPUB30987": {
    "title": "Army of TWO: The Devil's Cartel",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1104",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "NPUB30988": {
@@ -55831,7 +56062,7 @@
   "NPUB31085": {
    "title": "Alien Breed",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=354",
    "apply": {},
    "unsupported": []
@@ -55839,7 +56070,7 @@
   "NPUB31088": {
    "title": "Angry Birds Trilogy",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1267",
    "apply": {},
    "unsupported": []
@@ -55863,7 +56094,7 @@
   "NPUB31096": {
    "title": "Anarchy Reigns",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1265",
    "apply": {},
    "unsupported": []
@@ -56564,18 +56795,31 @@
   "NPUB31245": {
    "title": "Armored Core: Verdict Day",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1277",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic"
+   ]
   },
   "NPUB31246": {
    "title": "Assassin's Creed IV: Black Flag",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1281",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter",
+    "writeColorBuffers": true,
+    "readColorBuffers": true
+   },
+   "unsupported": [
+    "Resolution scale threshold: 640 x 640"
+   ]
   },
   "NPUB31247": {
    "title": "Final Fantasy X/X-2 HD Remaster",
@@ -56603,9 +56847,11 @@
   "NPUB31249": {
    "title": "ArcaniA: The Complete Tale",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1182",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "NPUB31250": {
@@ -56806,7 +57052,7 @@
   "NPUB31282": {
    "title": "Adventure Time: Explore the Dungeon Because I DON'T KNOW!",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=342",
    "apply": {},
    "unsupported": []
@@ -57154,7 +57400,7 @@
   "NPUB31354": {
    "title": "Anna - Extended Edition",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1028",
    "apply": {},
    "unsupported": []
@@ -57197,7 +57443,7 @@
   "NPUB31365": {
    "title": "Aabs Animals",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1015",
    "apply": {},
    "unsupported": []
@@ -57363,7 +57609,7 @@
   "NPUB31397": {
    "title": "Abyss Odyssey",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=408",
    "apply": {},
    "unsupported": []
@@ -57544,7 +57790,7 @@
   "NPUB31440": {
    "title": "Alien: Isolation",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1264",
    "apply": {},
    "unsupported": []
@@ -57909,7 +58155,7 @@
   "NPUB31523": {
    "title": "Adventure Time: The Secret of the Nameless Kingdom",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=343",
    "apply": {},
    "unsupported": []
@@ -58003,7 +58249,7 @@
   "NPUB31543": {
    "title": "Another World",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=367",
    "apply": {},
    "unsupported": []
@@ -58168,7 +58414,7 @@
   "NPUB31579": {
    "title": "Ar Nosurge: Ode to an Unborn Star",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=371",
    "apply": {},
    "unsupported": []
@@ -58539,12 +58785,15 @@
    "unsupported": []
   },
   "NPUB31664": {
-   "title": "Adventure Time: Finn and Jake Investigations Demo",
+   "title": "Adventure Time: Finn and Jake Investigations",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1018",
    "apply": {},
-   "unsupported": []
+   "unsupported": [
+    "Anisotropic filter: Auto",
+    "Sleep timers accuracy: As Host"
+   ]
   },
   "NPUB31665": {
    "title": "Call of Duty: Black Ops 3",
@@ -58904,7 +59153,7 @@
   "NPUB31805": {
    "title": "Aegis of Earth: Protonovus Assault",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1019",
    "apply": {},
    "unsupported": []
@@ -58971,7 +59220,7 @@
   "NPUB31842": {
    "title": "99Vidas",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=3378",
    "apply": {},
    "unsupported": []
@@ -58999,7 +59248,7 @@
   "NPUB31850": {
    "title": "Asdivine Hearts",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=377",
    "apply": {},
    "unsupported": []
@@ -59125,12 +59374,18 @@
    ]
   },
   "NPUB90008": {
-   "title": "Armored Core 4 Trial Version",
+   "title": "Armored Core 4",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1130",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Framelimit: Auto",
+    "Resolution scale threshold: 320x320",
+    "Keyboard handler: Basic"
+   ]
   },
   "NPUB90015": {
    "title": "Major League Baseball 2K7",
@@ -59258,12 +59513,16 @@
    ]
   },
   "NPUB90035": {
-   "title": "All-Pro Football 2K8 Demo",
+   "title": "All-Pro Football 2K8",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=765",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "writeColorBuffers": true
+   },
+   "unsupported": [
+    "Force CPU blit emulation: On"
+   ]
   },
   "NPUB90036": {
    "title": "NASCAR 08",
@@ -59681,9 +59940,9 @@
    "unsupported": []
   },
   "NPUB90104": {
-   "title": "1942: Joint Strike Trial",
+   "title": "1942: Joint Strike",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=322",
    "apply": {},
    "unsupported": []
@@ -59986,9 +60245,9 @@
    "unsupported": []
   },
   "NPUB90175": {
-   "title": "Alone in the Dark: Inferno Demo",
+   "title": "Alone in the Dark: Inferno",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1026",
    "apply": {},
    "unsupported": []
@@ -60192,9 +60451,9 @@
    "unsupported": []
   },
   "NPUB90225": {
-   "title": "Aliens vs. Predator Demo",
+   "title": "Aliens vs. Predator",
    "status": "Intro",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1025",
    "apply": {},
    "unsupported": []
@@ -60710,12 +60969,14 @@
    ]
   },
   "NPUB90353": {
-   "title": "Army of TWO: The 40th Day Demo",
+   "title": "Army of TWO: The 40th Day",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=557",
    "apply": {},
-   "unsupported": []
+   "unsupported": [
+    "Resolution scale threshold: 512 x 512"
+   ]
   },
   "NPUB90356": {
    "title": "Planet Minigolf",
@@ -60776,9 +61037,9 @@
    "unsupported": []
   },
   "NPUB90369": {
-   "title": "2010 FIFA World Cup South Africa Demo",
+   "title": "2010 FIFA World Cup South Africa",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=1013",
    "apply": {},
    "unsupported": []
@@ -61194,12 +61455,16 @@
    "unsupported": []
   },
   "NPUB90483": {
-   "title": "Assassin's Creed: Brotherhood - Multiplayer Beta",
+   "title": "Assassin's Creed: Brotherhood",
    "status": "Intro",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1282",
-   "apply": {},
-   "unsupported": []
+   "apply": {
+    "ppu_decoder": "interpreter"
+   },
+   "unsupported": [
+    "Strict rendering mode: On"
+   ]
   },
   "NPUB90484": {
    "title": "R.U.S.E.",
@@ -62187,11 +62452,13 @@
    "unsupported": []
   },
   "NPUB90862": {
-   "title": "Army of TWO: The Devil's Cartel Demo",
+   "title": "Army of TWO: The Devil's Cartel",
    "status": "Ingame",
-   "kind": "unread",
+   "kind": "settings",
    "page": "https://wiki.rpcs3.net/index.php?curid=1104",
-   "apply": {},
+   "apply": {
+    "writeColorBuffers": true
+   },
    "unsupported": []
   },
   "NPUB90864": {
@@ -62753,9 +63020,9 @@
    "unsupported": []
   },
   "NPUB91040": {
-   "title": "99Vidas Demo",
+   "title": "99Vidas",
    "status": "Playable",
-   "kind": "unread",
+   "kind": "none",
    "page": "https://wiki.rpcs3.net/index.php?curid=3378",
    "apply": {},
    "unsupported": []

@@ -80,14 +80,16 @@ def main():
                 print(f"  asked {asked}; {len(ids)} of {len(ex)} ids answered", flush=True)
             time.sleep(0.25)
 
-    out = {}
+    # when the compatibility list was read: its PROVENANCE date, which the
+    # importer stamps on every status and must not guess
+    out = {"_fetched": time.strftime("%Y-%m-%d", time.gmtime())}
     for tid in sorted(ex):
         rec = ids.get(tid) or {}
         out[tid] = {"wiki_id": rec.get("wiki-id"), "title": rec.get("title"),
                     "status": (rec.get("status") or ex[tid].get("status"))}
     with open(a.out, "w") as f:
         json.dump(out, f, indent=0, sort_keys=True)
-    linked = sum(1 for v in out.values() if v["wiki_id"])
+    linked = sum(1 for k, v in out.items() if not k.startswith("_") and v["wiki_id"])
     print(f"done: asked {asked} more; {len(out)} ids, {linked} linked to a wiki page")
     return 0
 

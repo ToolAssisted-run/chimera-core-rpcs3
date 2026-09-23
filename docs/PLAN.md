@@ -2400,9 +2400,9 @@ struck the siblings off its to-do list but recorded only the id it had asked
 about - 3,213 of 6,754 ids linked to nothing, Oblivion USA among them. Every
 member of an answer is recorded now, and 6,561 ids link to a page.
 
-**Still open:** 76 linked pages (211 title ids) were never read by the first
-harvest. `rpcs3-wiki-harvest-remaining.js` reads just those; the importer
-merges harvests. Until then those titles report their page as unread.
+**Closed 2026-09-23:** the 76 linked pages (211 title ids) the first harvest
+never read were read by a second one, which is a strict superset of the
+first and replaces it. No linked page is unread any more.
 
 **Packaging is blocked, and not by this.** check-wbx refuses to package any
 RPCS3 build today: its prebuilt guest libraries (FFmpeg, dav1d, LLVM, LZMA,

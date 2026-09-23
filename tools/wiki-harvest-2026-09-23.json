@@ -1,7 +1,7 @@
 {
  "source": "wiki.rpcs3.net, read in a browser session",
  "licence": "page content CC BY-SA 4.0; only setting names and values are kept",
- "harvested": "2026-09-22T18:38:40.283Z",
+ "harvested": "2026-09-23T03:30:38.633Z",
  "pages": {
   "4": {
    "title": "Demon's Souls",
@@ -1503,11 +1503,50 @@
    "status": "Playable",
    "settings": []
   },
+  "319": {
+   "title": ".detuned",
+   "ids": [
+    "NPEA00137",
+    "NPUA80008"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
   "320": {
    "title": "'&' - Sora no Mukou de Sakimasu you ni",
    "ids": [
     "BLJM61131",
     "NPJB00488"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "321": {
+   "title": ".hack//Versus",
+   "ids": [
+    "BLJS93008"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "322": {
+   "title": "1942: Joint Strike",
+   "ids": [
+    "NPEB00026",
+    "NPEB90079",
+    "NPHB00042",
+    "NPUB30024",
+    "NPUB90104"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "323": {
+   "title": "3 on 3 NHL Arcade",
+   "ids": [
+    "NPEB00080",
+    "NPJB00019",
+    "NPUB30058"
    ],
    "status": "Playable",
    "settings": []
@@ -1538,10 +1577,106 @@
    "status": "Playable",
    "settings": []
   },
+  "334": {
+   "title": "A Boy and His Blob",
+   "ids": [
+    "NPEB02164"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "335": {
+   "title": "A-Men",
+   "ids": [
+    "NPEB01127",
+    "NPUB30878"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
   "336": {
    "title": "A-Men 2",
    "ids": [
     "NPEB01210"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "337": {
+   "title": "Aaru's Awakening",
+   "ids": [
+    "NPEB02133"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "338": {
+   "title": "Accel World: Gin'yoku no Kakusei",
+   "ids": [
+    "BLJS10174"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "339": {
+   "title": "Accel World: Kasoku no Chouten",
+   "ids": [
+    "BLJS10176"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "340": {
+   "title": "Acceleration of Suguri X Edition",
+   "ids": [
+    "NPEA00205"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "341": {
+   "title": "Adam's Venture: Chronicles",
+   "ids": [
+    "NPEB00872",
+    "NPEB02323",
+    "NPUB30867"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "342": {
+   "title": "Adventure Time: Explore the Dungeon Because I DON'T KNOW!",
+   "ids": [
+    "BLES01961",
+    "BLUS31214",
+    "NPUB31282"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "343": {
+   "title": "Adventure Time: The Secret of the Nameless Kingdom",
+   "ids": [
+    "BLES02063",
+    "BLUS31450",
+    "NPUB31523"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "344": {
+   "title": "AFL Live 2",
+   "ids": [
+    "BLES01875"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "345": {
+   "title": "After Burner Climax",
+   "ids": [
+    "NPEB00175",
+    "NPUB30151"
    ],
    "status": "Playable",
    "settings": []
@@ -1562,6 +1697,27 @@
     "BLES01305",
     "BLUS30686",
     "NPUB30776"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "348": {
+   "title": "Air Conflicts: Vietnam",
+   "ids": [
+    "BLES01858",
+    "BLJM61080",
+    "BLUS31320",
+    "NPEB01816"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "349": {
+   "title": "Air Conflicts: Pacific Carriers",
+   "ids": [
+    "BLES01604",
+    "NPEB01289",
+    "NPEB90469"
    ],
    "status": "Playable",
    "settings": []
@@ -1589,10 +1745,64 @@
     }
    ]
   },
+  "352": {
+   "title": "Akimi Village",
+   "ids": [
+    "NPUA30036"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "353": {
+   "title": "Alex Kidd in Miracle World",
+   "ids": [
+    "NPEB00415",
+    "NPJB00094",
+    "NPUB30323"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "354": {
+   "title": "Alien Breed",
+   "ids": [
+    "NPUB31085"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
   "355": {
    "title": "Alien Breed 2: Assault",
    "ids": [
     "NPEB00345"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "356": {
+   "title": "Alien Breed 3: Descent",
+   "ids": [
+    "NPEB00346",
+    "NPUB30336"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "357": {
+   "title": "Alien Breed: Impact",
+   "ids": [
+    "NPEB00260",
+    "NPUB30141"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "358": {
+   "title": "Alien Rage",
+   "ids": [
+    "NPEB01088",
+    "NPJB00575",
+    "NPUB30863"
    ],
    "status": "Playable",
    "settings": []
@@ -1613,10 +1823,41 @@
    "status": "Playable",
    "settings": []
   },
+  "361": {
+   "title": "All Zombies Must Die!",
+   "ids": [
+    "NPUB30308"
+   ],
+   "status": "Playable",
+   "settings": [
+    {
+     "setting": "Anisotropic filter",
+     "option": "Auto"
+    }
+   ]
+  },
   "362": {
    "title": "Alpha Mission II",
    "ids": [
     "NPUB30263"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "363": {
+   "title": "Alpha Protocol",
+   "ids": [
+    "BLES00704",
+    "BLUS30341"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "364": {
+   "title": "Altered Beast",
+   "ids": [
+    "NPEB00526",
+    "NPUB30459"
    ],
    "status": "Playable",
    "settings": []
@@ -1626,6 +1867,15 @@
    "ids": [
     "BLES01943",
     "NPUB31307"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "367": {
+   "title": "Another World",
+   "ids": [
+    "NPEB02032",
+    "NPUB31543"
    ],
    "status": "Playable",
    "settings": []
@@ -1656,6 +1906,26 @@
    "status": "Playable",
    "settings": []
   },
+  "371": {
+   "title": "Ar Nosurge: Ode to an Unborn Star",
+   "ids": [
+    "BLES02087",
+    "BLJM61150",
+    "BLUS31478",
+    "NPEB02108",
+    "NPUB31579"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "375": {
+   "title": "Armageddon Riders",
+   "ids": [
+    "NPEB00305"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
   "376": {
    "title": "Hotline Miami",
    "ids": [
@@ -1668,6 +1938,15 @@
      "option": "On"
     }
    ]
+  },
+  "377": {
+   "title": "Asdivine Hearts",
+   "ids": [
+    "NPJB00823",
+    "NPUB31850"
+   ],
+   "status": "Ingame",
+   "settings": []
   },
   "378": {
    "title": "Assault Heroes",
@@ -1967,6 +2246,23 @@
    "title": "Judge Dee - The City God Case",
    "ids": [
     "NPEB00866"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "408": {
+   "title": "Abyss Odyssey",
+   "ids": [
+    "NPEB01910",
+    "NPUB31397"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "409": {
+   "title": "Akatsuki No Goei Trinity",
+   "ids": [
+    "BLJM60521"
    ],
    "status": "Playable",
    "settings": []
@@ -3230,6 +3526,16 @@
    "status": "Playable",
    "settings": []
   },
+  "553": {
+   "title": "50 Cent: Blood On The Sand",
+   "ids": [
+    "BLES00472",
+    "BLJS10056",
+    "BLUS30256"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
   "554": {
    "title": "Afro Samurai",
    "ids": [
@@ -3245,6 +3551,48 @@
     "BLES00594",
     "NPJB90043",
     "NPUB30142"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "557": {
+   "title": "Army of TWO: The 40th Day",
+   "ids": [
+    "BLES00659",
+    "BLUS30408",
+    "NPEB90201",
+    "NPUB90353"
+   ],
+   "status": "Playable",
+   "settings": [
+    {
+     "setting": "Resolution scale threshold",
+     "option": "512 x 512"
+    }
+   ]
+  },
+  "558": {
+   "title": "Army of TWO",
+   "ids": [
+    "BLES00168",
+    "BLUS30057"
+   ],
+   "status": "Playable",
+   "settings": [
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    }
+   ]
+  },
+  "559": {
+   "title": "Arcana Heart 3",
+   "ids": [
+    "BLES01295",
+    "BLES02126",
+    "BLJS10274",
+    "BLUS31424",
+    "NPUB30425"
    ],
    "status": "Playable",
    "settings": []
@@ -4748,6 +5096,32 @@
     }
    ]
   },
+  "764": {
+   "title": "AKB1/149 Renai Sousenkyo",
+   "ids": [
+    "BLJS10241"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "765": {
+   "title": "All-Pro Football 2K8",
+   "ids": [
+    "BLUS30049",
+    "NPUB90035"
+   ],
+   "status": "Playable",
+   "settings": [
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    },
+    {
+     "setting": "Force CPU blit emulation",
+     "option": "On"
+    }
+   ]
+  },
   "771": {
    "title": "God of War III",
    "ids": [
@@ -6213,10 +6587,70 @@
    "status": "Playable",
    "settings": []
   },
+  "1013": {
+   "title": "2010 FIFA World Cup South Africa",
+   "ids": [
+    "BLES00796",
+    "BLJM60222",
+    "BLUS30474",
+    "NPEB90228",
+    "NPHB00198",
+    "NPUB90369"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
   "1014": {
    "title": "428: Fuusa Sareta Shibuya de",
    "ids": [
     "BLJS10057"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1015": {
+   "title": "Aabs Animals",
+   "ids": [
+    "NPEB01872",
+    "NPUB31365"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1016": {
+   "title": "Absolute Supercars",
+   "ids": [
+    "BLES01500",
+    "NPUB30275"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1018": {
+   "title": "Adventure Time: Finn and Jake Investigations",
+   "ids": [
+    "BLUS31526",
+    "NPEB02234",
+    "NPUB31664"
+   ],
+   "status": "Playable",
+   "settings": [
+    {
+     "setting": "Anisotropic filter",
+     "option": "Auto"
+    },
+    {
+     "setting": "Sleep timers accuracy",
+     "option": "As Host"
+    }
+   ]
+  },
+  "1019": {
+   "title": "Aegis of Earth: Protonovus Assault",
+   "ids": [
+    "BLUS31587",
+    "NPJB90788",
+    "NPUB31805"
    ],
    "status": "Playable",
    "settings": []
@@ -6229,6 +6663,45 @@
    "status": "Playable",
    "settings": []
   },
+  "1021": {
+   "title": "Age of Booty",
+   "ids": [
+    "NPUB30033"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1023": {
+   "title": "Alice: Madness Returns",
+   "ids": [
+    "BLES01265",
+    "BLUS30607",
+    "NPUB30545"
+   ],
+   "status": "Playable",
+   "settings": [
+    {
+     "setting": "Resolution scale threshold",
+     "option": "592x592"
+    },
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    },
+    {
+     "setting": "Accurate RSX reservation access",
+     "option": "On"
+    },
+    {
+     "setting": "Driver wake-up delay",
+     "option": "200"
+    },
+    {
+     "setting": "Force CPU blit emulation",
+     "option": "On"
+    }
+   ]
+  },
   "1024": {
    "title": "Alien Spidy Trial",
    "ids": [
@@ -6237,10 +6710,42 @@
    "status": "Playable",
    "settings": []
   },
+  "1025": {
+   "title": "Aliens vs. Predator",
+   "ids": [
+    "BLES00585",
+    "BLES00586",
+    "BLUS30340",
+    "NPEB90216",
+    "NPUB90225"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1026": {
+   "title": "Alone in the Dark: Inferno",
+   "ids": [
+    "BLES00422",
+    "BLUS30232",
+    "NPEB90117",
+    "NPUB90175"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
   "1027": {
    "title": "Amy",
    "ids": [
     "NPEB00768"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1028": {
+   "title": "Anna - Extended Edition",
+   "ids": [
+    "NPEB01844",
+    "NPUB31354"
    ],
    "status": "Playable",
    "settings": []
@@ -6254,11 +6759,38 @@
    "status": "Playable",
    "settings": []
   },
+  "1030": {
+   "title": "Arkedo Series - 01 Jump!",
+   "ids": [
+    "NPEB00598",
+    "NPEB00614",
+    "NPEB00615",
+    "NPUB30703"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
   "1031": {
    "title": "Arslan Senki x Musou",
    "ids": [
     "BLJM61308",
     "NPJB90797"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1032": {
+   "title": "Arthur and the Revenge of Maltazard",
+   "ids": [
+    "BLES00772"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1033": {
+   "title": "Ashes Cricket 2009",
+   "ids": [
+    "BLES00639"
    ],
    "status": "Playable",
    "settings": []
@@ -7059,6 +7591,25 @@
     }
    ]
   },
+  "1104": {
+   "title": "Army of TWO: The Devil's Cartel",
+   "ids": [
+    "BLES01763",
+    "BLUS31069",
+    "NPEB01216",
+    "NPEB01217",
+    "NPEB90470",
+    "NPUB30987",
+    "NPUB90862"
+   ],
+   "status": "Ingame",
+   "settings": [
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    }
+   ]
+  },
   "1106": {
    "title": "SIREN: Blood Curse",
    "ids": [
@@ -7186,6 +7737,34 @@
     {
      "setting": "Strict rendering mode",
      "option": "On"
+    }
+   ]
+  },
+  "1130": {
+   "title": "Armored Core 4",
+   "ids": [
+    "BLES00039",
+    "BLUS30027",
+    "NPEB90009",
+    "NPUB90008"
+   ],
+   "status": "Playable",
+   "settings": [
+    {
+     "setting": "Framelimit",
+     "option": "Auto"
+    },
+    {
+     "setting": "Resolution scale threshold",
+     "option": "320x320"
+    },
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    },
+    {
+     "setting": "Keyboard handler",
+     "option": "Basic"
     }
    ]
   },
@@ -7511,6 +8090,21 @@
     }
    ]
   },
+  "1182": {
+   "title": "ArcaniA: The Complete Tale",
+   "ids": [
+    "BLES01783",
+    "BLUS31158",
+    "NPUB31249"
+   ],
+   "status": "Playable",
+   "settings": [
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    }
+   ]
+  },
   "1183": {
    "title": "SSX",
    "ids": [
@@ -7767,6 +8361,15 @@
     }
    ]
   },
+  "1255": {
+   "title": "007: Quantum of Solace",
+   "ids": [
+    "BLES00406",
+    "BLUS30198"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
   "1256": {
    "title": "3D Dot Game Heroes",
    "ids": [
@@ -7775,6 +8378,19 @@
    ],
    "status": "Ingame",
    "settings": []
+  },
+  "1258": {
+   "title": "AC/DC Live: Rock Band Track Pack",
+   "ids": [
+    "BLUS30235"
+   ],
+   "status": "Playable",
+   "settings": [
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    }
+   ]
   },
   "1259": {
    "title": "Ace Combat Infinity Beta Test Ver.",
@@ -7795,10 +8411,85 @@
    "status": "Ingame",
    "settings": []
   },
+  "1261": {
+   "title": "Adidas miCoach",
+   "ids": [
+    "BLES01529"
+   ],
+   "status": "Intro",
+   "settings": []
+  },
+  "1262": {
+   "title": "Afrika",
+   "ids": [
+    "BCAS20050",
+    "BCJS30021",
+    "BLUS30399"
+   ],
+   "status": "Playable",
+   "settings": [
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    }
+   ]
+  },
+  "1264": {
+   "title": "Alien: Isolation",
+   "ids": [
+    "BLES01697",
+    "BLUS30832",
+    "NPEB01921",
+    "NPUB31440"
+   ],
+   "status": "Ingame",
+   "settings": []
+  },
+  "1265": {
+   "title": "Anarchy Reigns",
+   "ids": [
+    "BLES01232",
+    "BLJM60305",
+    "BLUS30632",
+    "NPEB01246",
+    "NPJB90446",
+    "NPUB31096"
+   ],
+   "status": "Ingame",
+   "settings": []
+  },
+  "1266": {
+   "title": "Anarchy: Rush Hour",
+   "ids": [
+    "NPEB00160",
+    "NPUB30106"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1267": {
+   "title": "Angry Birds Trilogy",
+   "ids": [
+    "BLES01732",
+    "BLUS31054",
+    "NPEB01235",
+    "NPUB31088"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
   "1268": {
    "title": "Anomaly: Warzone Earth",
    "ids": [
     "NPEB00904"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1269": {
+   "title": "Another Century's Episode R",
+   "ids": [
+    "BLJS10081"
    ],
    "status": "Playable",
    "settings": []
@@ -7814,6 +8505,132 @@
     {
      "setting": "Write color buffers",
      "option": "On"
+    }
+   ]
+  },
+  "1271": {
+   "title": "Ape Escape",
+   "ids": [
+    "BCAS20159",
+    "BCES01186",
+    "NPEA90088",
+    "NPJA90173"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1272": {
+   "title": "Aqua Vita",
+   "ids": [
+    "NPEA00008",
+    "NPUA80127"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1273": {
+   "title": "Ar Tonelico Qoga: Knell of Ar Ciel",
+   "ids": [
+    "BLES01102",
+    "BLUS30639"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
+  "1275": {
+   "title": "Armored Core V",
+   "ids": [
+    "BLES01440",
+    "BLUS30516"
+   ],
+   "status": "Ingame",
+   "settings": [
+    {
+     "setting": "PPU decoder",
+     "option": "Interpreter (static)"
+    },
+    {
+     "setting": "Framelimit",
+     "option": "Auto"
+    },
+    {
+     "setting": "Resolution scale threshold",
+     "option": "320x320"
+    },
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    },
+    {
+     "setting": "Keyboard handler",
+     "option": "Basic"
+    },
+    {
+     "setting": "PSN status",
+     "option": "RPCN"
+    }
+   ]
+  },
+  "1276": {
+   "title": "Armored Core: For Answer",
+   "ids": [
+    "BLES00370",
+    "BLUS30187",
+    "NPHB00033",
+    "NPJB90067"
+   ],
+   "status": "Playable",
+   "settings": [
+    {
+     "setting": "Framelimit",
+     "option": "Auto"
+    },
+    {
+     "setting": "Resolution scale threshold",
+     "option": "320x320"
+    },
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    },
+    {
+     "setting": "Keyboard handler",
+     "option": "Basic"
+    },
+    {
+     "setting": "Handle RSX memory tiling",
+     "option": "On"
+    }
+   ]
+  },
+  "1277": {
+   "title": "Armored Core: Verdict Day",
+   "ids": [
+    "BLES01898",
+    "BLUS31194",
+    "NPUB31245"
+   ],
+   "status": "Ingame",
+   "settings": [
+    {
+     "setting": "PPU decoder",
+     "option": "Interpreter (static)"
+    },
+    {
+     "setting": "Framelimit",
+     "option": "Auto"
+    },
+    {
+     "setting": "Resolution scale threshold",
+     "option": "320x320"
+    },
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    },
+    {
+     "setting": "Keyboard handler",
+     "option": "Basic"
     }
    ]
   },
@@ -7835,6 +8652,102 @@
     },
     {
      "setting": "Asynchronous texture streaming",
+     "option": "On"
+    }
+   ]
+  },
+  "1279": {
+   "title": "Assassin's Creed II",
+   "ids": [
+    "BLES00669",
+    "BLES00670",
+    "BLES00751",
+    "BLES00899",
+    "BLJM60185",
+    "BLUS30364",
+    "NPEB00462",
+    "NPUB30423"
+   ],
+   "status": "Ingame",
+   "settings": []
+  },
+  "1280": {
+   "title": "Assassin's Creed III",
+   "ids": [
+    "BLES01667",
+    "BLES01668",
+    "BLES01669",
+    "BLES01968",
+    "BLJM61174",
+    "BLUS30991",
+    "NPEB01099",
+    "NPUB30826"
+   ],
+   "status": "Ingame",
+   "settings": [
+    {
+     "setting": "PPU decoder",
+     "option": "Interpreter (static)"
+    },
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    },
+    {
+     "setting": "Read color buffers",
+     "option": "On"
+    }
+   ]
+  },
+  "1281": {
+   "title": "Assassin's Creed IV: Black Flag",
+   "ids": [
+    "BLES01882",
+    "BLES01883",
+    "BLES01884",
+    "BLUS31193",
+    "BLUS31483",
+    "NPEB01396",
+    "NPUB31246"
+   ],
+   "status": "Ingame",
+   "settings": [
+    {
+     "setting": "PPU decoder",
+     "option": "Interpreter (static)"
+    },
+    {
+     "setting": "Resolution scale threshold",
+     "option": "640 x 640"
+    },
+    {
+     "setting": "Write color buffers",
+     "option": "On"
+    },
+    {
+     "setting": "Read color buffers",
+     "option": "On"
+    }
+   ]
+  },
+  "1282": {
+   "title": "Assassin's Creed: Brotherhood",
+   "ids": [
+    "BLES00909",
+    "BLET70013",
+    "BLUS30537",
+    "NPEB00600",
+    "NPUB30522",
+    "NPUB90483"
+   ],
+   "status": "Ingame",
+   "settings": [
+    {
+     "setting": "PPU decoder",
+     "option": "Interpreter (static)"
+    },
+    {
+     "setting": "Strict rendering mode",
      "option": "On"
     }
    ]
@@ -21857,6 +22770,16 @@
    "status": "Playable",
    "settings": []
   },
+  "3378": {
+   "title": "99Vidas",
+   "ids": [
+    "NPEB02458",
+    "NPUB31842",
+    "NPUB91040"
+   ],
+   "status": "Playable",
+   "settings": []
+  },
   "3381": {
    "title": "Vanquish Velocity Attack Demo",
    "ids": [
@@ -22616,6 +23539,15 @@
    "status": "Intro",
    "settings": []
   },
+  "4174": {
+   "title": "Angel Love Online",
+   "ids": [
+    "NPJB00009",
+    "NPJB00745"
+   ],
+   "status": "Loadable",
+   "settings": []
+  },
   "4175": {
    "title": "Musou Orochi Z",
    "ids": [
@@ -22959,6 +23891,14 @@
     "BLJM60998"
    ],
    "status": "Playable",
+   "settings": []
+  },
+  "4469": {
+   "title": "Angel Senki",
+   "ids": [
+    "NPJB00738"
+   ],
+   "status": "Loadable",
    "settings": []
   },
   "4470": {
