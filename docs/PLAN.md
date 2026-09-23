@@ -2404,10 +2404,52 @@ member of an answer is recorded now, and 6,561 ids link to a page.
 never read were read by a second one, which is a strict superset of the
 first and replaces it. No linked page is unread any more.
 
-**Packaging is blocked, and not by this.** check-wbx refuses to package any
-RPCS3 build today: its prebuilt guest libraries (FFmpeg, dav1d, LLVM, LZMA,
-zstd) predate -mno-red-zone. The currently published core carries 35,960
-red-zone operands; this build 22,067, none in the new code. It is a packaging
-lint, not a load-time refusal, so existing cores still run - but they are
-exposed to the Windows exception-delivery corruption that broke the flycast JIT
-until those libraries are rebuilt.
+**Packaging was blocked, and not by this - closed 2026-09-23.** check-wbx
+refused every RPCS3 build: the prebuilt guest libraries (FFmpeg, dav1d, LLVM,
+LZMA, zstd) predated -mno-red-zone. Rebuilding them locally failed twice, both
+times because this machine's default compiler is GCC 14 and CI's is 13: zstd's
+dictBuilder calls qsort_r, which the guest's musl 1.2.0 lacks (13 warns, 14
+refuses), and GCC 14 crashes with an internal compiler error in abseil's
+any_invocable.h - the same crash native.mk and CI already pin g++-13 against.
+The guest toolchain file now pins gcc-13/g++-13 where they exist, and the
+rebuilt core packages clean: nothing below rsp.
+
+## The wiki's recommendations are settings, applied when a project is made (user-decided, 2026-09-23)
+
+The report above applied nothing, and said the decision was the user's. It
+was made: **every setting the wiki recommends is a setting of this core**, the
+new-project wizard applies a game's recommendations the moment it reaches its
+settings page, and shows there where they came from and the compatibility
+level - and the settings are there to experiment with when the game is not in
+the wiki at all.
+
+- **38 new settings**, declared by `tools/add-wiki-settings.py`. The display
+  name is the wiki's own; an enum's options are rpcs3's own spellings, and the
+  driver hands the value to the node's own parser (`apply_options`), refusing
+  one it does not know. Four do not map one value to one node and are
+  translated: ZCULL accuracy (two booleans), the anisotropic override ("Auto"
+  is 0), Delay each odd MFC command (the shuffling limit, 1), and Firmware
+  libraries (a comma list, each made LLE - only with the system software).
+- **Every default is what the core already ran with**, pins included (frame
+  limit PS3 Native, vblank 60, two PPU threads, no multithreaded RSX, no SPU
+  loop detection, the single-threaded shader recompiler): a project's untouched
+  setting resolves to the package default, so any other default would move the
+  machine of every existing project.
+- **43 of the wiki's 59 names now map.** The other 16 are refused per game with
+  a reason: asynchronous texture streaming is Vulkan's; buffering, time
+  stretching, buffer duration and audio format are the host's audio device;
+  camera, microphone, Move, keyboard and mouse handlers are host devices; the
+  network and PSN status need a network; VSync is the frontend's. Titles with at
+  least one applicable recommendation went from 1300 to 2300.
+- **The importer checks every value against the declaration.** A map entry says
+  how the wiki's text becomes a value - a table (On/Off), "same" (the option IS
+  rpcs3's spelling and must be a declared option), a number within the declared
+  range, "320x320" as one number, or a library list - and a value outside what
+  the setting allows is reported as unsupported, never clamped.
+- **The lookup runs before anything boots.** `SuggestSettings` (called instead
+  of Init, `ce_suggest_settings`) identifies the file the way the boot would: a
+  package's content id; a disc image's PS3_GAME/PARAM.SFO, or its PS3_DISC.SFB
+  when the data is encrypted; the shallowest PS3_GAME/PARAM.SFO in a .zip or a
+  non-solid .7z; nothing for a bare executable. It answers
+  `{"title_id", "values", "note"}`, where the note is the same sentence the boot
+  prints (`wiki_note`).

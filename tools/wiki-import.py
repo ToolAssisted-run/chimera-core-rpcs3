@@ -29,6 +29,46 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def translate(m, option, declared):
+    """What the wiki's option text becomes in the setting the map names, or
+    None when this core cannot express it. Never rounded: a value outside what
+    the setting allows is unsupported, not clamped.
+
+    A map entry says how: "values" (a table, for On/Off and renamed options),
+    "same" (the option IS the core's spelling - rpcs3's own - and must be one
+    of the declared options), "parse" "int"/"float" (a number within the
+    declared range), "dimension" ("320x320", one number within range) or
+    "list" (one library per row, joined)."""
+    name = m.get("setting")
+    if name is None:
+        return None
+    decl = declared[name]
+    text = option.strip()
+    if "values" in m:
+        return m["values"].get(text)
+    if m.get("same"):
+        return text if text in decl.get("options", []) else None
+    kind = m.get("parse")
+    if kind == "list":
+        return text if text.endswith(".sprx") else None
+    if kind == "dimension":
+        parts = [p.strip() for p in text.lower().split("x")]
+        if len(parts) != 2 or parts[0] != parts[1] or not parts[0].isdigit():
+            return None
+        text = parts[0]
+        kind = "int"
+    try:
+        value = int(text) if kind == "int" else float(text) if kind == "float" else None
+    except ValueError:
+        return None
+    if value is None:
+        return None
+    lo, hi = decl.get("min"), decl.get("max")
+    if (lo is not None and value < lo) or (hi is not None and value > hi):
+        return None
+    return value
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("harvest", nargs="+",
@@ -40,6 +80,7 @@ def main():
                          "(tools/wiki-resolve-ids.py)")
     ap.add_argument("--compat-date", default=None,
                     help="when the compatibility list was fetched (defaults to the harvest date)")
+    ap.add_argument("--config", default=os.path.join(HERE, "..", "waterbox", "waterbox.config"))
     a = ap.parse_args()
 
     harvests = [json.load(open(h, encoding="utf-8")) for h in a.harvest]
@@ -59,6 +100,16 @@ def main():
               "wiki-settings-map.json, mapped or with a reason):", file=sys.stderr)
         for n in unknown:
             print("   " + n, file=sys.stderr)
+        return 1
+
+    # the settings the core declares: every value the map produces is checked
+    # against them, so the table can never hold one the core would refuse
+    declared = {d["name"]: d for d in json.load(open(a.config, encoding="utf-8"))["settings"]}
+    stale = sorted(m["setting"] for k, m in names.items()
+                   if not k.startswith("_") and m.get("setting") is not None and m["setting"] not in declared)
+    if stale:
+        print("REFUSED: the map names settings waterbox.config does not declare: " + ", ".join(stale),
+              file=sys.stderr)
         return 1
 
     snapshot = (harvest.get("harvested") or "")[:10]
@@ -85,14 +136,21 @@ def main():
             kind = "settings"
         else:
             kind = "none"
-        apply, unsupported = collections.OrderedDict(), []
+        apply, applied, unsupported = collections.OrderedDict(), [], []
         for st in v.get("settings") or []:
             m = names[st["setting"]]
-            if m.get("setting") is not None and st["option"] in m["values"]:
-                apply[m["setting"]] = m["values"][st["option"]]
-            else:
+            value = translate(m, st["option"], declared)
+            if value is None:
                 unsupported.append(f'{st["setting"]}: {st["option"]}')
-        by_page[curid if curid is not None else key] = (v["title"], kind, page, apply, unsupported)
+            elif m.get("parse") == "list" and m["setting"] in apply:
+                # a page can name several libraries, one row each
+                apply[m["setting"]] += ", " + value
+            else:
+                apply[m["setting"]] = value
+            if value is not None:
+                # as the wiki says it, for the reader: the grid shows the same names
+                applied.append(f'{st["setting"]}: {st["option"]}')
+        by_page[curid if curid is not None else key] = (v["title"], kind, page, apply, applied, unsupported)
 
     # every title id the compatibility list knows - its STATUS comes from there,
     # its settings from whichever wiki page it links to
@@ -109,17 +167,17 @@ def main():
                 # the article EXISTS; it simply was not read in this snapshot.
                 # Saying "the wiki has no page" here would be false.
                 unharvested += 1
-                title, kind, page, apply, unsupported = (
+                title, kind, page, apply, applied, unsupported = (
                     (r.get("title") or tid), "unread",
-                    f"https://wiki.rpcs3.net/index.php?curid={wid}", {}, [])
+                    f"https://wiki.rpcs3.net/index.php?curid={wid}", {}, [], [])
             else:
-                title, kind, page, apply, unsupported = (r.get("title") or tid), "nopage", "", {}, []
+                title, kind, page, apply, applied, unsupported = (r.get("title") or tid), "nopage", "", {}, [], []
         else:
-            title, kind, page, apply, unsupported = hit
+            title, kind, page, apply, applied, unsupported = hit
         titles[tid] = collections.OrderedDict([
             ("title", title), ("status", r.get("status")), ("kind", kind),
             ("page", page),
-            ("apply", apply), ("unsupported", unsupported)])
+            ("apply", apply), ("applied", applied), ("unsupported", unsupported)])
         counts[kind] += 1
     clashes = []
 

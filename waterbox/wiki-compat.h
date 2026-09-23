@@ -14,8 +14,10 @@ struct chimera_wiki_entry
                              // 'p' in the compatibility list but no wiki page,
                              // 'u' a wiki page exists but this snapshot did not read it
     const char* page;        // the wiki page, for the reader to check
-    const char* apply;       // recommendations this core can express, "name=value, ..."
-    const char* unsupported; // recommendations it cannot, "Wiki name: value, ..."
+    const char* apply;       // recommendations this core can express, "Wiki name: value, ..."
+    const char* unsupported; // recommendations it cannot, the same way
+    const char* values;      // the expressible ones as this core's settings, a JSON
+                             // object ({"frameLimit":"60",...}), "" when none
 };
 
 extern const chimera_wiki_entry chimera_wiki[];

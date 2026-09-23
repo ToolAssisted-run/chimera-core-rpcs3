@@ -30,16 +30,13 @@ ECL_EXPORT const char* GetLoadError(void)
   return g_loadError;
 }
 
-ECL_EXPORT int Init(void)
+// The game to boot: the project mounts "slots" ({"game":["name"]}, the file
+// itself under that canonical name); a rom opened directly arrives as "rom"
+// with its real name in "rom.name" so extension detection still works.
+static void find_game(char* out, size_t size)
 {
-  g_loadError[0] = '\0';
-
-  // The game to boot: the project mounts "slots" ({"game":["name"]}, the
-  // file itself under that canonical name); a rom opened directly arrives
-  // as "rom" with its real name in "rom.name" so extension detection still
-  // works.
-  char romName[256] = "game";
-  if (!wbx_slot_first("game", romName, sizeof romName))
+  snprintf(out, size, "%s", "game");
+  if (!wbx_slot_first("game", out, size))
   {
     char realName[256] = "";
     FILE* f = fopen("rom.name", "rb");
@@ -59,9 +56,26 @@ ECL_EXPORT int Init(void)
     if (probe)
     {
       fclose(probe);
-      snprintf(romName, sizeof romName, "%s", candidate);
+      snprintf(out, size, "%s", candidate);
     }
   }
+}
+
+// What the core suggests for these files before any machine exists (the
+// engine's ce_suggest_settings): called INSTEAD of Init, on the same mounts.
+ECL_EXPORT const char* SuggestSettings(void)
+{
+  char romName[256];
+  find_game(romName, sizeof romName);
+  return chimera_rpcs3_suggest(romName);
+}
+
+ECL_EXPORT int Init(void)
+{
+  g_loadError[0] = '\0';
+
+  char romName[256];
+  find_game(romName, sizeof romName);
 
   // the firmware channel mounts the PUP under its declared id
   const char* firmware = nullptr;
@@ -123,6 +137,15 @@ ECL_EXPORT int Init(void)
   // memory, where a game that reads its own picture expects them
   chimera_rpcs3_set_write_color_buffers(wbx_setting_bool("writeColorBuffers", 0));
   chimera_rpcs3_set_read_color_buffers(wbx_setting_bool("readColorBuffers", 0));
+  // the rest of rpcs3's own configuration a project can choose (what the
+  // RPCS3 wiki recommends per game): each as the settings channel spells it,
+  // for the driver to hand to rpcs3's own parser
+  for (int i = 0; const char* name = chimera_rpcs3_option_name(i); i++)
+  {
+    char value[256];
+    if (wbx_setting_str(name, value, sizeof value) >= 0)
+      chimera_rpcs3_set_option(name, value);
+  }
   // which controller ports have a pad in them (port1..port7): before the pad
   // handler binds, which is at boot, and before the frontend asks which
   // controls exist, which is after Init

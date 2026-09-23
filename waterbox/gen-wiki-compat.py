@@ -31,11 +31,13 @@ with open(dst, "w") as f:
     f.write("const char* const chimera_wiki_compat_snapshot = %s;\n" % c(d["_provenance"].get("compatibility_snapshot") or d["_provenance"]["snapshot"]))
     f.write("const chimera_wiki_entry chimera_wiki[] = {\n")
     for tid, e in rows:
-        apply = ", ".join("%s=%s" % (k, str(v).lower() if isinstance(v, bool) else v)
-                          for k, v in e["apply"].items())
-        f.write("  { %s, %s, %s, '%s', %s, %s, %s },\n" % (
+        # what the wiki says, in its words, for the reader; and the same
+        # recommendations as the settings they become, for the frontend
+        applied = ", ".join(e.get("applied") or [])
+        values = json.dumps(e["apply"], separators=(",", ":")) if e["apply"] else ""
+        f.write("  { %s, %s, %s, '%s', %s, %s, %s, %s },\n" % (
             c(tid), c(e["title"]), c(e.get("status") or ""), kinds[e["kind"]],
-            c(e["page"]), c(apply), c(", ".join(e["unsupported"]))))
+            c(e["page"]), c(applied), c(", ".join(e["unsupported"])), c(values)))
     f.write("};\n")
     f.write("const size_t chimera_wiki_count = %d;\n\n" % len(rows))
     f.write("""const chimera_wiki_entry* chimera_wiki_find(const char* title_id)

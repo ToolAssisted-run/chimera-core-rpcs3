@@ -9,40 +9,52 @@
     "per game as unsupported - it is never rounded to the nearest option."
   ],
   "Accurate PPU 128 reservations": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "accuratePpu128Reservations",
+    "values": {
+      "Always Enabled": -1,
+      "Disabled": 0
+    }
   },
   "Accurate RSX reservation access": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "accurateRsxReservationAccess",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Accurate SPU DMA": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "accurateSpuDma",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Allow Host GPU Labels": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "allowHostGpuLabels",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Anisotropic filter": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "anisotropicFilter",
+    "same": true
   },
   "Anti-aliasing": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "antiAliasing",
+    "same": true
   },
   "Asynchronous texture streaming": {
     "setting": null,
-    "why": "not exposed by this core"
+    "why": "a Vulkan renderer option; this core draws with OpenGL"
   },
   "Audio buffer duration": {
     "setting": null,
-    "why": "not exposed by this core"
+    "why": "host audio output: the core hands every sample to the frontend, and there is no host audio device to buffer or stretch for"
   },
   "Audio format": {
     "setting": null,
-    "why": "not exposed by this core"
+    "why": "'Automatic' asks the host's audio device what it can play, and the core's audio has none; the frontend takes stereo"
   },
   "Camera input": {
     "setting": null,
@@ -53,76 +65,103 @@
     "why": "no camera device is emulated here"
   },
   "Debug console mode": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "debugConsoleMode",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Default resolution": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "defaultResolution",
+    "same": true
   },
   "Delay each odd MFC Command": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "delayOddMfcCommands",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Disable SPU GETLLAR Spin Optimization": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "disableSpuGetllarSpinOptimization",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Disable ZCull occlusion queries": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "disableZcullQueries",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Disable vertex cache": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "disableVertexCache",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Driver wake-up delay": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "driverWakeUpDelay",
+    "parse": "int"
   },
   "Emulate Special Depth Comparison": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "emulateSpecialDepthComparison",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Enable SPU loop detection": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "spuLoopDetection",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Enable buffering": {
     "setting": null,
-    "why": "not exposed by this core"
+    "why": "host audio output: the core hands every sample to the frontend, and there is no host audio device to buffer or stretch for"
   },
   "Enable time stretching": {
     "setting": null,
-    "why": "not exposed by this core"
+    "why": "host audio output: the core hands every sample to the frontend, and there is no host audio device to buffer or stretch for"
   },
   "Firmware libraries": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "firmwareLibraries",
+    "parse": "list"
   },
   "Force CPU blit emulation": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "forceCpuBlit",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Framelimit": {
-    "setting": null,
-    "why": "the frame rate is the frontend's, fixed by the movie; a limiter would tie the machine to the host clock"
+    "setting": "frameLimit",
+    "same": true
   },
   "Handle RSX memory tiling": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "handleRsxMemoryTiling",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Keyboard handler": {
     "setting": null,
     "why": "input comes from the frontend's controllers"
   },
   "LOD bias offset": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "lodBiasOffset",
+    "parse": "float"
   },
   "Maximum SPURS threads": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "maxSpursThreads",
+    "parse": "int"
   },
   "Microphone type": {
     "setting": null,
@@ -137,8 +176,11 @@
     "why": "no PlayStation Move device is emulated here"
   },
   "Multithreaded RSX": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "multithreadedRsx",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Network Status": {
     "setting": null,
@@ -156,8 +198,8 @@
     }
   },
   "PPU thread count": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "ppuThreads",
+    "parse": "int"
   },
   "PSN Status": {
     "setting": null,
@@ -168,12 +210,12 @@
     "why": "the machine is offline by construction"
   },
   "Preferred SPU threads": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "preferredSpuThreads",
+    "parse": "int"
   },
   "RSX FIFO accuracy": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "rsxFifoAccuracy",
+    "same": true
   },
   "Read color buffers": {
     "setting": "readColorBuffers",
@@ -183,8 +225,11 @@
     }
   },
   "Read depth buffer": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "readDepthBuffer",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "Renderer": {
     "setting": "renderer",
@@ -193,16 +238,16 @@
     }
   },
   "Resolution scale": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "resolutionScale",
+    "parse": "int"
   },
   "Resolution scale threshold": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "resolutionScaleThreshold",
+    "parse": "dimension"
   },
   "SPU block size": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "spuBlockSize",
+    "same": true
   },
   "SPU decoder": {
     "setting": "spu_decoder",
@@ -212,36 +257,42 @@
     }
   },
   "SPU xfloat accuracy": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "spuXfloatAccuracy",
+    "same": true
   },
   "Shader mode": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "shaderMode",
+    "same": true
   },
   "Shader quality": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "shaderQuality",
+    "same": true
   },
   "Sleep timers accuracy": {
-    "setting": null,
-    "why": "timing is pinned for reproducibility and not exposed"
+    "setting": "sleepTimersAccuracy",
+    "same": true
   },
   "Strict rendering mode": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "strictRenderingMode",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "VBlank NTSC Fixup": {
-    "setting": null,
-    "why": "the vblank rate is pinned and not exposed"
+    "setting": "vblankNtscFixup",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "VSync": {
     "setting": null,
     "why": "the frame rate is the frontend's, fixed by the movie"
   },
   "Vblank rate": {
-    "setting": null,
-    "why": "the vblank rate is pinned; changing it is a different machine and is not exposed"
+    "setting": "vblankRate",
+    "parse": "int"
   },
   "Write color buffers": {
     "setting": "writeColorBuffers",
@@ -251,11 +302,14 @@
     }
   },
   "Write depth buffer": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "writeDepthBuffer",
+    "values": {
+      "On": true,
+      "Off": false
+    }
   },
   "ZCULL accuracy": {
-    "setting": null,
-    "why": "not exposed by this core"
+    "setting": "zcullAccuracy",
+    "same": true
   }
 }

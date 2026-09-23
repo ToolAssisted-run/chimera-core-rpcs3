@@ -264,6 +264,9 @@ namespace
   bool s_write_color_buffers = false;
   bool s_read_color_buffers = false;
   char s_spu_decoder[16] = "asmjit";
+  // the project's settings that are rpcs3's own configuration, by the name
+  // the project gives them (chimera_rpcs3_set_option), applied after the pins
+  std::vector<std::pair<std::string, std::string>> s_options;
   char s_ppu_decoder[16] = "interpreter";
   // a precompile session: boot, compile every Nth module of the sweep, stop
   int s_precompile_index = 0, s_precompile_count = 0;
@@ -657,6 +660,342 @@ namespace
     cb.enable_gamemode = [](bool) {};
     cb.get_database_config = [](const std::string&) -> std::string { return {}; };
     return cb;
+  }
+
+  // What the RPCS3 compatibility list and wiki say about a title, as one
+  // sentence with its source: printed at boot, and shown by the frontend
+  // beside the settings when a project is made.
+  std::string wiki_note(const std::string& tid, const std::string& why_none = {})
+  {
+    const chimera_wiki_entry* w = chimera_wiki_find(tid.c_str());
+    std::string line;
+    if (tid.empty() && !why_none.empty())
+      line = "RPCS3 compatibility: " + why_none;
+    else if (tid.empty())
+      line = "RPCS3 compatibility: this game carries no title id, so it cannot be looked up.";
+    else if (!w)
+      line = fmt::format("RPCS3 compatibility: %s is not in the RPCS3 compatibility list or wiki "
+                         "(https://wiki.rpcs3.net/, snapshot %s); no status or settings are recorded for it.",
+                         tid, chimera_wiki_compat_snapshot);
+    else
+    {
+      // the STATUS is the compatibility list's; the SETTINGS are the wiki's
+      line = fmt::format("RPCS3 compatibility list (%s): %s [%s] is %s.",
+                         chimera_wiki_compat_snapshot, w->title, tid, w->status);
+      if (w->kind == 'p')
+        line += " The RPCS3 wiki has no page for it.";
+      else if (w->kind == 'u')
+        line += fmt::format(" The RPCS3 wiki has a page for it, but this snapshot (%s) did not read it: %s",
+                            chimera_wiki_snapshot, w->page);
+      else
+      {
+        line += fmt::format(" RPCS3 wiki (%s):", chimera_wiki_snapshot);
+        if (w->kind == 'n')
+          line += " no settings are recommended.";
+        else
+        {
+          if (*w->apply && *w->unsupported)
+            line += fmt::format(" recommends %s. Also recommended, but not available in this core: %s.",
+                                w->apply, w->unsupported);
+          else if (*w->apply)
+            line += fmt::format(" recommends %s.", w->apply);
+          else
+            line += fmt::format(" recommends only settings this core does not have: %s.", w->unsupported);
+        }
+        line += fmt::format(" Source: %s (CC BY-SA 4.0)", w->page);
+      }
+    }
+    return line;
+  }
+
+  // The title id in a PARAM.SFO's bytes, or "" when they are not one.
+  std::string title_id_in_sfo(std::vector<u8> bytes)
+  {
+    if (bytes.size() < 20)
+      return {};
+    const psf::registry sfo = psf::load_object(fs::make_stream(std::move(bytes)), "PARAM.SFO");
+    return std::string(psf::get_string(sfo, "TITLE_ID"));
+  }
+
+  // The title id in a disc's PS3_DISC.SFB, which sits in the clear at the root
+  // of every PS3 disc even when its data regions are encrypted: a ".SFB"
+  // header, then 0x20-byte entries - a key name, a big-endian offset and a
+  // length - and the values they point at.
+  std::string title_id_in_sfb(const std::vector<u8>& b)
+  {
+    if (b.size() < 0x40 || std::memcmp(b.data(), ".SFB", 4) != 0)
+      return {};
+    for (size_t at = 0x20; at + 0x20 <= b.size() && at < 0x200; at += 0x20)
+    {
+      if (std::memcmp(b.data() + at, "TITLE_ID", 9) != 0)  // with its NUL
+        continue;
+      const auto be32 = [&](size_t o) { return (u32{b[o]} << 24) | (u32{b[o + 1]} << 16) | (u32{b[o + 2]} << 8) | u32{b[o + 3]}; };
+      const u32 off = be32(at + 0x10), len = be32(at + 0x14);
+      if (off >= b.size() || len > 16 || off + len > b.size())
+        return {};
+      std::string id(reinterpret_cast<const char*>(b.data() + off), len);
+      id.erase(std::remove(id.begin(), id.end(), '-'), id.end());  // "BLUS-30000" on some discs
+      while (!id.empty() && id.back() == '\0')
+        id.pop_back();
+      return id;
+    }
+    return {};
+  }
+
+  // Which game this file is, BEFORE anything boots, from the same files the
+  // boot reads: a package's content id, a disc image's or a disc archive's
+  // PARAM.SFO (or, for an image, PS3_DISC.SFB). "" for an executable alone,
+  // which carries no id.
+  std::string title_id_of(const char* game_path, std::string& why_none)
+  {
+    const std::string path = game_path ? game_path : "";
+    std::string lower = path;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const auto ends = [&](const char* suffix) { return lower.size() >= std::strlen(suffix) && lower.compare(lower.size() - std::strlen(suffix), std::string::npos, suffix) == 0; };
+
+    if (ends(".pkg"))
+    {
+      // the header's content id, "UP0001-BLUS30000_00-...", at 0x30
+      std::FILE* f = std::fopen(path.c_str(), "rb");
+      if (!f)
+        return {};
+      char head[0x60] = {};
+      const size_t n = std::fread(head, 1, sizeof head, f);
+      std::fclose(f);
+      if (n < 0x49 || std::memcmp(head, "\177PKG", 4) != 0 || head[0x36] != '-')
+        return {};
+      return std::string(head + 0x37, 9);
+    }
+    if (ends(".iso"))
+    {
+      iso_archive arc(path);
+      if (!arc.is_valid())
+        return {};
+      if (arc.is_file("PS3_GAME/PARAM.SFO"))
+      {
+        const std::string id(psf::get_string(arc.open_psf("PS3_GAME/PARAM.SFO"), "TITLE_ID"));
+        if (!id.empty())
+          return id;
+      }
+      if (arc.is_file("PS3_DISC.SFB"))
+        if (std::unique_ptr<fs::file_base> f = arc.open("PS3_DISC.SFB"))
+        {
+          std::vector<u8> b(0x400);
+          b.resize(f->read_at(0, b.data(), b.size()));
+          return title_id_in_sfb(b);
+        }
+      return {};
+    }
+    if (ends(".zip") || ends(".7z"))
+    {
+      // the shallowest PS3_GAME/PARAM.SFO: the disc root may be the archive's
+      // or one folder down, as the boot finds it
+      std::string err;
+      const auto pick = [](const auto& entries) {
+        size_t best = SIZE_MAX, depth = SIZE_MAX;
+        for (size_t i = 0; i < entries.size(); i++)
+        {
+          const std::string& p = entries[i].path;
+          const std::string tail = "PS3_GAME/PARAM.SFO";
+          if (p.size() < tail.size() || p.compare(p.size() - tail.size(), tail.size(), tail) != 0)
+            continue;
+          if (p.size() > tail.size() && p[p.size() - tail.size() - 1] != '/')
+            continue;
+          const size_t d = static_cast<size_t>(std::count(p.begin(), p.end(), '/'));
+          if (d < depth)
+            best = i, depth = d;
+        }
+        return best;
+      };
+      std::vector<u8> bytes;
+      if (ends(".zip"))
+      {
+        auto index = std::make_shared<chimera::zip_index>();
+        if (!chimera::zip_open(path, *index, err))
+        {
+          why_none = "the archive cannot be read (" + err + "), so it was not looked up.";
+          return {};
+        }
+        const size_t i = pick(index->entries);
+        if (i == SIZE_MAX)
+        {
+          why_none = "the archive holds no PS3_GAME/PARAM.SFO, so it is not a disc this core boots and was not looked up.";
+          return {};
+        }
+        chimera::zip_stream in(index, i);
+        bytes.resize(64 * 1024);
+        bytes.resize(in.read_at(0, bytes.data(), bytes.size()));
+      }
+      else
+      {
+        auto index = std::make_shared<chimera::sz_index>();
+        if (!chimera::sz_open(path, *index, err))
+        {
+          why_none = "the archive cannot be read (" + err + "), so it was not looked up.";
+          return {};
+        }
+        if (index->solid)
+        {
+          // refused at boot too, and slow to reach into
+          why_none = "this .7z is solid, which the core cannot boot, so it was not looked up. "
+                     "Repack it with `7z a -ms=off` or as a .zip.";
+          return {};
+        }
+        const size_t i = pick(index->entries);
+        if (i == SIZE_MAX)
+        {
+          why_none = "the archive holds no PS3_GAME/PARAM.SFO, so it is not a disc this core boots and was not looked up.";
+          return {};
+        }
+        chimera::sz_stream in(index, i);
+        bytes.resize(64 * 1024);
+        bytes.resize(in.read_at(0, bytes.data(), bytes.size()));
+      }
+      return title_id_in_sfo(std::move(bytes));
+    }
+    return {};
+  }
+
+  // A JSON string literal.
+  std::string json_string(const std::string& text)
+  {
+    std::string out = "\"";
+    for (const unsigned char c : text)
+    {
+      if (c == '"' || c == '\\')
+        out += '\\', out += static_cast<char>(c);
+      else if (c < 0x20)
+        out += fmt::format("\\u%04x", c);
+      else
+        out += static_cast<char>(c);
+    }
+    return out + "\"";
+  }
+
+  // The settings the RPCS3 wiki recommends per game, as this core's own: the
+  // name a project records, and the node of rpcs3's configuration it sets.
+  // Most take rpcs3's own spelling of the value (the wiki's too), so a value is
+  // handed to the node's own parser and a spelling it does not know is refused
+  // rather than guessed. The few that are not one node to one value are
+  // translated in apply_options. Their defaults (waterbox.config) are what the
+  // core ran with before they were settings, so no existing project's machine
+  // moves.
+  struct option_node
+  {
+    const char* name;
+    cfg::_base* node;
+  };
+
+  std::vector<option_node> option_nodes()
+  {
+    return {
+        {"resolutionScaleThreshold", &g_cfg.video.min_scalable_dimension},
+        {"frameLimit", &g_cfg.video.frame_limit},
+        {"sleepTimersAccuracy", &g_cfg.core.sleep_timers_accuracy},
+        {"vblankRate", &g_cfg.video.vblank_rate},
+        {"vblankNtscFixup", &g_cfg.video.vblank_ntsc},
+        {"multithreadedRsx", &g_cfg.video.multithreaded_rsx},
+        {"disableVertexCache", &g_cfg.video.disable_vertex_cache},
+        {"strictRenderingMode", &g_cfg.video.strict_rendering_mode},
+        {"accurateRsxReservationAccess", &g_cfg.core.rsx_accurate_res_access},
+        {"spuBlockSize", &g_cfg.core.spu_block_size},
+        {"spuXfloatAccuracy", &g_cfg.core.spu_xfloat_accuracy},
+        {"handleRsxMemoryTiling", &g_cfg.video.handle_tiled_memory},
+        {"forceCpuBlit", &g_cfg.video.force_cpu_blit_processing},
+        {"antiAliasing", &g_cfg.video.antialiasing_level},
+        {"writeDepthBuffer", &g_cfg.video.write_depth_buffer},
+        {"readDepthBuffer", &g_cfg.video.read_depth_buffer},
+        {"resolutionScale", &g_cfg.video.resolution_scale_percent},
+        {"driverWakeUpDelay", &g_cfg.video.driver_wakeup_delay},
+        {"shaderQuality", &g_cfg.video.shader_precision},
+        {"allowHostGpuLabels", &g_cfg.video.host_label_synchronization},
+        {"disableZcullQueries", &g_cfg.video.disable_zcull_queries},
+        {"emulateSpecialDepthComparison", &g_cfg.video.emulate_depth_compare},
+        {"shaderMode", &g_cfg.video.shadermode},
+        {"preferredSpuThreads", &g_cfg.core.preferred_spu_threads},
+        {"accurateSpuDma", &g_cfg.core.spu_accurate_dma},
+        {"defaultResolution", &g_cfg.video.resolution},
+        {"maxSpursThreads", &g_cfg.core.max_spurs_threads},
+        {"rsxFifoAccuracy", &g_cfg.core.rsx_fifo_accuracy},
+        {"disableSpuGetllarSpinOptimization", &g_cfg.core.spu_getllar_spin_optimization_disabled},
+        {"debugConsoleMode", &g_cfg.core.debug_console_mode},
+        {"accuratePpu128Reservations", &g_cfg.core.ppu_128_reservations_loop_max_length},
+        {"ppuThreads", &g_cfg.core.ppu_threads},
+        {"lodBiasOffset", &g_cfg.video.texture_lod_bias},
+        {"spuLoopDetection", &g_cfg.core.spu_loop_detection},
+    };
+  }
+
+  bool apply_options(bool have_firmware)
+  {
+    const std::vector<option_node> nodes = option_nodes();
+    for (const auto& [name, value] : s_options)
+    {
+      bool ok = true;
+      if (name == "zcullAccuracy")
+      {
+        // one choice in rpcs3's own dialog, two nodes underneath
+        ok = value == "Precise" || value == "Approximate" || value == "Relaxed";
+        g_cfg.video.precise_zpass_count.set(value == "Precise");
+        g_cfg.video.relaxed_zcull_sync.set(value == "Relaxed");
+      }
+      else if (name == "anisotropicFilter")
+      {
+        // "Auto" is the game's own choice; otherwise an override level
+        const int level = value == "Auto" ? 0 : atoi(value.c_str());
+        ok = value == "Auto" || value == "2x" || value == "4x" || value == "8x" || value == "16x";
+        g_cfg.video.anisotropic_level_override.set(level);
+      }
+      else if (name == "delayOddMfcCommands")
+      {
+        // rpcs3's dialog writes 1 into the shuffling limit for this box
+        g_cfg.core.mfc_transfers_shuffling.set(value == "true" ? 1 : 0);
+      }
+      else if (name == "firmwareLibraries")
+      {
+        // libraries run from the firmware (LLE) instead of rpcs3's own
+        // (HLE); with no firmware there is nothing to run them from, and
+        // with firmware every library already is (set_set({}) above) unless
+        // rpcs3 keeps it HLE by default, which is what naming one here undoes
+        if (have_firmware)
+        {
+          std::set<std::string> libs;
+          size_t at = 0;
+          while (at < value.size())
+          {
+            size_t end = value.find(',', at);
+            if (end == std::string::npos)
+              end = value.size();
+            std::string lib = value.substr(at, end - at);
+            while (!lib.empty() && lib.front() == ' ')
+              lib.erase(0, 1);
+            while (!lib.empty() && lib.back() == ' ')
+              lib.pop_back();
+            if (!lib.empty())
+              libs.insert(lib + ":lle");
+            at = end + 1;
+          }
+          g_cfg.core.libraries_control.set_set(std::move(libs));
+        }
+      }
+      else
+      {
+        cfg::_base* node = nullptr;
+        for (const option_node& n : nodes)
+          if (name == n.name)
+            node = n.node;
+        if (!node)
+          continue;  // not an rpcs3 node: one of the settings read elsewhere
+        ok = node->from_string(value);
+      }
+      if (!ok)
+      {
+        fail("setting " + name + " cannot be \"" + value + "\"");
+        return false;
+      }
+      chimera_log.notice("setting %s = %s", name, value);
+    }
+    return true;
   }
 
   // The machine: every knob that would make two runs differ, pinned.
@@ -1501,6 +1840,10 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   // the project's packages, onto the console's hard disk, before the seal
   if (!install_packages(root))
     return 0;
+  // The project's own choices over the pins, last: they are the machine the
+  // project asked for, including where it asked for something pinned above.
+  if (!apply_options(have_firmware))
+    return 0;
   Emulator::SaveSettings(g_cfg.to_string(), "");
 
   g_tty_path = g_android_cache_dir + "TTY.log";
@@ -1663,43 +2006,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   // project's own setting names so the reader can set them, but the project's
   // settings are what this machine runs on.
   {
-    const std::string tid = Emu.GetTitleID();
-    const chimera_wiki_entry* w = chimera_wiki_find(tid.c_str());
-    std::string line;
-    if (tid.empty())
-      line = "RPCS3 compatibility: this executable carries no title id, so it cannot be looked up.";
-    else if (!w)
-      line = fmt::format("RPCS3 compatibility: %s is not in the RPCS3 compatibility list or wiki "
-                         "(snapshot %s); no status or settings are recorded for it.",
-                         tid, chimera_wiki_compat_snapshot);
-    else
-    {
-      // the STATUS is the compatibility list's; the SETTINGS are the wiki's
-      line = fmt::format("RPCS3 compatibility list (%s): %s [%s] is %s.",
-                         chimera_wiki_compat_snapshot, w->title, tid, w->status);
-      if (w->kind == 'p')
-        line += " The RPCS3 wiki has no page for it.";
-      else if (w->kind == 'u')
-        line += fmt::format(" The RPCS3 wiki has a page for it, but this snapshot (%s) did not read it: %s",
-                            chimera_wiki_snapshot, w->page);
-      else
-      {
-        line += fmt::format(" RPCS3 wiki (%s):", chimera_wiki_snapshot);
-        if (w->kind == 'n')
-          line += " no settings are recommended.";
-        else
-        {
-          if (*w->apply && *w->unsupported)
-            line += fmt::format(" recommends %s. Also recommended, but not available in this core: %s.",
-                                w->apply, w->unsupported);
-          else if (*w->apply)
-            line += fmt::format(" recommends %s.", w->apply);
-          else
-            line += fmt::format(" recommends only settings this core does not have: %s.", w->unsupported);
-        }
-        line += fmt::format(" Source: %s (CC BY-SA 4.0)", w->page);
-      }
-    }
+    const std::string line = wiki_note(Emu.GetTitleID());
     chimera_log.notice("%s", line);
     fprintf(stderr, "%s\n", line.c_str());
     fflush(stderr);
@@ -2092,6 +2399,47 @@ void chimera_rpcs3_debug_ppu(void)
 extern "C" void chimera_rpcs3_set_renderer(const char* name)
 {
   s_renderer_opengl = name && (strcmp(name, "opengl-hw") == 0 || strcmp(name, "opengl") == 0);
+}
+
+extern "C" const char* chimera_rpcs3_suggest(const char* game_path)
+{
+  // {"title_id": ..., "values": {setting: value, ...}, "note": "..."}: the
+  // wiki's recommendations as this core's settings, and the sentence that
+  // says where they come from - or that the game is not there, in which case
+  // "values" is empty and every setting stays as it was
+  static std::string out;
+  std::string why_none;
+  const std::string tid = title_id_of(game_path, why_none);
+  const chimera_wiki_entry* w = tid.empty() ? nullptr : chimera_wiki_find(tid.c_str());
+  out = "{\"title_id\":" + json_string(tid) + ",\"values\":" + (w && *w->values ? std::string(w->values) : std::string("{}")) +
+        ",\"note\":" + json_string(wiki_note(tid, why_none)) + "}";
+  return out.c_str();
+}
+
+extern "C" const char* chimera_rpcs3_option_name(int index)
+{
+  // the translated ones first, then every one-node setting
+  static const char* const translated[] = {"zcullAccuracy", "anisotropicFilter", "delayOddMfcCommands", "firmwareLibraries"};
+  const int n = static_cast<int>(sizeof translated / sizeof translated[0]);
+  if (index < 0)
+    return nullptr;
+  if (index < n)
+    return translated[index];
+  static const std::vector<option_node> nodes = option_nodes();
+  return static_cast<size_t>(index - n) < nodes.size() ? nodes[index - n].name : nullptr;
+}
+
+extern "C" void chimera_rpcs3_set_option(const char* name, const char* value)
+{
+  if (!name || !value)
+    return;
+  for (auto& [n, v] : s_options)
+    if (n == name)
+    {
+      v = value;
+      return;
+    }
+  s_options.emplace_back(name, value);
 }
 
 extern "C" void chimera_rpcs3_set_read_color_buffers(int on)

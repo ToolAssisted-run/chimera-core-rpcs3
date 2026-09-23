@@ -104,6 +104,16 @@ void chimera_rpcs3_set_ppu_decoder(const char* name);
 // memory, where a game that reads its own picture expects them; before init
 void chimera_rpcs3_set_write_color_buffers(int on);
 void chimera_rpcs3_set_read_color_buffers(int on);
+// One of the project's settings that is rpcs3's own configuration (the ones
+// the RPCS3 wiki recommends per game), by its waterbox.config name, with the
+// value as the settings channel spells it; applied after the pins, before init
+void chimera_rpcs3_set_option(const char* name, const char* value);
+// The names chimera_rpcs3_set_option knows, from 0 until it returns null
+const char* chimera_rpcs3_option_name(int index);
+// What the RPCS3 wiki recommends for this game file, identified without
+// booting it: {"title_id","values":{setting: value},"note"} as JSON. Valid
+// until the next call.
+const char* chimera_rpcs3_suggest(const char* game_path);
 // 1 when the GL renderer is drawing through the bridge
 int chimera_rpcs3_gpu_active(void);
 // a fault on a guest page (address, write?): 1 when the renderer handled it
