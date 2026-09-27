@@ -1,0 +1,28 @@
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.cpp
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+@@ -1424,6 +1424,25 @@ void GLGSRender::chimera_check_gl_context()
+ 		m_graphics_state |= rsx::pipeline_state::all_dirty;
+ 		m_draw_fbo = nullptr;
+ 		m_program = nullptr;
++
++		// The sampled-image descriptors too (chimera issue 153). Each one keeps
++		// a pointer to the view it sampled last, often a render target's, and
++		// the teardown above destroyed every one of those. The loaded state also
++		// brought back the renderer's dirty flags as they were when it was taken:
++		// one taken between a draw and the next thing that dirties the samplers
++		// comes back clean, and the first draw then asks the old descriptor
++		// whether it has expired - which reads the destroyed view. Emptied and
++		// marked dirty, every slot is uploaded again from the restored registers.
++		{
++			std::lock_guard lock(m_sampler_mutex);
++			for (auto& desc : fs_sampler_state)
++				if (desc) *static_cast<gl::texture_cache::sampled_image_descriptor*>(desc.get()) = {};
++			for (auto& desc : vs_sampler_state)
++				if (desc) *static_cast<gl::texture_cache::sampled_image_descriptor*>(desc.get()) = {};
++			m_samplers_dirty.store(true);
++		}
++		m_textures_dirty.fill(true);
++		m_vertex_textures_dirty.fill(true);
+ 	}
+ 	m_chimera_gl_context = live;
+ }
