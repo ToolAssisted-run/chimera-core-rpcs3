@@ -1,0 +1,62 @@
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.h
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.h
+@@ -248,7 +248,7 @@ protected:
+ 	// bridge answers the guest, not the driver. So the two halves of the
+ 	// renderer's life are split: what belongs to the CONTEXT can be torn down
+ 	// and built again without touching what belongs to the MACHINE.
+-	void chimera_gl_setup();
++	void chimera_gl_setup(bool rebuild = false);
+ 	void chimera_gl_teardown();
+ 	void chimera_check_gl_context();
+ 
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.cpp
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+@@ -108,7 +108,7 @@ void GLGSRender::on_init_thread()
+ 	chimera_gl_setup();
+ }
+ 
+-void GLGSRender::chimera_gl_setup()
++void GLGSRender::chimera_gl_setup(bool rebuild)
+ {
+ 	const auto shadermode = g_cfg.video.shadermode.get();
+ 	if (shadermode != shader_mode::recompiler)
+@@ -437,7 +437,7 @@ void GLGSRender::chimera_gl_setup()
+ 	if (shadermode == shader_mode::async_with_interpreter ||
+ 		shadermode == shader_mode::interpreter_only)
+ 	{
+-		std::unique_ptr<rsx::shader_loading_dialog> dlg = m_overlay_manager
++		std::unique_ptr<rsx::shader_loading_dialog> dlg = m_overlay_manager && !rebuild
+ 			? std::make_unique<rsx::shader_loading_dialog_native>(this)
+ 			: std::make_unique<rsx::shader_loading_dialog>();
+ 		m_shader_interpreter.create(dlg.get());
+@@ -446,7 +446,20 @@ void GLGSRender::chimera_gl_setup()
+ 
+ 	if (shadermode != shader_mode::interpreter_only)
+ 	{
+-		if (!m_overlay_manager)
++		// chimera: a rebuild after a load (chimera_check_gl_context) reloads the
++		// shader cache WITHOUT the native progress dialog (chimera issue 152).
++		// That dialog is a message_dialog, and the overlay manager keeps one of
++		// a type: adding it replaced whatever message dialog the GAME had open -
++		// Tekken 6's "There is no save data... OK" - and closing it a moment
++		// later left none. The game's dialog went on reading the pad with nothing
++		// to close, so its callback never came and the game waited for ever. A
++		// rebuild is the host catching up with a load; the machine must not see
++		// it, and a dialog is something the machine sees.
++		if (rebuild)
++		{
++			m_shaders_cache->load(nullptr);
++		}
++		else if (!m_overlay_manager)
+ 		{
+ 			m_frame->hide();
+ 			m_shaders_cache->load(nullptr);
+@@ -1414,7 +1427,7 @@ void GLGSRender::chimera_check_gl_context()
+ 		chimera_gl_teardown();
+ 		// the cache of what the driver has bound describes objects that are gone
+ 		gl_state.reset();
+-		chimera_gl_setup();
++		chimera_gl_setup(true);
+ 
+ 		// Nothing the renderer thought was set up still is: the program it had
+ 		// bound, the framebuffer it was drawing into, the textures it had
