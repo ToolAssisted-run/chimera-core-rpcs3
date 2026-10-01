@@ -2487,3 +2487,47 @@ On the way, three upstream fixes in the same area were backported as 0039-0041
 (reuse of discarded render targets in surface splitting, the flush predictor
 with surface-cache blit targets, reuse of blit target sections). They moved the
 crash later without removing it; they stay because they are upstream's.
+
+## A renewed reservation gives way to its holder (issue #151, 2026-10-01)
+
+Guilty Gear Xrd stopped dead at its Stage 1 load: one host thread at 100%,
+every machine thread silent. Attaching gdb to the stalled run on the GTX 1060
+and reading the box's stack against the package's core.wbx put a PPU in the
+interpreter's STW, storing 0xAAAAAAAA, inside `vm::reservation_update` - the
+store rpcs3 turns into a reservation renewal for Insomniac's engine - which
+loops on the slot's unique lock with no pause and no yield. On vsched a holder
+can give the machine away while it holds that lock (`vm::writer_lock` waits
+for every other PPU to be seen waiting, and that wait yields), and the static
+interpreter runs one instruction after a budget yield before it looks at its
+own state. Patch 0045 gives way in the failed iteration. Gate leg
+`sandbox:reservation-held` (tests/asm/rsrvtest.s) makes the holder certain.
+
+## A frame limit holds the flip (issue #165, user-decided 2026-10-01)
+
+Rayman Legends died in its intro writing to a page of its own sys_mmapper
+area that was not mapped. The page was not mapped because the allocation for
+it had failed: the game's Uncompression thread grows a buffer 64 KiB at a time,
+and `sys_mmapper_allocate_shared_memory` answered CELL_ENOMEM at 185 MB in use
+of the 213. Only at frameLimit 60 or Auto - and Auto is what the RPCS3 wiki
+recommends for this game, so the wizard set it on every new project. PS3 Native
+ran clean.
+
+The limiter is the one #125 found: `handle_emu_flip` sleeps the RSX thread
+until the flip's slot, the sleep is the machine's own time, and the RSX thread
+is the FIFO puller, so every thread waiting on the RSX waits with it. Here the
+threads that consume and free the intro's memory waited, and the decompressor
+did not.
+
+Two ways out were weighed: stop applying the wiki's Framelimit to new projects
+(the setting stays, the machine of existing projects does not move), or keep
+applying it and make the limit harmless. **The user chose the second.** Patch
+0046: under CHIMERA_CORE a flip that comes before its slot is held -
+`async_flip_requested`, exactly as PS3 Native holds one until the vblank - and
+`do_local_task` tries it again while the RSX goes on reading commands. This
+moves the machine of every project that has a rate set; such a project replays
+on its pinned build, and on this one it is a new machine.
+
+Proven on the 1060 with the reporter's setting (60): intro, the UbiArt logo and
+the title screen, no allocation refused. Gate leg `rsx:frame-limit` runs the
+game (tests/roms-local/frame-limit) 200 frames at 60 with sys_mmapper traced;
+the f9394ed core dies there, after refused allocations.

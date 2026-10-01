@@ -1,0 +1,35 @@
+--- a/rpcs3/Emu/RSX/RSXThread.cpp
++++ b/rpcs3/Emu/RSX/RSXThread.cpp
+@@ -3452,6 +3452,24 @@
+ 			const u64 needed_us = static_cast<u64>(1000000 / limit);
+ 			const u64 time = std::max<u64>(get_system_time(), target_rsx_flip_time > needed_us ? target_rsx_flip_time - needed_us : 0);
+ 
++#ifdef CHIMERA_CORE
++			// Chimera: hold the flip until its slot, the way PS3 Native holds
++			// one until the vblank, and go back to the FIFO meanwhile. Upstream
++			// sleeps the RSX thread here, which on a desktop is host time and
++			// costs the console nothing. Here it is the machine's own time, and
++			// the RSX thread is also the FIFO puller: nothing reads the
++			// pushbuffer while it sleeps, so every thread waiting on the RSX
++			// waits with it. Mortal Kombat's command stream starved this way
++			// (chimera#125), and Rayman Legends' intro decompressed ahead of
++			// the threads that free its memory until the console ran out
++			// (chimera#165). do_local_task tries the held flip again.
++			if (int_flip_index && target_rsx_flip_time > time + 1000)
++			{
++				async_flip_requested |= flip_request::emu_requested;
++				async_flip_buffer = buffer;
++				return;
++			}
++#else
+ 			if (int_flip_index)
+ 			{
+ 				if (target_rsx_flip_time > time + 1000)
+@@ -3461,6 +3479,7 @@
+ 					performance_counters.idle_time += delay_us;
+ 				}
+ 			}
++#endif
+ 
+ 			target_rsx_flip_time = std::max(time, target_rsx_flip_time) + needed_us;
+ 			flip_notification_count = 1;

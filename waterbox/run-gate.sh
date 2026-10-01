@@ -8,6 +8,9 @@
 #   sandbox:reservation-held  rsrvtest.elf: a 0xAAAAAAAA store meeting a line
 #                          another CPU locked and then gave way inside waits
 #                          by giving way too, and the program runs to its end
+#   rsx:frame-limit        with a game in tests/roms-local/frame-limit: at
+#                          frameLimit 60 the flip is held, not slept, and a
+#                          game streaming at its memory ceiling does not run out
 #   firmware:lle           with Sony's PUP (tests/roms-local, never committed):
 #                          the firmware installs in the box, liblv2 is LLE, and
 #                          native == sandbox still holds
@@ -912,6 +915,46 @@ else
 		failed "spu:barrier - $(basename "$drainiso"): the fence label stands at $blabeln after 750 frames, which is where it sits when the SPU garbage collector's barrier never closes (39). The give-way after a contended conditional store is not reaching the machine"
 	else
 		pass "spu:barrier - $(basename "$drainiso"): the fence label stands at $blabeln after 750 frames, so the SPU garbage collector's participant barrier closes (it stalls at 39 with CHIMERA_SPU_YIELD=0); native only"
+	fi
+fi
+
+# ---- rsx:frame-limit -----------------------------------------------------
+# A frame limit (anything but PS3 Native: 60, Auto, ...) slept the RSX thread
+# until the flip's slot. On a desktop that is host time; here it is the
+# machine's, and the RSX thread is the FIFO puller, so every thread waiting on
+# the RSX waited with it. Rayman Legends' intro then decompressed ahead of the
+# threads that free its memory until sys_mmapper ran out, and the game wrote
+# into the page it could not map (chimera#165, on the wiki's own "Auto").
+# Patch 0046 holds the flip until its slot instead, as PS3 Native holds one
+# until the vblank, and the RSX goes back to the FIFO meanwhile.
+#
+# The subject is whatever .zip or .iso the user put in
+# tests/roms-local/frame-limit/ (a link will do). 200 frames at frameLimit 60,
+# in the sandbox (natively there is no settings channel), with sys_mmapper
+# traced because that is where a refused allocation is said: no allocation
+# may fail and the machine must still be running at the end.
+#
+# NEGATIVE CONTROL, measured 2026-10-01 on Rayman Legends: the f9394ed core
+# (which slept) fails two allocations and dies on the write between frames 100
+# and 150; PS3 Native on that same core runs clean.
+limitgame=""
+for f in "$root"/tests/roms-local/frame-limit/*.zip "$root"/tests/roms-local/frame-limit/*.iso; do
+	[ -f "$f" ] && { limitgame="$f"; break; }
+done
+if [ -z "$limitgame" ]; then
+	skip "rsx:frame-limit - no game in tests/roms-local/frame-limit/ (would prove: a frame limit holds the flip instead of sleeping the FIFO puller, and a game streaming at its memory ceiling under one does not run out)"
+elif [ "$have_wbx" != 1 ]; then
+	skip "rsx:frame-limit - needs the sandbox build"
+else
+	timeout 1200 "$wbx" "$core" --firmware "$pup" --settings '{"frameLimit":"60"}' --log-trace sys_mmapper --frames 200 --report 50 "$limitgame" > "$work/limit-out.txt" 2>"$work/limit.err"
+	lend="$(grep '^frame   200' "$work/limit-out.txt")"
+	lnomem="$(grep -c 'Cannot allocate' "$work/limit.err")"
+	if [ -z "$lend" ] || printf '%s' "$lend" | grep -q 'ram 0000000000000000'; then
+		failed "rsx:frame-limit - $(basename "$limitgame") at frameLimit 60 did not run 200 frames ($lnomem failed allocations; $(grep 'declined\|crashed' "$work/limit.err" | head -1))"
+	elif [ "$lnomem" != 0 ]; then
+		failed "rsx:frame-limit - $(basename "$limitgame") at frameLimit 60 ran, but $lnomem allocations failed on the way: the limit is starving the threads that free memory"
+	else
+		pass "rsx:frame-limit - $(basename "$limitgame") at frameLimit 60: 200 frames, no allocation failed (the sleeping limiter ran it out of memory by frame 150)"
 	fi
 fi
 
