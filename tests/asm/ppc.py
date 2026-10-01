@@ -162,6 +162,10 @@ class Asm:
             self.emit(self.x_form(R(a[0]), R(a[1]), R(a[2]), 87))
         elif mn == "stbx":
             self.emit(self.x_form(R(a[0]), R(a[1]), R(a[2]), 215))
+        elif mn == "lwarx":
+            self.emit(self.x_form(R(a[0]), R(a[1]), R(a[2]), 20))
+        elif mn == "stwcx.":
+            self.emit(self.x_form(R(a[0]), R(a[1]), R(a[2]), 150, 1))
         elif mn == "add":
             self.emit(self.x_form(R(a[0]), R(a[1]), R(a[2]), 266))
         elif mn == "subf":

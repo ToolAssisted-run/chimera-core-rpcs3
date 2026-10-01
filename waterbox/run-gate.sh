@@ -5,6 +5,9 @@
 #   sandbox:equivalent     core.wbx under miniBox prints the native run's lines
 #   sandbox:rewind         save mid-run, finish, load, finish again: equal
 #   sandbox:rerecord       save+load around every frame changes nothing
+#   sandbox:reservation-held  rsrvtest.elf: a 0xAAAAAAAA store meeting a line
+#                          another CPU locked and then gave way inside waits
+#                          by giving way too, and the program runs to its end
 #   firmware:lle           with Sony's PUP (tests/roms-local, never committed):
 #                          the firmware installs in the box, liblv2 is LLE, and
 #                          native == sandbox still holds
@@ -290,6 +293,38 @@ if [ "$have_wbx" = 1 ]; then
 		pass "rerecord leg - save+load around every frame changes nothing ($((frames / 3)) frames)"
 	else
 		failed "rerecord leg - $(tail -1 "$work/rerecord.err")"
+	fi
+
+	# ---- sandbox:reservation-held -----------------------------------------
+	# A CPU that holds a line's unique lock can give the machine away while
+	# it holds it: vm::writer_lock waits for every other PPU to be seen
+	# waiting, and on vsched waiting is giving way. The PPU it gives way to
+	# runs one instruction before it looks at its own state, and if that
+	# instruction is a store of 0xAAAAAAAA (which the interpreter turns into
+	# vm::reservation_update, for Insomniac's engine) into the same slot, it
+	# waits for the lock - and a bare spin never gives it back. Guilty Gear
+	# Xrd stopped dead at its Stage 1 load this way (chimera#151).
+	#
+	# rsrvtest.elf makes the holder certain: with accuratePpu128Reservations
+	# -1 every stwcx. takes the unique lock, and its worker does nothing but
+	# that store. 60 frames of 200 increments each must all print.
+	#
+	# NEGATIVE CONTROL, measured 2026-10-01 rather than rebuilt here: the
+	# 0bdca3b core (no give-way in reservation_update) prints no frame at all
+	# and spins until killed; the same core with the setting at its default 0
+	# (no stwcx. holds the lock) runs all 60. Run by hand when this changes:
+	#   run-wbx <old core.wbx> --settings '{"accuratePpu128Reservations":"-1"}' --frames 70 rsrvtest.elf
+	rsrv="$work/rsrvtest.elf"
+	if ! python3 "$root/tests/asm/ppc.py" "$root/tests/asm/rsrvtest.s" "$rsrv" >/dev/null; then
+		failed "sandbox:reservation-held - rsrvtest.elf does not assemble"
+	else
+		timeout 300 "$wbx" "$core" --settings '{"accuratePpu128Reservations":"-1"}' --frames 70 --report 10 --tty-out "$work/tty-rsrv.txt" "$rsrv" 2>"$work/rsrv.err" | grep '^frame' > "$work/rsrv.txt"
+		rlast="$(tail -1 "$work/tty-rsrv.txt" 2>/dev/null)"
+		if [ "$rlast" = "frame 00059 count 00002ee0" ]; then
+			pass "sandbox:reservation-held - a store that renews a reservation waits for the line's holder by giving way: 60 frames of 200 stwcx. each (it stops before the first frame without)"
+		else
+			failed "sandbox:reservation-held - rsrvtest stopped at '${rlast:-no TTY at all}': a CPU waiting for a held reservation line is not giving the machine to its holder ($(tail -1 "$work/rsrv.err"))"
+		fi
 	fi
 fi
 

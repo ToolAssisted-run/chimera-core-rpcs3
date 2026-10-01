@@ -1,0 +1,22 @@
+--- a/rpcs3/Emu/Memory/vm.cpp
++++ b/rpcs3/Emu/Memory/vm.cpp
+@@ -172,6 +172,19 @@
+ 
+ 				return;
+ 			}
++
++#ifdef CHIMERA_CORE
++			// Chimera: the line is locked by a CPU that is not running. On
++			// hardware its holder finishes on another core while this one
++			// spins; on vsched it holds the lock until it is given the machine
++			// again, and a bare spin never gives it - the machine stopped for
++			// good the first time a 0xAAAAAAAA store (the interpreter's STW,
++			// which renews the reservation for Insomniac's engine) met a line
++			// another CPU had locked and then given way inside (chimera#151:
++			// Guilty Gear Xrd at the Stage 1 load). This thread is flagged as
++			// waiting already, as the loop expects; let the holder finish.
++			CHIMERA_YIELD();
++#endif
+ 		}
+ 	}
+ 
