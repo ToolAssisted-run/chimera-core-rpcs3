@@ -74,6 +74,7 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 
 #include <cctype>
 #include <cstring>
+#include <sys/stat.h>
 #include <memory>
 
 #include "archive.h"
@@ -1790,7 +1791,13 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     }
   };
   static all_to_stderr s_all;
-  if (!trace_list().empty())
+  // The frontend's core log (Tools > Export Core Log..., ce_core_log) asks for
+  // the same at the levels the log already keeps, by mounting a file called
+  // "corelog". It is only checked for - stat, which allocates nothing in the
+  // guest - so the machine is the same with the log on or off.
+  struct stat corelog_st;
+  const bool corelog = stat("corelog", &corelog_st) == 0 || getenv("CHIMERA_CORE_LOG") != nullptr;
+  if (!trace_list().empty() || corelog)
   {
     static bool s_all_added = (logs::listener::add(&s_all), true);
     (void)s_all_added;
