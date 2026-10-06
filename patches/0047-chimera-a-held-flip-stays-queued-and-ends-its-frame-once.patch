@@ -1,0 +1,73 @@
+--- a/rpcs3/Emu/RSX/RSXThread.cpp
++++ b/rpcs3/Emu/RSX/RSXThread.cpp
+@@ -45,6 +45,14 @@
+ atomic_t<bool> g_user_asked_for_screenshot = false;
+ atomic_t<bool> g_user_asked_for_frame_capture = false;
+ atomic_t<bool> g_disable_frame_limit = false;
++
++#ifdef CHIMERA_CORE
++// Chimera: how many frames the RSX has ended and how many flips it has shown.
++// A frame ends once for each flip; the gate reads the two to hold it to that
++// (see the held flip in handle_emu_flip).
++u64 g_chimera_rsx_frame_ends = 0;
++u64 g_chimera_rsx_flips = 0;
++#endif
+ rsx::frame_trace_data frame_debug;
+ rsx::frame_capture_data frame_capture;
+ 
+@@ -3232,6 +3240,9 @@
+ 
+ 	void thread::on_frame_end(u32 buffer, bool forced)
+ 	{
++#ifdef CHIMERA_CORE
++		g_chimera_rsx_frame_ends++;
++#endif
+ 		bool pause_emulator = false;
+ 
+ 		// MM sync. This is a pre-emptive operation, so we can use a deferred request.
+@@ -3467,6 +3478,8 @@
+ 			{
+ 				async_flip_requested |= flip_request::emu_requested;
+ 				async_flip_buffer = buffer;
++				// and it stays queued: see the PS3 Native hold below
++				m_queued_flip.push(buffer);
+ 				return;
+ 			}
+ #else
+@@ -3500,6 +3513,26 @@
+ 				// Not yet signaled, handle it later
+ 				async_flip_requested |= flip_request::emu_requested;
+ 				async_flip_buffer = buffer;
++#ifdef CHIMERA_CORE
++				// Chimera: the held flip stays queued. It was popped above, and
++				// do_local_task tries a held flip again on every pass - so every
++				// pass found nothing queued and ran on_frame_end AGAIN, for a
++				// frame that had already ended, while the FIFO was drawing the
++				// next one. on_frame_end clears the zcull unit when it has
++				// reports pending ("a workaround for buggy games"), and that
++				// discards the occlusion query in flight: of the next frame's
++				// hundred-odd visibility tests only the first survived, the
++				// rest were answered "zero pixels", and the game hid what they
++				// were for (chimera#178: Brothers in Arms - Hell's Highway,
++				// most of the scene missing and objects coming and going
++				// between frames). Each extra pass also overwrote the held
++				// flip's statistics and disabled the FIFO flattener. Queued
++				// again, the retry pops it and ends no frame. Here a flip is
++				// held on every frame - this limit, and since 0046 the others -
++				// with the FIFO running meanwhile; upstream sleeps instead for
++				// every limit but this one.
++				m_queued_flip.push(buffer);
++#endif
+ 				return;
+ 			}
+ 
+@@ -3517,6 +3550,9 @@
+ 		m_queued_flip.in_progress = true;
+ 		m_queued_flip.skip_frame |= g_cfg.video.disable_video_output && !g_cfg.video.perf_overlay.enabled;
+ 
++#ifdef CHIMERA_CORE
++		g_chimera_rsx_flips++;
++#endif
+ 		flip(m_queued_flip);
+ 
+ 		last_guest_flip_timestamp = get_system_time() - 1000000;

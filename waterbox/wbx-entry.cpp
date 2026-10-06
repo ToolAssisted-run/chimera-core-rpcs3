@@ -202,6 +202,17 @@ ECL_EXPORT uint64_t GetFaultCount(void)
   return chimera_rpcs3_fault_count();
 }
 
+// frames the RSX ended and flips it showed (diagnostic; the gate's rsx:held-flip)
+ECL_EXPORT uint64_t GetFrameEndCount(void)
+{
+  return chimera_rpcs3_frame_ends();
+}
+
+ECL_EXPORT uint64_t GetFlipCount(void)
+{
+  return chimera_rpcs3_flips();
+}
+
 // how many faults of the RSX's own were served by opening the page (diagnostic)
 ECL_EXPORT uint64_t GetWindowCount(void)
 {

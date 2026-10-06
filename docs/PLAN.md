@@ -2531,3 +2531,55 @@ Proven on the 1060 with the reporter's setting (60): intro, the UbiArt logo and
 the title screen, no allocation refused. Gate leg `rsx:frame-limit` runs the
 game (tests/roms-local/frame-limit) 200 frames at 60 with sys_mmapper traced;
 the f9394ed core dies there, after refused allocations.
+
+## A held flip ends its frame once (issue #178, 2026-10-06)
+
+Brothers in Arms: Hell's Highway drew most of its world as absent: the
+farmhouse a flat silhouette, no mailbox, no wheat, no fences, and a fence
+and a crate coming and going between consecutive frames. Reproduced on the
+GTX 1060 from the reporter's own inputs and default settings. With "Disable
+ZCull occlusion queries" the popping stopped and more went missing, which
+said where to look: with queries off every report is written as zero.
+
+Logging the zcull unit for one frame showed 140 report requests and 140
+writes, 138 of them zero, and only two results ever read from the GPU. The
+game's stream per object is clear, enable the pixel count, draw the box,
+disable, get the report - and between the draw and the report something
+cleared the unit with type 3. Nothing in the game's stream is type 3;
+`on_frame_end` is: it clears ZPASS|ZCULL_STATS whenever the unit has reports
+pending ("a workaround for buggy games"), which discards the query in
+flight.
+
+`on_frame_end` was running hundreds of times a frame. A flip that arrives
+before its vblank is held (`async_flip_requested`) and `do_local_task` tries
+it again on every pass. `handle_emu_flip` had already popped the queued
+flip, so every retry found nothing queued and ended the frame again -
+while the FIFO was drawing the NEXT frame. The first object's query
+survived (nothing was pending yet); every one after it was thrown away and
+answered "zero pixels". Each pass also overwrote the held flip's statistics
+and disabled the FIFO flattener.
+
+It is upstream's code path, but upstream only holds a flip under the PS3
+Native limit and sleeps for every other; this core holds one on every frame
+(PS3 Native is the default here, and 0046 made the other limits hold too),
+with the FIFO running meanwhile.
+
+Patch 0047: the held flip is queued again before returning, at both holds,
+so the retry pops it and ends no frame. flip.elf, 120 frames: 29165 frame
+ends for 119 flips before, 358 after (three a flip is that program's own
+calls). The gate's `rsx:held-flip` reads the two counts the runners now
+print and holds them to that, native and sandbox.
+
+Patch 0048, because the first makes seventy real queries a frame go through
+it: `check_occlusion_query_status` polled the host driver for "is the
+result ready" and left the report unwritten until it was - a moment in
+HOST time deciding when guest memory changes. Under CHIMERA_CORE it answers
+yes; reading the result waits for it.
+
+Proven on the 1060: the whole scene at frames 2100-2105 and 2277, the same
+from frame to frame; one frame's traffic is 76 reports, 72 non-zero, 74
+results read, no stray clear. Two runs side by side to frame 2278: MainRAM
+byte-identical, the pictures at seven frames identical pixel for pixel.
+
+This moves the machine of every project: a game that asks whether its
+objects are visible now gets the answer.

@@ -2692,6 +2692,21 @@ extern "C" uint64_t chimera_rpcs3_fault_count(void)
   return g_faults_served;
 }
 
+// Counted in the RSX thread itself (patch 0047): a frame is ended once for
+// every flip, and a held flip must not end it again on every retry.
+extern u64 g_chimera_rsx_frame_ends;
+extern u64 g_chimera_rsx_flips;
+
+extern "C" uint64_t chimera_rpcs3_frame_ends(void)
+{
+  return g_chimera_rsx_frame_ends;
+}
+
+extern "C" uint64_t chimera_rpcs3_flips(void)
+{
+  return g_chimera_rsx_flips;
+}
+
 extern "C" int chimera_rpcs3_on_fault(uint64_t addr, int is_write)
 {
   // A fault the renderer declines kills the machine, and the reason is the

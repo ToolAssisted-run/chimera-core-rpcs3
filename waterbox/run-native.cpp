@@ -365,6 +365,7 @@ int main(int argc, char** argv)
     fprintf(stderr, "compile cache: %llu stored, %llu fetched (%s)\n", (unsigned long long)chimera_rpcs3_cache_stored(), (unsigned long long)chimera_rpcs3_cache_fetched(), chimera_cache_host_description());
   if (chimera_rpcs3_fault_count())
     fprintf(stderr, "page faults served by the renderer: %llu\n", (unsigned long long)chimera_rpcs3_fault_count());
+  fprintf(stderr, "rsx: %llu frames ended for %llu flips\n", (unsigned long long)chimera_rpcs3_frame_ends(), (unsigned long long)chimera_rpcs3_flips());
   if (chimera_rpcs3_window_count())
     fprintf(stderr, "faults of the RSX's own served by opening the page: %llu\n", (unsigned long long)chimera_rpcs3_window_count());
   fprintf(stderr, "memory files: %llu bytes, %llu file(s) held as the disc's (%llu bytes), %llu bytes copied in, %llu bytes decrypted to tell\n",

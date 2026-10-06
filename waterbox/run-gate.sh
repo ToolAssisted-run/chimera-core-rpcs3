@@ -25,6 +25,12 @@
 #                          flips with the RSX: a new image every frame, the
 #                          program's own account of its flips on the TTY, and
 #                          the sandbox's images are the native ones
+#   rsx:held-flip          the same run: the RSX ends a frame for a flip, not
+#                          once for every pass of its loop while the flip is
+#                          held for its vblank - which threw away the next
+#                          frame's occlusion queries (chimera#178). It says
+#                          how many frames it ended and how many flips it
+#                          showed; a held flip ended 245 frames each
 #   audio:tone             tone.elf plays a square wave through cellAudio: the
 #                          audio changes every frame, cycles with the wave, and
 #                          the sandbox's samples are the native ones
@@ -415,6 +421,30 @@ else
 		fi
 	else
 		failed "video:flip - expected 12 different images and 100+ flips, got $images and $flips ($(tail -1 "$work/flip-native.err"))"
+	fi
+
+	# ---- rsx:held-flip (the same run) ------------------------------------
+	# flip.elf waits for the vblank, so every one of its flips is held; while
+	# one is held the RSX tries it again on every pass of its loop, and each
+	# try used to end the frame again. Three frame ends a flip is what this
+	# program's own calls make (the display queue, the flip command, the flip);
+	# the core before patch 0047 made 29165 for the same 119 flips. The runner
+	# prints both counts; the two flavors must agree, as on everything else.
+	ends_of() { sed -n 's/^rsx: \([0-9]*\) frames ended for \([0-9]*\) flips$/\1 \2/p' "$1" | tail -1; }
+	held_native="$(ends_of "$work/flip-native.err")"
+	held_wbx="$held_native"
+	[ "$have_wbx" = 1 ] && held_wbx="$(ends_of "$work/flip-wbx.err")"
+	h_ends="${held_native%% *}"; h_flips="${held_native##* }"
+	if [ -z "$held_native" ]; then
+		failed "rsx:held-flip - the runner did not say how many frames the RSX ended"
+	elif [ "$held_native" != "$held_wbx" ]; then
+		failed "rsx:held-flip - native ended $held_native (frames, flips) and the sandbox $held_wbx"
+	elif [ "$h_flips" -lt 100 ]; then
+		failed "rsx:held-flip - only $h_flips flips in 120 frames: nothing was held, so nothing was tested"
+	elif [ "$h_ends" -gt $((h_flips * 4)) ]; then
+		failed "rsx:held-flip - $h_ends frames ended for $h_flips flips: a held flip is ending its frame again on every retry"
+	else
+		pass "rsx:held-flip - $h_ends frames ended for $h_flips flips (a held flip ended 245 each before patch 0047), $(vs_sandbox)"
 	fi
 fi
 

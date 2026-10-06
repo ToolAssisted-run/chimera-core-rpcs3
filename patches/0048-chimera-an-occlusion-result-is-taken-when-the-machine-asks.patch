@@ -1,0 +1,24 @@
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.cpp
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+@@ -1631,10 +1631,21 @@
+ 	if (!query->num_draws)
+ 		return true;
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: a result is taken when the machine asks for it, never when the
++	// host's GPU happens to have it ready. Upstream polls the driver here and
++	// leaves a report unwritten until it answers, which is a moment in host
++	// time: the same movie would write the same report into guest memory a
++	// little earlier or later from run to run, and a game that reads it in
++	// between sees two different machines. Reading the result itself waits for
++	// it (get_occlusion_query_result), so "ready" is always true.
++	return true;
++#else
+ 	GLint status = GL_TRUE;
+ 	glGetQueryObjectiv(query->driver_handle, GL_QUERY_RESULT_AVAILABLE, &status);
+ 
+ 	return status != GL_FALSE;
++#endif
+ }
+ 
+ void GLGSRender::get_occlusion_query_result(rsx::reports::occlusion_query_info* query)
