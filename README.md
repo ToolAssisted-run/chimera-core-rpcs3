@@ -16,3 +16,17 @@ renderer while the machine's memory never depends on the GPU.
 Upstream is GPL-2.0-only; the glue in this repository is MIT. Firmware
 (`PS3UPDAT.PUP`, from Sony) and discs are supplied by the user and live outside
 the repository; nothing under `tests/roms-local/` (gitignored) is ever committed.
+
+## Using it in Chimera, and building it
+
+Chimera ships no cores and downloads none. Download `rpcs3-<version>.chimeraCore`
+from this repository's
+[Releases](https://github.com/ToolAssisted-run/chimera-core-rpcs3/releases) page,
+or build it, and put it in Chimera's `Cores` folder: the one beside
+`Chimera.exe`, or the folder chosen in File > Core Manager > Change folder...
+File > Core Manager lists it. The same file works on Linux and on Windows.
+
+`waterbox/build-package.sh -r <chimera checkout>` builds the package and writes
+it to `<chimera checkout>/build/Cores/rpcs3.chimeraCore`. The full instructions
+are in [docs/BUILDING.md](docs/BUILDING.md); an AI coding agent working here
+starts at [AGENTS.md](AGENTS.md).
