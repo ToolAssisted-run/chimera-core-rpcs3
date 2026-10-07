@@ -4,7 +4,7 @@
  * diffed against the native reference.
  *
  * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--video-out F]
- *        [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]]
+ *        [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]] [--window-probe PAGES]
  *        [--log-trace CHANS] [--debug-at N]
  *        [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>
  *
@@ -148,6 +148,9 @@ int main(int argc, char **argv)
 	 * (for a machine that came out of a savestate). */
 	const char *discCopy = NULL;
 	int discCopyFlags = 0;
+	/* --window-probe N: lock N pages of guest memory and read each through a
+	 * window, the way the RSX reads what it locked (chimera#213); diagnostic */
+	long windowProbe = 0;
 	struct { long first, count; int index; } press[32];
 	int presses = 0;
 	/* the pkg and rap slots: any number of each, reaching the guest through the
@@ -166,6 +169,7 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--disc-copy") && i + 1 < argc) discCopy = argv[++i];
 		else if (!strcmp(argv[i], "--disc-copy-raw")) discCopyFlags |= 1;
 		else if (!strcmp(argv[i], "--disc-verify")) discCopyFlags |= 2;
+		else if (!strcmp(argv[i], "--window-probe") && i + 1 < argc) windowProbe = atol(argv[++i]);
 		else if (!strcmp(argv[i], "--pkg") && i + 1 < argc) {
 			if (npkgs == 32) { fprintf(stderr, "too many --pkg\n"); return 2; }
 			pkgs[npkgs++] = argv[++i];
@@ -432,6 +436,13 @@ int main(int argc, char **argv)
 		long long copied = (long long)DiscCopyProbe();
 		printf("disc copy %s: %lld bytes, %llu held, %llu kept, %llu decrypted\n", discCopy, copied,
 			(unsigned long long)MemfsStat(2), (unsigned long long)MemfsStat(3), (unsigned long long)MemfsStat(4));
+		fflush(stdout);
+	}
+
+	if (windowProbe) {
+		typedef int64_t (MB_GUEST_ABI *i64fn_u)(uint32_t);
+		i64fn_u WindowProbe = (i64fn_u)proc(h, "WindowProbe");
+		printf("window probe %ld: %lld read\n", windowProbe, (long long)WindowProbe((uint32_t)windowProbe));
 		fflush(stdout);
 	}
 

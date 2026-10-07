@@ -219,6 +219,13 @@ ECL_EXPORT uint64_t GetWindowCount(void)
   return chimera_rpcs3_window_count();
 }
 
+// The windows without a renderer (rpcs3-driver.h): diagnostic. Nothing but a
+// gate leg calls it.
+ECL_EXPORT int64_t WindowProbe(uint32_t pages)
+{
+  return chimera_rpcs3_window_probe(pages);
+}
+
 // what the memory filesystem holds and how much of it the disc is standing in
 // for (diagnostic, never machine state; rpcs3-driver.h names the indices)
 ECL_EXPORT uint64_t GetMemfsStat(int32_t which)

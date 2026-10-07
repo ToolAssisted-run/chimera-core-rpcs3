@@ -31,6 +31,11 @@
 #                          frame's occlusion queries (chimera#178). It says
 #                          how many frames it ended and how many flips it
 #                          showed; a held flip ended 245 frames each
+#   rsx:windows            the RSX's windows onto pages it locked itself,
+#                          without a renderer: more pages than the list of
+#                          open ones holds are each read through one, a page
+#                          locked again under its window is locked, and a
+#                          read across two pages has both (chimera#213)
 #   audio:tone             tone.elf plays a square wave through cellAudio: the
 #                          audio changes every frame, cycles with the wave, and
 #                          the sandbox's samples are the native ones
@@ -446,6 +451,33 @@ else
 	else
 		pass "rsx:held-flip - $h_ends frames ended for $h_flips flips (a held flip ended 245 each before patch 0047), $(vs_sandbox)"
 	fi
+fi
+
+# ---- rsx:windows ----------------------------------------------------------
+# The RSX reads pages it locked itself through windows (rpcs3-driver.cpp): the
+# page opened for the read and put back when the RSX gives the machine away.
+# The pages to put back are a list, and Soulcalibur V with its colour and depth
+# buffers written to memory filled it in one go of the RSX; the next window
+# then opened nothing, and the read faulted again for good (chimera#213). No
+# program here locks a page - that takes the GL renderer and a game - so the
+# driver does what the caches do: 20000 pages locked, more than the list
+# holds, each read through a window opened the way a fault opens one and
+# again the way a tag is read; then one locked again under its open window,
+# and one read across two pages with the list a run short of full. A window
+# that does not open is a fault nobody serves, and the run dies of it: the
+# driver before the fix dies at page 4096, and without either of the other
+# two pieces at the read that piece is for.
+run_both win 2 2 "$rom" --window-probe 20000
+probe_of() { sed -n 's/^window probe 20000: \(-\{0,1\}[0-9]*\) read$/\1/p' "$1" | tail -1; }
+win_native="$(probe_of "$work/win-native-out.txt")"
+win_wbx="$win_native"
+[ "$have_wbx" = 1 ] && win_wbx="$(probe_of "$work/win-wbx-out.txt")"
+if [ "$win_native" != 40002 ]; then
+	failed "rsx:windows - native: ${win_native:-the run died before it answered, and none} of 40002 reads through a window came back ($(tail -1 "$work/win-native.err"))"
+elif [ "$win_wbx" != 40002 ]; then
+	failed "rsx:windows - sandbox: ${win_wbx:-the run died before it answered, and none} of 40002 reads through a window came back ($(tail -1 "$work/win-wbx.err"))"
+else
+	pass "rsx:windows - 20000 locked pages read through windows both ways, one locked again under its window, one read across two: 40002 of 40002, $(vs_sandbox)"
 fi
 
 # ---- audio:tone ----------------------------------------------------------

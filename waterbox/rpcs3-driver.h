@@ -127,6 +127,10 @@ uint64_t chimera_rpcs3_flips(void);
 // how many of the RSX's own faults, taken inside its cache, were served by
 // opening the pages for it instead (diagnostic, never machine state)
 uint64_t chimera_rpcs3_window_count(void);
+// The windows without a renderer: lock `pages` pages, read each through a
+// window both ways one is opened, and say how many reads came back right
+// (twice `pages`, and 2). Diagnostic.
+int64_t chimera_rpcs3_window_probe(uint32_t pages);
 // How a game's own data install fared: what the memory filesystem holds, how
 // many of its files are held as a reference to the disc instead of copied, what
 // those stand for, what was copied in full, and how much of the disc had to be

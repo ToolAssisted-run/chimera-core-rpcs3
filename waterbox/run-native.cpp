@@ -86,6 +86,9 @@ int main(int argc, char** argv)
   // copying (for a machine that came out of a savestate).
   const char* discCopy = nullptr;
   int discCopyFlags = 0;
+  // --window-probe N: lock N pages of guest memory and read each through a
+  // window, the way the RSX reads what it locked (chimera#213); diagnostic
+  long windowProbe = 0;
   int preIndex = -1, preCount = 0, preFirmware = 1;
   struct { long first, count; int index; } press[32];
   int presses = 0;
@@ -116,6 +119,8 @@ int main(int argc, char** argv)
       discCopyFlags |= 1;
     else if (!strcmp(argv[i], "--disc-verify"))
       discCopyFlags |= 2;
+    else if (!strcmp(argv[i], "--window-probe") && i + 1 < argc)
+      windowProbe = atol(argv[++i]);
     else if (!strcmp(argv[i], "--pkg") && i + 1 < argc)
       pkgs.push_back(argv[++i]);
     else if (!strcmp(argv[i], "--rap") && i + 1 < argc)
@@ -196,7 +201,7 @@ int main(int argc, char** argv)
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--rap licence.rap]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--ram-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] [--gl-rebuild-at N[,N...]] [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--rap licence.rap]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--ram-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] [--gl-rebuild-at N[,N...]] [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]] [--window-probe PAGES] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -260,6 +265,11 @@ int main(int argc, char** argv)
     printf("disc copy %s: %lld bytes, %llu held, %llu kept, %llu decrypted\n", discCopy, copied,
            (unsigned long long)chimera_rpcs3_memfs_stat(2), (unsigned long long)chimera_rpcs3_memfs_stat(3),
            (unsigned long long)chimera_rpcs3_memfs_stat(4));
+    fflush(stdout);
+  }
+  if (windowProbe)
+  {
+    printf("window probe %ld: %lld read\n", windowProbe, (long long)chimera_rpcs3_window_probe(static_cast<uint32_t>(windowProbe)));
     fflush(stdout);
   }
   for (long f = 1; f <= frames; f++)

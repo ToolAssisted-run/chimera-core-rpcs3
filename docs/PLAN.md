@@ -2626,3 +2626,56 @@ buffers written back: the sandbox with the null renderer runs the same
 aborts before its first frame on this machine (the gpu:disc entry above).
 A program that puts a thread in that state on cue has not been written.
 The reporter's second symptom, a crash on the logo, was not seen.
+
+## A full list of windows closes them, it does not stop opening (issue #213, 2026-10-07)
+
+Soulcalibur V (BLUS30736) froze while the trophy set installs: the progress
+bar near half, the frontend not responding. Reproduced on the GTX 1060 from
+a fresh project with the settings the wizard applies for this title (Write
+color buffers, Write depth buffer, Read color buffers, the RPCS3 wiki's
+recommendation) after frame 300; with the package's defaults the same
+inputs run through the install to the intro. The core that carries the #179
+fix froze the same way.
+
+Caught with the debugger attached, as #179 was. The one host thread was the
+RSX at the same instruction every time - the tag compare in
+`gl::render_target::memory_barrier`, the read patch 0042 gives a window
+before it happens - and the process was spending most of its time in the
+kernel: a fault taken again and again. The driver's own figures, read out
+of the stuck process, say why: `s_window_count` was 4096, the size of the
+list, while the count of windows opened rose by tens of thousands a
+second. `open_window` cut a run of pages short at the end of the list, so
+with the list full it opened none, said it had, and the read faulted
+again. 3583 different pages were on the list, 14 MiB, all opened in one
+go of the RSX: surfaces loading from memory, which is what those three
+settings ask for.
+
+The fix is in the driver (rpcs3-driver.cpp), no patch:
+
+- no room for a whole run: the windows that are open are put back, then
+  and there, and the list starts again. Putting a page back before the RSX
+  gives the machine away is only sooner than the rule asks;
+- the list is 16384 pages, not 4096, and a page already open is not put on
+  it twice, so that a game like this one keeps its windows for the whole go
+  as before;
+- which pages are open is kept per page. The list could not say: a page
+  the emulator locks again stays on it, and `chimera_rpcs3_super_access`
+  took that for open and skipped it - the read then faults outside the
+  cache, which is the #128 double free's way in. Not seen happening; found
+  reading the code, and closed because the leg below can show it;
+- a read asks for room for all its pages before it opens the first.
+
+Gate leg `rsx:windows`, both flavors: the driver locks 20000 pages and
+reads each through a window, opened the way a fault opens one and then the
+way a tag is read; locks one again under its window; reads across two
+pages with the list a run short of full. 40002 reads of 40002. Negative
+controls, each run: the driver before the fix dies at page 4096; without
+the room made in `open_window`, at page 16384; without the per-page note of
+a page locked again, at that page; without room for the whole read, at the
+read across two pages.
+
+Proven on the 1060 with the reporter's settings: 3000 frames, through the
+trophy install (frame 400 is its progress bar), the logos and into the
+intro video; the core before it made frame 300 and no more, on the build
+the reporter had and on the one with the #179 fix alike. Two runs side by
+side to frame 1200: MainRAM byte-identical, two pictures identical.

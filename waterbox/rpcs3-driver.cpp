@@ -2481,14 +2481,22 @@ extern "C" int chimera_rpcs3_gpu_active(void)
 // is - the last protection it asked for, noted by memory_protect - before any
 // other thread runs. The scheduler is cooperative, so that moment is exact:
 // the RSX giving the machine away (vsched's leave hook). Nothing else can
-// touch the page in between, and the cache's belief is never wrong.
+// touch the page in between, and the cache's belief is never wrong. (Sooner
+// when the list of open pages is full: see open_window.)
 namespace
 {
   // what the emulator last asked for each page of the guest's 4 GiB view:
   // 0 = never asked (rw), else utils::protection + 1
   uint8_t s_page_belief[1u << 20];
   bool s_noting = true;  // false while a window opens or closes a page itself
-  u32 s_window_pages[4096];
+  constexpr u32 window_run = 256;  // pages a window opens at most
+  // the pages to put back. 64 MiB of them: a game that writes its colour and
+  // depth buffers to memory has the RSX read several 720p surfaces in one go
+  // (Soulcalibur V: 14 MiB and counting when a list of 4096 was full)
+  u32 s_window_pages[16384];
+  // which pages a window holds open right now. The list above cannot say: a
+  // page stays on it, to be put back, after the emulator has locked it again
+  uint8_t s_page_open[1u << 20];
   unsigned s_window_count = 0;
   uint64_t s_windows_opened = 0;
 
@@ -2515,9 +2523,16 @@ namespace
       while (i + n < s_window_count && s_window_pages[i + n] == first + n && s_page_belief[first + n] == belief)
         n++;
       protect_pages(first, n, believed(first));
+      memset(&s_page_open[first], 0, n);
       i += n;
     }
     s_window_count = 0;
+  }
+
+  void make_room(u32 runs)
+  {
+    if (s_window_count + runs * window_run > std::size(s_window_pages))
+      close_windows();
   }
 
   // The faulting page, and the run of pages after it the emulator asked the
@@ -2531,15 +2546,21 @@ namespace
       vsched_set_leave_hook(close_windows);
       hooked = true;
     }
+    // No room for a whole run: what is open is put back now rather than when
+    // the RSX gives the machine away, which is only sooner. A run cut short by
+    // the end of the list is how a full list opened NOTHING, and the access
+    // faulted again for good (chimera#213).
+    make_room(1);
     const uint8_t belief = s_page_belief[page];
     u32 n = 0;
-    while (n < 256 && page + n < (1u << 20) && s_page_belief[page + n] == belief && s_window_count + n < std::size(s_window_pages))
+    while (n < window_run && page + n < (1u << 20) && s_page_belief[page + n] == belief && s_window_count < std::size(s_window_pages))
     {
-      s_window_pages[s_window_count + n] = page + n;
+      if (!s_page_open[page + n])
+        s_window_pages[s_window_count++] = page + n;
       n++;
     }
-    s_window_count += n;
     protect_pages(page, n, utils::protection::rw);
+    memset(&s_page_open[page], 1, n);
     s_windows_opened++;
   }
 }
@@ -2555,6 +2576,8 @@ extern "C" void chimera_rpcs3_note_protect(const void* pointer, usz size, int pr
   const uint64_t first = (p - base) / 4096;
   const uint64_t last = std::min<uint64_t>((p - base + size - 1) / 4096, (1u << 20) - 1);
   memset(&s_page_belief[first], static_cast<uint8_t>(prot + 1), last - first + 1);
+  if (s_window_count)
+    memset(&s_page_open[first], 0, last - first + 1);
 }
 
 // The surface cache reads its memory tags through the super pointer, which
@@ -2570,14 +2593,12 @@ extern "C" void chimera_rpcs3_super_access(u32 address, u32 length)
     return;
   const u32 first = address / 4096;
   const u32 last = static_cast<u32>((static_cast<u64>(address) + length - 1) / 4096);
+  // room for all of it first: making room for the second page of a read must
+  // not put the first one back
+  make_room(last - first + 1);
   for (u32 page = first; page <= last && page < (1u << 20); page++)
   {
-    if (believed(page) == utils::protection::rw)
-      continue;
-    bool open = false;
-    for (unsigned i = 0; i < s_window_count && !open; i++)
-      open = (s_window_pages[i] == page);
-    if (!open)
+    if (believed(page) != utils::protection::rw && !s_page_open[page])
       open_window(page);
   }
 }
@@ -2585,6 +2606,69 @@ extern "C" void chimera_rpcs3_super_access(u32 address, u32 length)
 extern "C" uint64_t chimera_rpcs3_window_count(void)
 {
   return s_windows_opened;
+}
+
+// The windows without a renderer: `pages` pages of guest memory locked the way
+// the texture cache locks a section, then each read through a window - opened
+// the way a fault inside the cache opens one, and then again the way the
+// surface cache reads a tag, the window asked for before the read. More pages
+// than the list of open windows holds is the point: Soulcalibur V with its
+// colour and depth buffers written to memory filled a list of 4096 in one go
+// of the RSX, and the next window opened nothing (chimera#213). Then two
+// things a window must not get wrong either: a page the emulator locks AGAIN
+// while its window is open is locked, whatever the list says; and a read that
+// straddles two pages has both of them, with the list one run short of full
+// when it asks.
+//
+// Returns the reads that came back right (twice `pages`, and 2, when all is
+// well), or a negative number saying what went wrong; a window that fails to
+// open is a fault nobody serves, and the run dies of it. Diagnostic: nothing
+// in a normal run calls it.
+extern "C" int64_t chimera_rpcs3_window_probe(u32 pages)
+{
+  const u32 room = static_cast<u32>(std::size(s_window_pages));
+  if (!g_booted || pages < room + 2)
+    return -1;
+  const u32 size = utils::align<u32>(pages * 4096, 0x10000);
+  const u32 addr = vm::alloc(size, vm::main);
+  if (!addr)
+    return -2;
+  u8* const base = vm::g_base_addr + addr;
+  const auto mark = [](u32 i) { return static_cast<u8>(i * 7 + 1); };
+  const auto reads = [&](u32 i) { return *static_cast<volatile u8*>(base + i * 4096ull) == mark(i); };
+  for (u32 i = 0; i < pages; i++)
+    base[i * 4096ull] = mark(i);
+  utils::memory_protect(base, pages * 4096ull, utils::protection::no);
+  int64_t good = 0;
+  for (u32 i = 0; i < pages; i++)
+  {
+    if (!s_page_open[addr / 4096 + i])
+      open_window(addr / 4096 + i);
+    good += reads(i);
+  }
+  close_windows();
+  for (u32 i = 0; i < pages; i++)
+  {
+    chimera_rpcs3_super_access(addr + i * 4096, 8);
+    good += reads(i);
+  }
+  // locked again under an open window
+  utils::memory_protect(base + (pages - 1) * 4096ull, 4096, utils::protection::no);
+  chimera_rpcs3_super_access(addr + (pages - 1) * 4096, 8);
+  good += reads(pages - 1);
+  // eight bytes over the boundary of two pages locked differently, so that
+  // they are two windows, asked for with room in the list for one and a bit
+  close_windows();
+  utils::memory_protect(base, pages * 4096ull, utils::protection::no);
+  utils::memory_protect(base + 4096, 4096, utils::protection::ro);
+  for (u32 i = 2; i < 2 + room - 256; i += 256)
+    chimera_rpcs3_super_access(addr + i * 4096, 8);
+  chimera_rpcs3_super_access(addr + 4092, 8);
+  good += *static_cast<volatile u8*>(base + 4092) == 0 && reads(1);
+  utils::memory_protect(base, pages * 4096ull, utils::protection::rw);
+  close_windows();
+  vm::dealloc(addr, vm::main);
+  return good;
 }
 
 // A game's own data install, in miniature and without the game: read a file off
