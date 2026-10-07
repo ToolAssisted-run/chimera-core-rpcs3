@@ -2583,3 +2583,46 @@ byte-identical, the pictures at seven frames identical pixel for pixel.
 
 This moves the machine of every project: a game that asks whether its
 objects are visible now gets the answer.
+
+## A suspended thread that may not stop gives way to the memory lock (issue #179, 2026-10-07)
+
+MotorStorm (BCUS98137) froze behind its autosave notice: choose a language,
+the notice shows, and the machine makes no more frames while the process
+burns a core. Reproduced on the GTX 1060 from a fresh project with the
+settings the wizard applies for this title (Write and Read color buffers
+on, the RPCS3 wiki's recommendation), between frames 1200 and 1300.
+
+Caught with the debugger attached to the frozen run, as #151 was. The one
+host thread was in `cpu_thread::check_state` every time; single-stepping
+six thousand instructions showed nothing but check_state and the slot
+lookup behind a thread-local. The object it was called on is the game's
+main thread (id 0x1000000), its state constant at wait + suspend + memory.
+
+The loop: somebody holds the memory lock (`vm::g_range_lock_bits[1]`) and
+waits for every thread to let go of its own; the main thread sees that,
+sets wait + memory and goes round. Ordinarily the next pass waits in
+`vm::passive_lock`, or parks in `cpu_wait` because the thread is suspended.
+This thread is suspended AND may not stop (`cpu_flag::temp`), and then
+neither happens: passive_lock returns at once for a paused thread,
+expecting check_state to park it, and check_state ignores the suspension.
+On hardware the holder finishes on another core and the loop ends. On
+vsched the holder runs when it is given the machine, and nothing in the
+loop gave it. RPCS3's log places it: the intro video's threads had just
+been created (cellVdecOpen, the VideoStream threads, cellVdecStartSeq).
+
+Patch 0049: in exactly that case - the lock held, this thread's own lock
+registered, not allowed to stop, and paused - the thread yields after
+setting its flags. It is flagged as waiting, which is what the holder
+needs. Nowhere else: the null-renderer run of the same 1400 frames gives
+the same RAM digests with and without the patch.
+
+Proven on the 1060: 3000 frames, the intro video from frame 1350 on (the
+core before it: frame 1200 and no more, twice). Two runs side by side to
+frame 1600: MainRAM byte-identical, two pictures identical.
+
+No gate leg, and that is a gap. The stall needs the GL renderer with color
+buffers written back: the sandbox with the null renderer runs the same
+1400 frames to the end on the old core, and the sandbox's GL run on a disc
+aborts before its first frame on this machine (the gpu:disc entry above).
+A program that puts a thread in that state on cue has not been written.
+The reporter's second symptom, a crash on the logo, was not seen.

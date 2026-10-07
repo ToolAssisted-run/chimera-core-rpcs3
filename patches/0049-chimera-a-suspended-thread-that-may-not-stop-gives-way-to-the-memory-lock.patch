@@ -1,0 +1,30 @@
+--- a/rpcs3/Emu/CPU/CPUThread.cpp
++++ b/rpcs3/Emu/CPU/CPUThread.cpp
+@@ -1049,6 +1049,27 @@
+ 				state += cpu_flag::wait + cpu_flag::memory;
+ 				cpu_sleep_called = false;
+ 				cpu_memory_checked = false;
++#ifdef CHIMERA_CORE
++				// Chimera: somebody holds the memory lock and is waiting for
++				// this thread to let go of its own. Ordinarily the next pass
++				// waits for it (vm::passive_lock), or parks because the thread
++				// is suspended (cpu_wait). A thread that is suspended AND may
++				// not stop (cpu_flag::temp) does neither: passive_lock returns
++				// at once for a paused thread, expecting this function to park
++				// it, and this function ignores the suspension. So it comes
++				// straight back here, sets the flags again, and goes round. On
++				// hardware the lock's holder finishes on another core and the
++				// loop ends; on vsched the holder runs only when it is given
++				// the machine, and this loop never gave it: MotorStorm's main
++				// thread turned here for good the moment its intro video's
++				// threads started, behind the autosave notice (chimera#179).
++				// The thread is flagged as waiting, as the holder needs; let
++				// the holder finish.
++				if (!cpu_can_stop && is_paused())
++				{
++					CHIMERA_YIELD();
++				}
++#endif
+ 				continue;
+ 			}
+ 
