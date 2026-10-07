@@ -6,8 +6,8 @@ name: chimera waterbox core
 # and any commercial disc are the user's to supply, so the legs that want them
 # report SKIP. What runs needs neither: the machine starts, its virtual clock is
 # its own, savestates round-trip, and the sandboxed build agrees with the native
-# one - over the small PPC programs in tests/, which are assembled here from
-# source rather than shipped as binaries.
+# one - over the small PPC programs in tests/roms, kept there as built; their
+# sources are beside them in tests/.
 #
 # This is the expensive core. It builds LLVM twice (host and guest) and rpcs3's
 # emulator library twice, which is hours on a runner and changes only when the
@@ -209,12 +209,11 @@ jobs:
           mb="$PWD/chimera-checkout/extern/chimera-common-minibox"
           sh "$mb/source/guest/check-wbx.sh" waterbox/bin/core.wbx
           # The gate itself, at last. There is no PS3UPDAT.PUP and no disc on a
-          # public runner, so twenty-one of the twenty-five legs SKIP - by name,
-          # one line each, counted in the summary the script prints. The four
-          # that run need no content at all, and they are exactly the four that
-          # would have caught the native reference failing to link. Which legs
-          # those are, and who owns running the other twenty-one, is the table
-          # in docs/PLAN.md under "What CI runs".
+          # public runner, so most legs SKIP - by name, one line each, counted
+          # in the summary the script prints. The ones that run need no content
+          # at all, and they are the ones that would have caught the native
+          # reference failing to link. Which legs those are, and who owns
+          # running the rest, is the table in docs/PLAN.md under "What CI runs".
           sh waterbox/run-gate.sh
 
       - name: Build and install the waterbox core package
@@ -400,9 +399,9 @@ jobs:
           fi
 
       - name: Frontend gate
-        # Two legs run, four SKIP by name and the script prints
-        # "N ok, M failed, K skipped". Which legs those are, and who owns
-        # running the other four, is the table in docs/PLAN.md.
+        # The legs that need no content run, the others SKIP by name and the
+        # script prints "N ok, M failed, K skipped". Which legs those are, and
+        # who owns running the rest, is the table in docs/PLAN.md.
         run: ./waterbox/tests/run-frontend.sh --chimera-root "$GITHUB_WORKSPACE/chimera-checkout"
 
       - name: Upload the frontend work dir on failure
