@@ -294,22 +294,28 @@ fi
 # does before a first boot), each compiling its share into the compile cache
 # under the Compile Cache path; a run on the LLVM recompiler afterwards
 # fetches every object and compiles none.
-cache_root="$chimera_root/build/CoreCache"
+#
+# The cache is under Chimera's data directory, and the leg has one of its own:
+# the user's is neither emptied by a test nor what makes this one pass, as it
+# did not when the leg still looked where the cache used to be and found the
+# sessions storing nothing, the user's cache being warm already.
+data_home="$work/data-home"
+cache_root="$data_home/Cache/PrecompiledCode"
 if [ ! -f "$pup" ]; then
 	report "precompile:frontend" SKIP "needs the firmware"
 else
 	settings_config "$work/config.llvm.ini" '{"ppu_decoder": "llvm"}' "$firmware_json"
-	rm -rf "$cache_root"
-	( cd "$chimera_root" && timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=0/2/game" "$game" ) > "$work/precompile-0.log" 2>&1 &
+	rm -rf "$data_home"
+	( cd "$chimera_root" && CHIMERA_DATA_HOME="$data_home" timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=0/2/game" "$game" ) > "$work/precompile-0.log" 2>&1 &
 	pre0=$!
-	( cd "$chimera_root" && timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=1/2/game" "$game" ) > "$work/precompile-1.log" 2>&1 &
+	( cd "$chimera_root" && CHIMERA_DATA_HOME="$data_home" timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=1/2/game" "$game" ) > "$work/precompile-1.log" 2>&1 &
 	pre1=$!
 	# by pid, not a bare "wait": this script may be running an Xvfb of its own
 	# in the background, and a bare wait never returns while it lives
 	wait "$pre0" "$pre1"
 	stored="$(sed -n 's/^precompile session [0-9]* of [0-9]*: \([0-9]*\) objects stored.*/\1/p' "$work/precompile-0.log" "$work/precompile-1.log" | awk '{s+=$1} END {print s+0}')"
 	nfiles="$(find "$cache_root" -name '*.obj.gz' 2>/dev/null | wc -l)"
-	if ! run_frontend "warm" "$work/config.llvm.ini" 100 "" "$game"; then
+	if ! CHIMERA_DATA_HOME="$data_home" run_frontend "warm" "$work/config.llvm.ini" 100 "" "$game"; then
 		report "precompile:frontend" FAIL "the warm run gave no OK meta (see tests/work/warm.log)"
 	else
 		fetched="$(sed -n 's/^chimera cache: \([0-9]*\) stored, \([0-9]*\) fetched.*/\2/p' "$work/warm.log" | tail -1)"
@@ -320,8 +326,15 @@ else
 		# recompiling what the sessions already did - and the core gate's
 		# cache:warm leg holds that a run which compiles and a run which
 		# fetches are the same machine.
-		if [ "$stored" -ge 2 ] && [ "$nfiles" = "$stored" ] && [ "${fetched:-0}" = "$stored" ]; then
-			report "precompile:frontend" PASS "two sessions stored $stored objects under CoreCache/, the warm run fetched all $fetched and compiled ${wstored:-0} more (modules the program loaded at runtime)"
+		#
+		# One object is all there is to store: the program is a bare .elf,
+		# the package asks for the system software only for a disc or a
+		# package (requiredWhen), so the frontend hands none and no firmware
+		# library is loaded to be compiled. The leg asked for two, from when
+		# every boot was given the firmware. Two sessions each storing their
+		# share is the core gate's cache:precompile, which gives it.
+		if [ "$stored" -ge 1 ] && [ "$nfiles" = "$stored" ] && [ "${fetched:-0}" = "$stored" ]; then
+			report "precompile:frontend" PASS "two sessions stored $stored objects in the compile cache, the warm run fetched all $fetched and compiled ${wstored:-0} more (modules the program loaded at runtime)"
 		else
 			report "precompile:frontend" FAIL "sessions stored $stored ($nfiles files), warm run stored ${wstored:-?} fetched ${fetched:-?} ($(grep -a 'rror\|xception' "$work/precompile-0.log" | head -1 | cut -c1-100))"
 		fi
