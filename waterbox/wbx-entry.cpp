@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <sys/mman.h>
 
 #include <emulibc.h>
 #include <waterbox_settings.h>
@@ -70,9 +71,33 @@ ECL_EXPORT const char* SuggestSettings(void)
   return chimera_rpcs3_suggest(romName);
 }
 
+// What the GPU drew, kept with the machine (the renderer's half is in
+// GLGSRender.cpp, "what the GPU drew is kept with the machine"). Two blocks,
+// both taken here so that each is at the same place in every state of the
+// session: the copies themselves, in ordinary memory a state carries - address
+// space only until a page of it is written - and a scratch block in memory no
+// state carries, where a surface is read before it is compared with its copy.
+extern "C" void chimera_rsx_shadow_setup(void* shadow, uint64_t shadow_size, void* scratch, uint64_t scratch_size);
+extern "C" void chimera_rsx_shadow_save(void);
+extern "C" void chimera_rsx_shadow_state_loaded(void);
+
+static void shadow_blocks(void)
+{
+  const uint64_t shadow_size = 1024ull << 20, scratch_size = 32ull << 20;
+  void* shadow = mmap(nullptr, shadow_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+  void* scratch = alloc_invisible(scratch_size);
+  if (shadow == MAP_FAILED || scratch == nullptr)
+  {
+    fprintf(stderr, "chimera: no room for the copies of what the GPU drew; a load will lose them\n");
+    return;
+  }
+  chimera_rsx_shadow_setup(shadow, shadow_size, scratch, scratch_size);
+}
+
 ECL_EXPORT int Init(void)
 {
   g_loadError[0] = '\0';
+  shadow_blocks();
 
   char romName[256];
   find_game(romName, sizeof romName);
@@ -327,6 +352,21 @@ ECL_EXPORT int IsGpuActive(void)
 ECL_EXPORT void StateLoaded(void)
 {
   chimera_gl_note_state_loaded();
+  // whether the state that has just been loaded brought the render targets'
+  // pixels with it, said before a frame can say otherwise
+  chimera_rsx_shadow_state_loaded();
+}
+
+// Told before every state the engine takes of the machine - a greenzone
+// capture, a savestate, a branch's state file - with the machine stopped
+// between frames. The render targets live in the driver and nowhere in the
+// machine's memory, so this is when their pixels are copied to where a state
+// can carry them; after a load the renderer gives them back to the surfaces it
+// kept (chimera issue 190). It writes only that block: not a byte the game can
+// read, so whether a state is taken is nothing the machine can tell.
+ECL_EXPORT void StateSaving(void)
+{
+  chimera_rsx_shadow_save();
 }
 
 ECL_EXPORT void FrameAdvance(uint64_t /*input*/)

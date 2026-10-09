@@ -2041,10 +2041,15 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   return 1;
 }
 
+// GLGSRender.cpp: the copies of the render targets describe them as they were
+// before this frame ran
+extern "C" void chimera_rsx_shadow_frame_begins(void);
+
 void chimera_rpcs3_frame(void)
 {
   if (!g_booted)
     return;
+  chimera_rsx_shadow_frame_begins();
   g_frame_index++;
   g_input_read = false;
   // the vblank thread itself computes start + n * 1000000 / 60 in whole

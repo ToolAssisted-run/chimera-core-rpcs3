@@ -60,6 +60,17 @@ static void gl_report_unhandled(void) { }
 #endif
 
 static void (MB_GUEST_ABI *g_coreStateLoaded)(void);
+static void (MB_GUEST_ABI *g_coreStateSaving)(void);
+
+/* The other end, and for the same reason: chimera's session tells a core
+ * before every state it takes (its StateSaving export - the GL renderer copies
+ * its render targets to where a state can carry them, chimera issue 190), so
+ * this runner does before every state IT takes. CHIMERA_NO_STATE_SAVING leaves
+ * the core untold here as it does in the engine: the control. */
+static void state_will_be_saved(void)
+{
+	if (g_coreStateSaving != NULL && getenv("CHIMERA_NO_STATE_SAVING") == NULL) g_coreStateSaving();
+}
 
 /* Both halves of "a state was loaded": the HOST mints a fresh GL context id
  * (the renderer's cue that the objects it remembers are another context's),
@@ -390,6 +401,9 @@ int main(int argc, char **argv)
 		memset(&sr, 0, sizeof sr);
 		wbx_get_proc_addr(h, "StateLoaded", &sr);
 		g_coreStateLoaded = (sr.error_message[0] || sr.data == 0) ? NULL : (voidfn)sr.data;
+		memset(&sr, 0, sizeof sr);
+		wbx_get_proc_addr(h, "StateSaving", &sr);
+		g_coreStateSaving = (sr.error_message[0] || sr.data == 0) ? NULL : (voidfn)sr.data;
 	}
 	btnfn SetButton = (btnfn)proc(h, "SetButton");
 	intfn InputWasRead = (intfn)proc(h, "InputWasRead");
@@ -450,6 +464,7 @@ int main(int argc, char **argv)
 		long half = frames / 2;
 		for (long f = 1; f <= half; f++) FrameAdvance(0);
 		membuf st = {0};
+		state_will_be_saved();
 		wbx_save_state(h, mem_write, (uintptr_t)&st, &r);
 		if (r.error_message[0]) { fprintf(stderr, "save: %s\n", r.error_message); return 1; }
 		uint64_t pass1 = 0, pass2 = 0;
@@ -486,6 +501,7 @@ int main(int argc, char **argv)
 			SetButton(press[pi].index, f >= press[pi].first && f < press[pi].first + press[pi].count);
 		if (rerecord) {
 			membuf st = {0};
+			state_will_be_saved();
 			wbx_save_state(h, mem_write, (uintptr_t)&st, &r);
 			if (r.error_message[0]) { fprintf(stderr, "save@%ld: %s\n", f, r.error_message); return 1; }
 			st.pos = 0;
@@ -503,6 +519,7 @@ int main(int argc, char **argv)
 		if (stateOut && f == frames) {
 			/* the machine as it stands, for another process to pick up */
 			membuf st = {0};
+			state_will_be_saved();
 			wbx_save_state(h, mem_write, (uintptr_t)&st, &r);
 			if (r.error_message[0]) { fprintf(stderr, "save: %s\n", r.error_message); return 1; }
 			FILE *sf = fopen(stateOut, "wb");

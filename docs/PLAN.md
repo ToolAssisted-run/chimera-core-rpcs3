@@ -2679,3 +2679,86 @@ trophy install (frame 400 is its progress bar), the logos and into the
 intro video; the core before it made frame 300 and no more, on the build
 the reporter had and on the one with the #179 fix alike. Two runs side by
 side to frame 1200: MainRAM byte-identical, two pictures identical.
+
+## What the GPU drew comes back from a load (chimera issue 190, user-decided 2026-10-08)
+
+Found measuring what every GPU core draws after a load, on a GTX 1060: after
+a state is loaded in a Dead or Alive 5 fight the stage is drawn and the
+fighters are black, and still are twenty frames later. With the GL objects
+kept across the load instead of rebuilt (`CHIMERA_GL_KEEP_OBJECTS_ON_LOAD`)
+the picture is the first pass's again within ten frames, so it is the rebuild
+losing something, and a listing of what it throws away named it: 45 render
+targets, some 40 MB, many of them drawn once long before - and nothing else
+that lives only in the driver (the 500 cached textures are all uploads from
+the console's memory, which come again).
+
+**Why they are lost.** A render target is an image in the driver. The
+console's memory under it is written only with Write Color Buffers on; a
+savestate is the machine's memory; the rebuild after a load (patch 0021)
+destroyed the surface store with everything else. Most of a frame is drawn
+again within a frame or two. What a game drew once and keeps sampling is not.
+
+**Decided:** the pixels are copied out when a state is taken, and given back
+after a load. Offered that, writing back at the end of every frame, or
+leaving it, the user chose the first.
+
+**How (patch 0050 and the driver).**
+
+- Chimera's engine tells a core before every state it takes (`StateSaving`).
+  The driver answers by walking the surface store and reading each target's
+  image, in a transfer format that gives every bit back, into a block of this
+  core's own memory that the state carries.
+- After a load the surface store is KEPT. Each surface lets go of its dead
+  image during the teardown - while the new context has handed nothing out
+  that could bear the same name - and after the setup is given a new image of
+  the same shape (`gl::texture::chimera_reseat`) and its pixels. Everything
+  the store knew about its surfaces is the machine's and was always in the
+  state: which is bound, which inherits from which, which is still to be
+  cleared.
+- A state taken without the copy - an engine that does not ask, or one told
+  not to (`CHIMERA_NO_STATE_SAVING=1`) - says so (a flag set by the copy and
+  cleared when the next frame starts), and its load destroys the surface
+  store as before.
+
+**Not into the console's memory.** The machinery for that exists - it is what
+Write Color Buffers is - and it would have been less code. A game can read
+that memory, and one that did would read different bytes depending on
+whether a state happened to be taken, which is the frontend's business and
+never the machine's. Measured: 5120 frames with a state every 300, told and
+untold, leave the same 256 MiB of main memory and the same picture.
+
+**Not on the RSX thread**, which is what was first proposed and turned out
+not to be needed. It is stopped between frames wherever the frame's end found
+it; the surface store is whole there (nothing in it yields part-way), reading
+an image changes nothing the renderer believes about the driver's state, and
+the one binding the copy has to touch, the pixel pack buffer, is put back.
+The give-back does run on the RSX thread, inside the rebuild it was always
+going to do.
+
+**What it costs.** A surface is read into memory no state carries and
+compared with the copy held, so one that has not changed dirties no page. In
+that fight about 26 MB of surfaces change every frame: a stored state is some
+25 MB larger (62 MB against 37, mean delta at the default spacing of 4
+frames), and a run with the default greenzone takes 475 s where it took 411.
+
+**Measured on the card**, 12 frames drawn right after a load, each against
+what it was (Chimera's `chimera-run --settle-probe`):
+
+- Dead or Alive 5, whole state and greenzone restore: 45% of pixels differed,
+  9% by more than 8 levels, for as long as was measured; now under 1% differ
+  and 0.06% by more than 8, on shadow edges, and it cannot be seen.
+- Prince of Persia (BLUS30214), a scene with nothing drawn once: unchanged,
+  0.43% with the fix and without - there is a small difference after any
+  rebuild that is not about surfaces, and it is not chased here.
+
+**Not carried.** A multisampled target cannot be read back as it is, and
+comes back from a load holding nothing, as every target used to (two of the
+45 in that fight, both last written long before). A format the copy does not know is the
+same. The block is 1 GiB of address space; surfaces past it are not copied.
+
+**The gate has no leg for it**, and that is a gap written down rather than
+closed: no program in tests/ uses a render target (flip.elf draws with the
+CPU), building one needs the PSL1GHT toolchain, and a commercial game through
+llvmpipe does not reach such a scene in a time a gate can spend. The gate's
+own runner does tell the core before each state it takes now, as the engine
+does, so the rewind, rerecord and context legs run the same code.
