@@ -1124,4 +1124,91 @@ else
 	fi
 fi
 
+# ---- the Vulkan renderer (chimera issue 248) --------------------------------
+#
+# The Renderer setting's "vulkan-hw": RPCS3's Vulkan renderer, on the Vulkan
+# device Chimera hands the core (patches/0051). This core's own runner has no
+# Vulkan to hand over, so these checks go through Chimera's headless runner,
+# chimera-run, and need what it needs: the firmware, chimera-run and the
+# installed package (set CHIMERA_ROOT to the Chimera checkout) - and a Vulkan
+# driver on this computer. One that draws on the processor will do (Mesa's
+# lavapipe: libvulkan1 mesa-vulkan-drivers).
+#
+# What they hold, on tests/roms/flip.elf, which fills the screen with a colour
+# that changes every frame:
+#  - the renderer comes up on a Vulkan device and runs 200 frames;
+#  - frame 150 is the picture OpenGL draws, and frame 100 is told apart from
+#    it (a comparison that calls any two pictures the same holds nothing);
+#  - a state saved and loaded around every frame - every load is a new Vulkan
+#    device, and the whole renderer is made again - leaves the memory and the
+#    picture of a run with no state at all. The log has to show the renderer
+#    made again at least 190 times, or nothing was held.
+#
+# What they do NOT hold: flip.elf draws with the processor and has no render
+# target, so nothing here shows that what the card drew comes back after a
+# load. That was measured in games on a GeForce GTX 1060 (docs/PLAN.md).
+vk_legs="vk:bridge vk:picture vk:rerecord"
+crunroot=""
+for c in "${CHIMERA_ROOT:-}" "$root/../chimera" "$HOME/chimera"; do
+	if [ -n "$c" ] && [ -x "$c/build/meson-linux/chimera-run" ] && [ -f "$c/build/Cores/rpcs3.chimeraCore" ]; then
+		crunroot="$c"
+		break
+	fi
+done
+if [ -z "$crunroot" ] || [ ! -f "$pup" ]; then
+	for leg in $vk_legs; do
+		skip "$leg - needs the firmware in tests/roms-local, plus chimera-run and an installed rpcs3.chimeraCore (set CHIMERA_ROOT)"
+	done
+else
+	vk="$work/vulkan"
+	rm -rf "$vk"
+	mkdir -p "$vk"
+	printf '[Input]\nLogKey:#\n' > "$vk/none.txt"
+	vkrun() { # <name> <renderer> <movie> <extra args...>: the log in $vk/<name>.log
+		vkname="$1"; vkrenderer="$2"; vkmovie="$3"; shift 3
+		env -u DISPLAY CHIMERA_PICTURE_TRACE=1 timeout 2400 "$crunroot/build/meson-linux/chimera-run" \
+			"$crunroot/build/Cores/rpcs3.chimeraCore" "$root/tests/roms/flip.elf" "$vkmovie" --gpu \
+			--settings "{\"renderer\":\"$vkrenderer\"}" --firmware "PS3UPDAT.PUP=$pup" "$@" > "$vk/$vkname.log" 2>&1 || true
+	}
+	# the picture comparer answers 0 for "the same", 1 for "different" and 2
+	# for "could not compare"; all three are answers here, not failures
+	same_picture() { python3 "$here/tests/check-same-picture.py" "$1" "$2" 2>&1 | head -1; }
+	same_rc() { rc=0; python3 "$here/tests/check-same-picture.py" "$1" "$2" > /dev/null 2>&1 || rc=$?; echo "$rc"; }
+
+	vkrun record opengl-hw "$vk/none.txt" --frames 200 --record "$vk/movie.txt"
+	vkrun gl opengl-hw "$vk/movie.txt" --frames 200 --screenshot "150=$vk/gl.tga"
+	vkrun straight vulkan-hw "$vk/movie.txt" --frames 200 --screenshot "100=$vk/early.tga" --screenshot "150=$vk/vk.tga" --dump "MainRAM=$vk/vk.ram"
+	vk_card="$(sed -n 's/^chimera vk: \(.*(Vulkan [^)]*)\).*/\1/p' "$vk/straight.log" | head -1)"
+	if [ ! -s "$vk/movie.txt" ]; then
+		for leg in $vk_legs; do failed "$leg - could not record a movie to run (see $vk/record.log)"; done
+	elif grep -q "handed the core no Vulkan device" "$vk/straight.log"; then
+		for leg in $vk_legs; do skip "$leg - this chimera-run handed the core no Vulkan device (no Vulkan driver here, or a Chimera older than 4ca6e30)"; done
+	else
+		if [ -n "$vk_card" ] && grep -q "^frames=200" "$vk/straight.log"; then
+			pass "vk:bridge - 200 frames of flip.elf on a Vulkan device ($vk_card)"
+		else
+			failed "vk:bridge - device [${vk_card:-none made}], $(grep -m1 '^frames=' "$vk/straight.log" || echo 'the run did not finish') (see $vk/straight.log)"
+		fi
+
+		same="$(same_picture "$vk/gl.tga" "$vk/vk.tga")"
+		other="$(same_picture "$vk/vk.tga" "$vk/early.tga")"
+		if [ "$(same_rc "$vk/gl.tga" "$vk/vk.tga")" = 0 ] && [ "$(same_rc "$vk/vk.tga" "$vk/early.tga")" = 1 ]; then
+			pass "vk:picture - Vulkan draws what OpenGL draws at frame 150 (${same%% (*}); frame 100 is told apart (${other%% (*})"
+		else
+			failed "vk:picture - against OpenGL at frame 150: $same; frame 100, which must differ: $other"
+		fi
+
+		vkrun rr vulkan-hw "$vk/movie.txt" --frames 200 --rerecord --screenshot "150=$vk/rr.tga" --dump "MainRAM=$vk/rr.ram"
+		made="$(grep -c 'chimera: these Vulkan objects came from another device' "$vk/rr.log" || true)"
+		made_straight="$(grep -c 'chimera: these Vulkan objects came from another device' "$vk/straight.log" || true)"
+		if [ ! -s "$vk/rr.ram" ] || ! cmp -s "$vk/vk.ram" "$vk/rr.ram" || ! cmp -s "$vk/vk.tga" "$vk/rr.tga"; then
+			failed "vk:rerecord - a state saved and loaded around every frame is not the run without one: memory $(cmp -s "$vk/vk.ram" "$vk/rr.ram" && echo same || echo differs), picture $(cmp -s "$vk/vk.tga" "$vk/rr.tga" && echo same || echo differs) (see $vk/rr.log)"
+		elif [ "$made" -lt 190 ] || [ "$made_straight" -ne 0 ]; then
+			failed "vk:rerecord - the renderer was made again $made times in the run with the loads and $made_straight in the one without, where 190 or more and 0 are expected: the loads did not happen, or the log changed (see $vk/rr.log)"
+		else
+			pass "vk:rerecord - 200 frames with a state saved and loaded around every one leave the memory and the picture of a run without one; the renderer was made again $made times"
+		fi
+	fi
+fi
+
 summary

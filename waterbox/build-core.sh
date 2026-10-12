@@ -46,6 +46,11 @@ mkdir -p "$here/generated-gl"
 python3 "$mb/source/gl/gen-gl-bridge.py" "$here/glad/include/glad/gl.h" \
 	"$mb/source/gl/gl-entry-points.txt" "$here/generated-gl"
 
+# the guest half of miniBox's Vulkan bridge, from miniBox's list (the Vulkan
+# renderer's commands; waterbox/vk-shim.cpp)
+mkdir -p "$here/generated-vk"
+python3 "$mb/source/vk/gen-vk-bridge.py" "$mb/extern/vulkan-headers/registry/vk.xml" \
+	"$mb/source/vk/vk-entry-points.txt" "$here/generated-vk"
 make -f "$here/guest.mk" -C "$here" -j"$jobs" MB="$mb"
 
 mkdir -p "$out"
@@ -65,6 +70,7 @@ g++ -specs "$sr/lib/musl-gcc.specs" -mcmodel=large -fno-pic -fno-pie \
 	"$here"/obj-guest/upstream/Input/ps_move_tracker.o "$here"/obj-guest/upstream/Input/ps_move_config.o \
 	"$here"/obj-guest/upstream/rpcs3_version.o \
 	"$here"/obj-guest/gl-shim.o "$here"/obj-guest/gl-bridge-guest.o "$here"/obj-guest/gl-traps.o "$here"/obj-guest/glad-gl.o "$here"/obj-guest/generated-assets.o "$here"/obj-guest/wiki-compat.o \
+	"$here"/obj-guest/vk-shim.o "$here"/obj-guest/volk.o "$here"/obj-guest/vk-guest.o "$here"/obj-guest/vk-bridge-guest.o \
 	"$mbuild/source/guest/cxxglue.c.o" "$mbuild/source/guest/emulibc.c.o" \
 	-Wl,--start-group $libs -Wl,--end-group \
 	-L"$sr/lib" -lstdc++ -lgcc -lgcc_eh -lc

@@ -147,6 +147,14 @@
       "sourceUrl": "https://github.com/llvm/llvm-project/archive/{commit}.tar.gz"
     },
     {
+      "name": "volk",
+      "license": "MIT",
+      "url": "https://github.com/zeux/volk",
+      "commit": "3ca312a",
+      "file": "waterbox/vk/volk-LICENSE.md",
+      "note": "Two files kept in this repository (waterbox/vk). The table of Vulkan commands RPCS3's Vulkan renderer calls through; in the sandbox it is filled from Chimera's Vulkan bridge."
+    },
+    {
       "name": "RPCS3 wiki and compatibility list (per-game data)",
       "license": "CC-BY-SA-4.0",
       "url": "https://wiki.rpcs3.net/",

@@ -96,6 +96,9 @@ void chimera_rpcs3_peek(uint32_t addr, int32_t offset, int count, int deref);
 // The renderer the project asked for ("null" or "opengl-hw"), before init;
 // opengl-hw draws only when a GPU bridge was installed (waterbox/gl-shim.cpp)
 void chimera_rpcs3_set_renderer(const char* name);
+// null, or why the renderer asked for cannot run (vulkan-hw without a Vulkan
+// device); to be asked after chimera_rpcs3_set_renderer
+const char* chimera_rpcs3_renderer_refusal(void);
 // "interpreter" or "asmjit" (the default), before init: part of the machine
 void chimera_rpcs3_set_spu_decoder(const char* name);
 // "interpreter" (the default) or "llvm", before init: part of the machine

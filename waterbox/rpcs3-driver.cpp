@@ -24,6 +24,9 @@
 #ifdef CHIMERA_GL_BRIDGE
 #include "Emu/RSX/GL/GLGSRender.h"
 #endif
+#ifdef CHIMERA_VK_BRIDGE
+#include "Emu/RSX/VK/VKGSRender.h"
+#endif
 #include "util/video_provider.h"
 #include "Emu/CPU/CPUThread.h"
 #include "Emu/Memory/vm_locking.h"
@@ -261,7 +264,10 @@ namespace
 
   // the renderer: what the project asked for, and whether a GPU answers
   bool s_renderer_opengl = false;
+  bool s_renderer_vulkan = false;
   bool s_gpu = false;
+  // drawing with the Vulkan renderer (then s_gpu is true as well)
+  bool s_vulkan = false;
   bool s_write_color_buffers = false;
   bool s_read_color_buffers = false;
   char s_spu_decoder[16] = "asmjit";
@@ -276,6 +282,9 @@ namespace
   // one of the emulator's own threads: those go through the scheduler
   std::unique_ptr<named_thread<std::function<void()>>> s_precompile_thread;
   extern "C" int chimera_rpcs3_gpu_bridge_present(void) __attribute__((weak));
+  // the Vulkan bridge exists in the sandboxed core only (waterbox/vk-shim.cpp)
+  extern "C" int chimera_rpcs3_vulkan_bridge_present(void) __attribute__((weak));
+  extern "C" const char* chimera_rpcs3_vulkan_describe(void) __attribute__((weak));
   // the native reference's renderer calls the driver directly and must bind
   // the host context on its own thread; the guest resolves this to null (the
   // host dispatcher binds for it)
@@ -338,8 +347,14 @@ namespace
     f64 client_display_rate() override { return 60.0; }
     bool has_alpha() override { return false; }
     // the handle type is a variant of window-system handles and headless has
-    // none: the null backend never asks
+    // none. The null and GL backends never ask; the Vulkan one does, to make
+    // its swapchain, and is handed the empty handle (its swapchain here draws
+    // to images of its own: vkutils/swapchain_unix.hpp, swapchain_CHIMERA)
+#ifdef CHIMERA_VK_BRIDGE
+    display_handle_t handle() const override { return display_handle_t{}; }
+#else
     display_handle_t handle() const override { fmt::throw_exception("chimera: no display handle"); }
+#endif
     // The GL renderer reads its flipped image back for a frame consumer (the
     // path RPCS3 records video through): with the bridge that consumer is
     // the frontend, and the image is the machine's picture for this frame.
@@ -564,6 +579,11 @@ namespace
 #ifdef CHIMERA_GL_BRIDGE
       case video_renderer::opengl:
         g_fxo->init<rsx::thread, named_thread<GLGSRender>>(ar);
+        break;
+#endif
+#ifdef CHIMERA_VK_BRIDGE
+      case video_renderer::vulkan:
+        g_fxo->init<rsx::thread, named_thread<VKGSRender>>(ar);
         break;
 #endif
       default:
@@ -1039,7 +1059,11 @@ namespace
     // the GL renderer only when asked for AND a GPU bridge was installed;
     // otherwise the null renderer, and the frontend is told (IsGpuActive)
     s_gpu = s_renderer_opengl && chimera_rpcs3_gpu_bridge_present && chimera_rpcs3_gpu_bridge_present();
-    g_cfg.video.renderer.set(s_gpu ? video_renderer::opengl : video_renderer::null);
+    // the Vulkan renderer when asked for; chimera_rpcs3_init has already
+    // refused the project when no Vulkan device was handed over
+    s_vulkan = s_renderer_vulkan && chimera_rpcs3_vulkan_bridge_present && chimera_rpcs3_vulkan_bridge_present();
+    s_gpu = s_gpu || s_vulkan;
+    g_cfg.video.renderer.set(s_vulkan ? video_renderer::vulkan : s_gpu ? video_renderer::opengl : video_renderer::null);
     if (s_gpu)
     {
       // one real context: shaders compile inline on the RSX thread, no
@@ -1807,7 +1831,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
 
   Emu.SetHasGui(false);
   Emu.SetHeadless(true);
-  Emu.SetSupportedRenderers({video_renderer::null, video_renderer::opengl});
+  Emu.SetSupportedRenderers({video_renderer::null, video_renderer::opengl, video_renderer::vulkan});
   Emu.SetDefaultRenderer(video_renderer::null);
   Emu.SetCallbacks(make_callbacks());
   Emu.SetUsr("00000001");
@@ -1891,7 +1915,8 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   apply_log_trace();
   // one line for whoever runs the core, never machine state: which renderer
   // the machine got and why
-  fprintf(stderr, "chimera rpcs3: renderer %s%s\n", s_gpu ? "opengl-hw through the GPU bridge" : "null",
+  fprintf(stderr, "chimera rpcs3: renderer %s%s\n",
+          s_vulkan ? "vulkan-hw through the Vulkan bridge" : s_gpu ? "opengl-hw through the GPU bridge" : "null",
           (!s_gpu && s_renderer_opengl) ? " (opengl-hw asked for, no GPU bridge offered)" : "");
 
   const game_boot_result r = Emu.BootGame(game, "", true, cfg_mode::custom);
@@ -2411,6 +2436,19 @@ void chimera_rpcs3_debug_ppu(void)
 extern "C" void chimera_rpcs3_set_renderer(const char* name)
 {
   s_renderer_opengl = name && (strcmp(name, "opengl-hw") == 0 || strcmp(name, "opengl") == 0);
+  s_renderer_vulkan = name && strcmp(name, "vulkan-hw") == 0;
+}
+
+// Whether the renderer the project asked for can run at all. 'vulkan-hw' has
+// nothing to fall back on: without a Vulkan device the project does not
+// start, and this is why (wbx-entry.cpp puts it in front of the user).
+extern "C" const char* chimera_rpcs3_renderer_refusal(void)
+{
+  if (s_renderer_vulkan && !(chimera_rpcs3_vulkan_bridge_present && chimera_rpcs3_vulkan_bridge_present()))
+    return "The Renderer setting is 'vulkan-hw', and this Chimera handed the core no Vulkan device. "
+           "It needs a graphics driver with Vulkan and Chimera's Development build 4ca6e302 or later. "
+           "Set Renderer to 'opengl-hw' to run without it.";
+  return nullptr;
 }
 
 extern "C" const char* chimera_rpcs3_suggest(const char* game_path)

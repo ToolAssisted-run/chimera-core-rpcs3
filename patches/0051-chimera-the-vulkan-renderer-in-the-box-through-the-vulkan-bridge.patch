@@ -1,0 +1,1570 @@
+diff --git a/rpcs3/Emu/RSX/VK/VulkanAPI.h b/rpcs3/Emu/RSX/VK/VulkanAPI.h
+--- a/rpcs3/Emu/RSX/VK/VulkanAPI.h
++++ b/rpcs3/Emu/RSX/VK/VulkanAPI.h
+@@ -21,7 +21,18 @@
+ #pragma warning( disable : 4005 )
+ #endif
+ 
++#if defined(CHIMERA_CORE)
++// chimera: in the box a Vulkan command is a wrapper in miniBox's bridge, found
++// by name. volk holds them under the commands' own names, so the renderer
++// calls vkCreateBuffer(...) as it always did (waterbox/vk).
+ #include <vulkan/vulkan.h>
++#include <volk.h>
++// Fills volk's table from the bridge: with no instance, the commands that need
++// none; with one, all of them. False when no bridge was handed to the core.
++extern "C" bool chimera_vk_load_commands(VkInstance instance);
++#else
++#include <vulkan/vulkan.h>
++#endif
+ 
+ #ifdef _MSC_VER
+ #pragma warning(pop)
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/swapchain_unix.hpp b/rpcs3/Emu/RSX/VK/vkutils/swapchain_unix.hpp
+--- a/rpcs3/Emu/RSX/VK/vkutils/swapchain_unix.hpp
++++ b/rpcs3/Emu/RSX/VK/vkutils/swapchain_unix.hpp
+@@ -121,6 +121,57 @@
+ 
+ #endif
+ 
++#if defined(CHIMERA_CORE)
++	// chimera: no window. The renderer draws each frame into an image of this
++	// swapchain, as it does on a desktop whose graphics queue cannot present,
++	// and the frame reaches the frontend the way a recording does (the frame's
++	// present_frame, VKPresent.cpp). Presenting only gives the image back.
++	class swapchain_CHIMERA : public native_swapchain_base
++	{
++	public:
++		swapchain_CHIMERA(physical_device& gpu, u32 present_queue, u32 graphics_queue, u32 transfer_queue, VkFormat format = VK_FORMAT_B8G8R8A8_UNORM)
++			: native_swapchain_base(gpu, present_queue, graphics_queue, transfer_queue, format)
++		{}
++
++		~swapchain_CHIMERA() override = default;
++
++		bool init() override
++		{
++			if (!swapchain_images.empty())
++				destroy(false);
++
++			if (m_width == 0 || m_height == 0)
++			{
++				rsx_log.error("Invalid frame dimensions %d x %d", m_width, m_height);
++				return false;
++			}
++
++			init_swapchain_images(dev, 3);
++			return true;
++		}
++
++		void create(display_handle_t& /*window_handle*/) override
++		{}
++
++		void destroy(bool full = true) override
++		{
++			swapchain_images.clear();
++
++			if (full)
++				dev.destroy();
++		}
++
++		VkResult present(VkSemaphore /*semaphore*/, u32 index) override
++		{
++			//Release reference
++			swapchain_images[index].first = false;
++			return VK_SUCCESS;
++		}
++	};
++
++	using swapchain_NATIVE = swapchain_CHIMERA;
++#endif
++
+ #if defined(HAVE_WAYLAND)
+ 	using swapchain_Wayland = native_swapchain_base;
+ 
+@@ -135,6 +186,13 @@
+ 	{
+ 		VkSurfaceKHR result = VK_NULL_HANDLE;
+ 
++#if defined(CHIMERA_CORE)
++		// chimera: there is no window system to make a surface on
++		static_cast<void>(vk_instance);
++		static_cast<void>(window_handle);
++		static_cast<void>(config);
++		return result;
++#else
+ 		std::visit([&](auto&& p)
+ 		{
+ 			using T = std::decay_t<decltype(p)>;
+@@ -168,5 +226,6 @@
+ 		}, window_handle);
+ 
+ 		return ensure(result, "Failed to initialize Vulkan display surface");
++#endif
+ 	}
+ }
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/instance.cpp b/rpcs3/Emu/RSX/VK/vkutils/instance.cpp
+--- a/rpcs3/Emu/RSX/VK/vkutils/instance.cpp
++++ b/rpcs3/Emu/RSX/VK/vkutils/instance.cpp
+@@ -87,6 +87,18 @@
+ #endif
+ 	bool instance::create(const char* app_name, bool fast)
+ 	{
++#if defined(CHIMERA_CORE)
++		// chimera: the commands come from miniBox's Vulkan bridge. volk asks for
++		// each by name where it would have asked a driver's library: here, before
++		// the first command is called, and again for the instance once it is
++		// made (waterbox/vk-shim.cpp).
++		if (!chimera_vk_load_commands(VK_NULL_HANDLE))
++		{
++			rsx_log.error("chimera: no Vulkan was handed to the core");
++			return false;
++		}
++#endif
++
+ 		// Initialize a vulkan instance
+ 		VkApplicationInfo app = {};
+ 
+@@ -117,7 +129,10 @@
+ 			extensions_loaded = true;
+ 			supported_extensions support(supported_extensions::instance);
+ 
++#if !defined(CHIMERA_CORE)
++			// chimera: no window, so no surface (the bridge offers none)
+ 			extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
++#endif
+ 			if (support.is_supported(VK_EXT_DEBUG_REPORT_EXTENSION_NAME))
+ 			{
+ 				extensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+@@ -156,6 +171,8 @@
+ 			extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+ #elif defined(__APPLE__)
+ 			extensions.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
++#elif defined(CHIMERA_CORE)
++			// chimera: no surface extension is wanted
+ #else
+ 			bool found_surface_ext = false;
+ #ifdef HAVE_X11
+@@ -225,6 +242,10 @@
+ 			return false;
+ 		}
+ 
++#if defined(CHIMERA_CORE)
++		chimera_vk_load_commands(m_instance);
++#endif
++
+ 		return true;
+ 	}
+ #ifdef __clang__
+@@ -249,6 +270,12 @@
+ 		if (vkEnumeratePhysicalDevices(m_instance, &num_gpus, nullptr) != VK_SUCCESS)
+ 			return gpus;
+ 
++#if defined(CHIMERA_CORE)
++		// chimera: the list is asked for again every time. After a load the
++		// frontend's device is another one, and a card kept from before it
++		// names nothing.
++		gpus.clear();
++#endif
+ 		if (gpus.size() != num_gpus)
+ 		{
+ 			std::vector<VkPhysicalDevice> pdevs(num_gpus);
+@@ -284,6 +311,37 @@
+ 
+ 	swapchain_base* instance::create_swapchain(display_handle_t window_handle, vk::physical_device& dev)
+ 	{
++#if defined(CHIMERA_CORE)
++		// chimera: no surface to ask about presenting. The graphics queue is
++		// found as below, and the swapchain is the one upstream falls back to
++		// when a graphics queue cannot present: images of its own.
++		{
++			u32 graphics_queue_idx = umax;
++			u32 transfer_queue_idx = umax;
++			for (u32 i = 0; i < dev.get_queue_count(); ++i)
++			{
++				const auto flags = dev.get_queue_properties(i).queueFlags;
++				if (graphics_queue_idx == umax && (flags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) == (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))
++				{
++					graphics_queue_idx = i;
++				}
++				else if (transfer_queue_idx == umax && (flags & (VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT)) == (VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT))
++				{
++					transfer_queue_idx = i;
++				}
++			}
++
++			if (graphics_queue_idx == umax)
++			{
++				rsx_log.fatal("Failed to find a suitable graphics queue");
++				return nullptr;
++			}
++
++			auto swapchain = new swapchain_NATIVE(dev, -1, graphics_queue_idx, transfer_queue_idx);
++			swapchain->create(window_handle);
++			return swapchain;
++		}
++#else
+ 		WSI_config surface_config
+ 		{
+ 			.supports_automatic_wm_reports = true
+@@ -396,5 +454,6 @@
+ 		color_space = surfFormats[0].colorSpace;
+ 
+ 		return new swapchain_WSI(dev, present_queue_idx, graphics_queue_idx, transfer_queue_idx, format, m_surface, color_space, !surface_config.supports_automatic_wm_reports);
++#endif
+ 	}
+ }
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/device.cpp b/rpcs3/Emu/RSX/VK/vkutils/device.cpp
+--- a/rpcs3/Emu/RSX/VK/vkutils/device.cpp
++++ b/rpcs3/Emu/RSX/VK/vkutils/device.cpp
+@@ -514,7 +514,12 @@
+ 		}
+ 
+ 		// Set up instance information
++#if defined(CHIMERA_CORE)
++		// chimera: no window, no swapchain of the driver's (swapchain_CHIMERA)
++		std::vector<const char*> requested_extensions;
++#else
+ 		std::vector<const char*> requested_extensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
++#endif
+ 
+ 		// Enable hardware features manually
+ 		// Currently we require:
+@@ -1097,6 +1102,27 @@
+ 				0);
+ 		}
+ 
++#if defined(CHIMERA_CORE)
++		// chimera: through Chimera's Vulkan bridge no memory is coherent - a
++		// mapping is a copy in the machine's own memory, sent to the card when
++		// it is flushed and fetched when it is invalidated. "Host coherent"
++		// below is then host visible memory, cached where there is some (the
++		// bridge reads a mapping when it is made, and reading write-combined
++		// memory is very slow), and the places that write or read through a
++		// mapping say when the bytes matter.
++		if (host_coherent_types.empty())
++		{
++			host_coherent_types = find_memory_type_with_property(
++				(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
++				0);
++		}
++
++		if (host_coherent_types.empty())
++		{
++			host_coherent_types = find_memory_type_with_property(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, 0);
++		}
++#endif
++
+ 		ensure(!device_local_types.empty());
+ 		ensure(!host_coherent_types.empty());
+ 
+diff --git a/rpcs3/Emu/System.cpp b/rpcs3/Emu/System.cpp
+--- a/rpcs3/Emu/System.cpp
++++ b/rpcs3/Emu/System.cpp
+@@ -293,7 +293,8 @@
+ 	{
+ #ifdef CHIMERA_CORE
+ 		// Chimera: headless, but the GL renderer draws through the GPU bridge
+-		if (g_cfg.video.renderer != video_renderer::null && g_cfg.video.renderer != video_renderer::opengl)
++		// and the Vulkan renderer through the Vulkan bridge
++		if (g_cfg.video.renderer != video_renderer::null && g_cfg.video.renderer != video_renderer::opengl && g_cfg.video.renderer != video_renderer::vulkan)
+ #else
+ 		if (g_cfg.video.renderer != video_renderer::null)
+ #endif
+diff --git a/rpcs3/Emu/RSX/VK/VKMemAlloc.cpp b/rpcs3/Emu/RSX/VK/VKMemAlloc.cpp
+--- a/rpcs3/Emu/RSX/VK/VKMemAlloc.cpp
++++ b/rpcs3/Emu/RSX/VK/VKMemAlloc.cpp
+@@ -55,6 +55,16 @@
+ #pragma GCC diagnostic ignored "-Wsuggest-attribute=noreturn"
+ #endif
+ #endif
++#if defined(CHIMERA_CORE)
++// chimera: the allocator takes each Vulkan command by its name, as it does on
++// a desktop. Here the names are volk's table (VulkanAPI.h), which has to be in
++// sight before the allocator's code; and the allocator must not ask for the
++// commands through vkGetInstanceProcAddr, which nobody hands it.
++#include <vulkan/vulkan.h>
++#include <volk.h>
++#define VMA_STATIC_VULKAN_FUNCTIONS 1
++#define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
++#endif
+ #include <vk_mem_alloc.h>
+ #if defined(_MSC_VER) && !defined(__clang__)
+ #pragma warning(pop)
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/memory.h b/rpcs3/Emu/RSX/VK/vkutils/memory.h
+--- a/rpcs3/Emu/RSX/VK/vkutils/memory.h
++++ b/rpcs3/Emu/RSX/VK/vkutils/memory.h
+@@ -166,6 +166,16 @@
+ 		virtual void* map(u64 offset, u64 size);
+ 		virtual void unmap();
+ 
++#if defined(CHIMERA_CORE)
++		// chimera: through Chimera's Vulkan bridge no memory is coherent. A
++		// mapping is a copy in the machine's own memory: what is written there
++		// reaches the card when it is flushed, and what the card wrote is seen
++		// when it is invalidated. map() fetches the range it hands out and
++		// unmap() sends it; a mapping that is kept says so itself with these.
++		void chimera_flush(u64 offset, u64 size);
++		void chimera_invalidate(u64 offset, u64 size);
++#endif
++
+ 		u64 size() const;
+ 
+ 		memory_block(const memory_block&) = delete;
+@@ -179,6 +189,11 @@
+ 		vk::mem_allocator_base* m_mem_allocator = nullptr;
+ 		mem_allocator_base::mem_handle_t m_mem_handle;
+ 		u64 m_size;
++#if defined(CHIMERA_CORE)
++		// what the last map() handed out, for unmap() to send
++		u64 m_chimera_map_offset = 0;
++		u64 m_chimera_map_size = 0;
++#endif
+ 	};
+ 
+ 	struct memory_block_host : public memory_block
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/memory.cpp b/rpcs3/Emu/RSX/VK/vkutils/memory.cpp
+--- a/rpcs3/Emu/RSX/VK/vkutils/memory.cpp
++++ b/rpcs3/Emu/RSX/VK/vkutils/memory.cpp
+@@ -178,6 +178,11 @@
+ 		allocatorInfo.device = dev;
+ 		allocatorInfo.instance = inst;
+ 		allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_2;
++#if defined(CHIMERA_CORE)
++		// chimera: a block that holds one mapped allocation is mapped whole, and
++		// through the bridge a mapped byte is a byte of the machine's own memory
++		allocatorInfo.preferredLargeHeapBlockSize = 16 * 0x100000;
++#endif
+ 
+ 		std::vector<VkDeviceSize> heap_limits;
+ 		const auto vram_allocation_limit = g_cfg.video.vk.vram_allocation_limit * 0x100000ull;
+@@ -534,13 +539,51 @@
+ 		return m_size;
+ 	}
+ 
++#if defined(CHIMERA_CORE)
++	void memory_block::chimera_flush(u64 offset, u64 size)
++	{
++		if (offset >= m_size) return;
++		VkMappedMemoryRange range{};
++		range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
++		range.memory = get_vk_device_memory();
++		range.offset = get_vk_device_memory_offset() + offset;
++		range.size = std::min<u64>(size, m_size - offset);
++		vkFlushMappedMemoryRanges(m_device, 1, &range);
++	}
++
++	void memory_block::chimera_invalidate(u64 offset, u64 size)
++	{
++		if (offset >= m_size) return;
++		VkMappedMemoryRange range{};
++		range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
++		range.memory = get_vk_device_memory();
++		range.offset = get_vk_device_memory_offset() + offset;
++		range.size = std::min<u64>(size, m_size - offset);
++		vkInvalidateMappedMemoryRanges(m_device, 1, &range);
++	}
++#endif
++
+ 	void* memory_block::map(u64 offset, u64 size)
+ 	{
++#if defined(CHIMERA_CORE)
++		// chimera: see memory.h. The allocator keeps a block mapped while any
++		// allocation in it is, so making this mapping may fetch nothing: the
++		// range is fetched here, and sent again when it is unmapped.
++		void* const ptr = m_mem_allocator->map(m_mem_handle, offset, size);
++		m_chimera_map_offset = offset;
++		m_chimera_map_size = size;
++		chimera_invalidate(offset, size);
++		return ptr;
++#else
+ 		return m_mem_allocator->map(m_mem_handle, offset, size);
++#endif
+ 	}
+ 
+ 	void memory_block::unmap()
+ 	{
++#if defined(CHIMERA_CORE)
++		chimera_flush(m_chimera_map_offset, m_chimera_map_size);
++#endif
+ 		m_mem_allocator->unmap(m_mem_handle);
+ 	}
+ }
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/buffer_object.h b/rpcs3/Emu/RSX/VK/vkutils/buffer_object.h
+--- a/rpcs3/Emu/RSX/VK/vkutils/buffer_object.h
++++ b/rpcs3/Emu/RSX/VK/vkutils/buffer_object.h
+@@ -57,6 +57,11 @@
+ 
+ 		void* map(u64 offset, u64 size);
+ 		void unmap();
++#if defined(CHIMERA_CORE)
++		// chimera: for a mapping that is kept (vkutils/memory.h)
++		void chimera_flush(u64 offset, u64 size) { memory->chimera_flush(offset, size); }
++		void chimera_invalidate(u64 offset, u64 size) { memory->chimera_invalidate(offset, size); }
++#endif
+ 		u32 size() const;
+ 
+ 		buffer(const buffer&) = delete;
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/data_heap.cpp b/rpcs3/Emu/RSX/VK/vkutils/data_heap.cpp
+--- a/rpcs3/Emu/RSX/VK/vkutils/data_heap.cpp
++++ b/rpcs3/Emu/RSX/VK/vkutils/data_heap.cpp
+@@ -42,7 +42,17 @@
+ 		VkFlags memory_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+ 		auto memory_index = m_prefer_writethrough ? memory_map.device_bar : memory_map.host_visible_coherent;
+ 
++#if defined(CHIMERA_CORE)
++		// chimera: a heap stays mapped and is written all frame long. Through
++		// Chimera's Vulkan bridge those writes reach the card only when they
++		// are flushed, and the shadow arrangement below already knows which
++		// ranges were written and when they are needed (sync): every heap
++		// takes it, and sync flushes the ranges before it copies them.
++		const bool vram_shadow_requested = true;
++		static_cast<void>(heap_pool_force_vram_shadow);
++#else
+ 		const bool vram_shadow_requested = !!(flags & heap_pool_force_vram_shadow);
++#endif
+ 		const bool use_shadow = vram_shadow_requested || !(get_heap_compatible_buffer_types() & usage);
+ 
+ 		if (use_shadow)
+@@ -243,6 +253,12 @@
+ 
+ 		ensure(shadow);
+ 		ensure(heap);
++#if defined(CHIMERA_CORE)
++		for (const auto& range : dirty_ranges)
++		{
++			shadow->chimera_flush(range.srcOffset, range.size);
++		}
++#endif
+ 		vkCmdCopyBuffer(cmd, shadow->value, heap->value, ::size32(dirty_ranges), dirty_ranges.data());
+ 		dirty_ranges.clear();
+ 
+@@ -256,6 +272,20 @@
+ 		return !dirty_ranges.empty();
+ 	}
+ 
++#if defined(CHIMERA_CORE)
++	// chimera: lets go of the upload heap if there is one. The renderer's own
++	// cleanup asks get_upload_heap() for it, which MAKES it when there is none -
++	// harmless on a desktop, and a failure when the renderer is let go of after
++	// a load, with the frontend's device already gone and every answer empty.
++	void chimera_destroy_upload_heap()
++	{
++		if (g_upload_heap.heap)
++		{
++			g_upload_heap.destroy();
++		}
++	}
++#endif
++
+ 	data_heap* get_upload_heap()
+ 	{
+ 		if (!g_upload_heap.heap)
+diff --git a/rpcs3/Emu/RSX/VK/VKDMA.cpp b/rpcs3/Emu/RSX/VK/VKDMA.cpp
+--- a/rpcs3/Emu/RSX/VK/VKDMA.cpp
++++ b/rpcs3/Emu/RSX/VK/VKDMA.cpp
+@@ -152,6 +152,10 @@
+ 		}
+ 
+ 		auto src = map_range(range);
++#if defined(CHIMERA_CORE)
++		// chimera: the mapping is kept, so what the card wrote is fetched here
++		allocated_memory->chimera_invalidate(range.start - base_address, range.length());
++#endif
+ 		auto dst = vm::get_super_ptr(range.start);
+ 		std::memcpy(dst, src, range.length());
+ 
+@@ -170,6 +174,10 @@
+ 		auto src = vm::get_super_ptr(range.start);
+ 		auto dst = map_range(range);
+ 		std::memcpy(dst, src, range.length());
++#if defined(CHIMERA_CORE)
++		// chimera: the mapping is kept, so what was written is sent here
++		allocated_memory->chimera_flush(range.start - base_address, range.length());
++#endif
+ 
+ 		// NOTE: Do not unmap. This can be extremely slow on some platforms.
+ 	}
+diff --git a/rpcs3/Emu/RSX/VK/VKPresent.cpp b/rpcs3/Emu/RSX/VK/VKPresent.cpp
+--- a/rpcs3/Emu/RSX/VK/VKPresent.cpp
++++ b/rpcs3/Emu/RSX/VK/VKPresent.cpp
+@@ -220,6 +220,16 @@
+ 	{
+ 		m_swapchain->end_frame(*m_current_command_buffer, m_current_frame->present_image);
+ 		close_and_submit_command_buffer();
++#if defined(CHIMERA_CORE)
++		// chimera: the frame's commands are waited for before anything they
++		// use can be let go of. When the picture is handed to a frame consumer
++		// (the frontend, here: every frame) the commands were flushed once
++		// already for that, which marks everything disposed of so far as
++		// finished with - including a picture of the console's own memory
++		// that this last submit still copies from. A software Vulkan driver
++		// then ran those commands over a destroyed image and fell over.
++		m_current_command_buffer->wait(FRAME_PRESENT_TIMEOUT);
++#endif
+ 	}
+ 	else
+ 	{
+@@ -424,6 +434,11 @@
+ 
+ void VKGSRender::flip(const rsx::display_flip_info_t& info)
+ {
++#if defined(CHIMERA_CORE)
++	// chimera: a flip may be the first thing the renderer does after a load
++	chimera_check_vk_device();
++#endif
++
+ 	// Check swapchain condition/status
+ 	if (!m_swapchain->supports_automatic_wm_reports())
+ 	{
+diff --git a/rpcs3/Emu/RSX/VK/VKGSRender.h b/rpcs3/Emu/RSX/VK/VKGSRender.h
+--- a/rpcs3/Emu/RSX/VK/VKGSRender.h
++++ b/rpcs3/Emu/RSX/VK/VKGSRender.h
+@@ -299,6 +299,36 @@
+ 
+ 	void on_init_thread() override;
+ 	void on_exit() override;
++
++#if defined(CHIMERA_CORE)
++	// chimera: everything this renderer makes on a Vulkan device, apart from
++	// the machine. The constructor's and the destructor's bodies are these two
++	// functions, so that they can run again: a load of the machine is a new
++	// device on the frontend's side (chimera_check_vk_device).
++	void chimera_vk_setup();
++	void chimera_vk_teardown(bool keep_surfaces = false);
++	// the device's half of on_init_thread
++	void chimera_vk_thread_setup();
++	void chimera_check_vk_device(bool thread_started = true);
++	// which device the objects were made on; 0 until the first look
++	u64 m_chimera_vk_device = 0;
++	bool m_chimera_vk_rebuilding = false;
++
++	// chimera: what the GPU drew is kept with the machine (VKGSRender.cpp):
++	// the buffer the render targets' pixels cross through, mapped for as long
++	// as it lives
++	VkBuffer m_chimera_stage = VK_NULL_HANDLE;
++	VkDeviceMemory m_chimera_stage_memory = VK_NULL_HANDLE;
++	u8* m_chimera_stage_ptr = nullptr;
++	u64 m_chimera_stage_size = 0;
++	bool chimera_stage_ready();
++	void chimera_stage_release();
++	void chimera_restore_surfaces();
++public:
++	// called between frames, before a savestate is taken
++	void chimera_shadow_surfaces();
++protected:
++#endif
+ 	void flip(const rsx::display_flip_info_t& info) override;
+ 
+ 	void renderctl(u32 request_code, void* args) override;
+diff --git a/rpcs3/Emu/RSX/VK/VKGSRender.cpp b/rpcs3/Emu/RSX/VK/VKGSRender.cpp
+--- a/rpcs3/Emu/RSX/VK/VKGSRender.cpp
++++ b/rpcs3/Emu/RSX/VK/VKGSRender.cpp
+@@ -408,11 +408,35 @@
+ 	return thread_ctrl::get_cycles(static_cast<named_thread<VKGSRender>&>(*this));
+ }
+ 
++#if defined(CHIMERA_CORE)
++// chimera: see VKGSRender.h. The first is the constructor's body and the
++// second the destructor's, unchanged.
+ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
+ {
++	chimera_vk_setup();
++}
++
++VKGSRender::~VKGSRender()
++{
++	chimera_vk_teardown();
++}
++
++void VKGSRender::chimera_vk_setup()
++#else
++VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
++#endif
++{
+ 	// Initialize dependencies
+ 	g_fxo->need<rsx::dma_manager>();
++#if defined(CHIMERA_CORE)
++	// chimera: see vk::driver_manager_t
++	if (!g_fxo->is_init<vk::driver_manager_thread>())
++	{
++		g_fxo->init<vk::driver_manager_thread>(vk::driver_manager_t::chimera_made_by_the_renderer{});
++	}
++#else
+ 	g_fxo->need<vk::driver_manager_thread>();
++#endif
+ 
+ 	if (!m_instance.create("RPCS3"))
+ 	{
+@@ -790,7 +814,11 @@
+ 	}
+ }
+ 
++#if defined(CHIMERA_CORE)
++void VKGSRender::chimera_vk_teardown(bool keep_surfaces)
++#else
+ VKGSRender::~VKGSRender()
++#endif
+ {
+ 	if (m_device == VK_NULL_HANDLE)
+ 	{
+@@ -861,7 +889,23 @@
+ 	m_frame_context_storage.clear();
+ 
+ 	// Textures
++#if defined(CHIMERA_CORE)
++	if (keep_surfaces)
++	{
++		// chimera: the surfaces stay, with everything the surface store knows
++		// about them, and let go of what they held on the device
++		// (chimera_restore_surfaces gives each its image and pixels back)
++		m_rtts.chimera_for_each_surface([](vk::render_target* surface) { surface->chimera_release_vk(); });
++	}
++	else
++	{
++		m_rtts.destroy();
++	}
++
++	chimera_stage_release();
++#else
+ 	m_rtts.destroy();
++#endif
+ 	m_texture_cache.destroy();
+ 
+ 	m_overlay_recording_img.reset();
+@@ -1233,6 +1277,14 @@
+ 
+ void VKGSRender::on_init_thread()
+ {
++#if defined(CHIMERA_CORE)
++	// chimera: the renderer is constructed when the machine is, and this runs
++	// when its thread first does - which may be after a load (a state taken
++	// before the first frame and loaded again), on a device that is no longer
++	// the constructor's
++	chimera_check_vk_device(false);
++#endif
++
+ 	if (m_device == VK_NULL_HANDLE)
+ 	{
+ 		fmt::throw_exception("No Vulkan device was created");
+@@ -1241,10 +1293,27 @@
+ 	GSRender::on_init_thread();
+ 	zcull_ctrl.reset(static_cast<::rsx::reports::ZCULL_control*>(this));
+ 
++#if defined(CHIMERA_CORE)
++	chimera_vk_thread_setup();
++}
++
++// chimera: the device's half of the thread's start, run again after the
++// renderer is made again (chimera_check_vk_device)
++void VKGSRender::chimera_vk_thread_setup()
++{
++#endif
+ 	if (g_cfg.video.shadermode == shader_mode::async_with_interpreter ||
+ 		g_cfg.video.shadermode == shader_mode::interpreter_only)
+ 	{
++#if defined(CHIMERA_CORE)
++		// chimera: no native dialog when this runs again after a load. The
++		// machine must not see the renderer being made again, and a dialog is
++		// something it sees: it replaces a message dialog the game has open
++		// (chimera issue 152, the OpenGL renderer's lesson).
++		std::unique_ptr<rsx::shader_loading_dialog> dlg = m_overlay_manager && !m_chimera_vk_rebuilding
++#else
+ 		std::unique_ptr<rsx::shader_loading_dialog> dlg = m_overlay_manager
++#endif
+ 			? std::make_unique<rsx::shader_loading_dialog_native>(this)
+ 			: std::make_unique<rsx::shader_loading_dialog>();
+ 		m_shader_interpreter.preload(dlg.get());
+@@ -1253,6 +1322,13 @@
+ 
+ 	if (g_cfg.video.shadermode != shader_mode::interpreter_only)
+ 	{
++#if defined(CHIMERA_CORE)
++		if (m_chimera_vk_rebuilding)
++		{
++			m_shaders_cache->load(nullptr);
++		}
++		else
++#endif
+ 		if (!m_overlay_manager)
+ 		{
+ 			m_frame->hide();
+@@ -1278,6 +1354,10 @@
+ 
+ void VKGSRender::clear_surface(u32 mask)
+ {
++#if defined(CHIMERA_CORE)
++	chimera_check_vk_device();
++#endif
++
+ 	if (skip_current_frame || swapchain_unavailable) return;
+ 
+ 	// If stencil write mask is disabled, remove clear_stencil bit
+@@ -1720,8 +1800,525 @@
+ 	}
+ }
+ 
++#if defined(CHIMERA_CORE)
++// which Vulkan device the frontend has now, 0 when it cannot say; whether the
++// machine's memory was replaced since this was last asked; and the switch
++// that keeps commands from crossing while a gone device's objects are let go
++// (waterbox/vk-shim.cpp)
++extern "C" u64 chimera_rpcs3_vulkan_context(void);
++extern "C" int chimera_rpcs3_vulkan_take_state_loaded(void);
++extern "C" void chimera_rpcs3_vulkan_quiet(void);
++extern "C" void chimera_rpcs3_vulkan_old_device_gone(void);
++
++// ---- chimera: what the GPU drew is kept with the machine (chimera issue 190) ----
++//
++// A render target lives on the device, a savestate is the machine's memory and
++// nothing of the device's, and after a load the device is another one. What
++// had been drawn and is not drawn again within a frame or two would stay lost:
++// a game that fills a target once and uses it for minutes draws black from it
++// for as long as anybody looks.
++//
++// So, as the OpenGL renderer does (GLGSRender.cpp, where the reasons are): the
++// pixels are copied out when the engine says a state is about to be taken,
++// into a block of this core's own memory that the state carries, and after a
++// load the surface store is KEPT - each surface lets go of its dead image, is
++// given a new one of the same shape, and gets its pixels back. The copy does
++// not go into the console's memory, which a game can read.
++//
++// Two things are this renderer's own. OpenGL has drawn what it was told to
++// draw; here it is still in a command buffer, so that is handed in and waited
++// for first - with the buffer kept, the way this renderer does it when a
++// fault catches it half way through one. And a multisampled target has its
++// pixels in a linear twin, which is what is copied: this renderer makes and
++// fills that twin itself whenever a game samples the target.
++// The block, and what it says about itself (GLGSRender.cpp keeps both)
++extern "C" void chimera_rsx_shadow_block(u8** shadow, u64* shadow_size);
++extern "C" void chimera_rsx_shadow_set_current(int current);
++extern "C" int chimera_rsx_shadow_take_usable(void);
++
++namespace
++{
++	struct chimera_shadow_header
++	{
++		u64 magic;
++		u64 count;
++		u64 end;
++		u64 unused;
++	};
++
++	struct chimera_shadow_record
++	{
++		u64 surface;   // the vk::render_target it is of
++		u64 offset;    // of its pixels, from the start of the block
++		u64 bytes;
++		u32 width;
++		u32 height;
++		u32 format;
++		u32 samples;
++		u32 kind;      // vk::render_target::chimera_pixels or chimera_untouched
++		u32 unused;
++	};
++
++	constexpr u64 chimera_shadow_magic = 0x4B56485352495843ull;   // "CXIRSHVK"
++	constexpr u64 chimera_shadow_max_records = 2048;
++	constexpr u64 chimera_shadow_data_at = (sizeof(chimera_shadow_header) + chimera_shadow_max_records * sizeof(chimera_shadow_record) + 4095) & ~u64{4095};
++	constexpr u64 chimera_stage_bytes = 64ull << 20;
++
++	// Was the state that has just been loaded taken with the copies made?
++	bool chimera_shadow_usable(bool wanted)
++	{
++		const bool usable = chimera_rsx_shadow_take_usable() != 0;
++		u8* shadow = nullptr;
++		u64 shadow_size = 0;
++		chimera_rsx_shadow_block(&shadow, &shadow_size);
++		return wanted && usable && shadow && shadow_size > chimera_shadow_data_at &&
++			reinterpret_cast<const chimera_shadow_header*>(shadow)->magic == chimera_shadow_magic;
++	}
++
++	chimera_shadow_record chimera_describe(vk::render_target* surface)
++	{
++		chimera_shadow_record record{};
++		record.surface = reinterpret_cast<u64>(surface);
++		record.width = surface->width();
++		record.height = surface->height();
++		record.format = static_cast<u32>(surface->format());
++		record.samples = surface->samples();
++		return record;
++	}
++}
++
++extern "C" void chimera_vk_shadow_save(void)
++{
++	if (auto render = dynamic_cast<VKGSRender*>(rsx::get_current_renderer()))
++	{
++		render->chimera_shadow_surfaces();
++	}
++}
++
++// The buffer the pixels cross through, in both directions. Made with the
++// plain calls and not by the allocator: it is mapped whole for as long as it
++// lives, and a mapping is a copy the bridge keeps of all the memory it is in.
++bool VKGSRender::chimera_stage_ready()
++{
++	if (m_chimera_stage_ptr)
++	{
++		return true;
++	}
++
++	const VkDevice dev = *m_device;
++	VkBufferCreateInfo info = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
++	info.size = chimera_stage_bytes;
++	info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
++	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
++	if (vkCreateBuffer(dev, &info, nullptr, &m_chimera_stage) != VK_SUCCESS)
++	{
++		m_chimera_stage = VK_NULL_HANDLE;
++		return false;
++	}
++
++	VkMemoryRequirements req{};
++	vkGetBufferMemoryRequirements(dev, m_chimera_stage, &req);
++
++	// A type the host can see, a cached one for choice: this is read far more
++	// than it is written
++	const auto& props = m_device->gpu().get_memory_properties();
++	u32 type = umax;
++	for (u32 pass = 0; pass < 2 && type == umax; pass++)
++	{
++		for (u32 i = 0; i < props.memoryTypeCount; i++)
++		{
++			const auto flags = props.memoryTypes[i].propertyFlags;
++			if ((req.memoryTypeBits & (1u << i)) && (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
++				(pass == 1 || (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)))
++			{
++				type = i;
++				break;
++			}
++		}
++	}
++
++	VkMemoryAllocateInfo alloc = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
++	alloc.allocationSize = req.size;
++	alloc.memoryTypeIndex = type;
++	void* ptr = nullptr;
++	if (type == umax ||
++		vkAllocateMemory(dev, &alloc, nullptr, &m_chimera_stage_memory) != VK_SUCCESS ||
++		vkBindBufferMemory(dev, m_chimera_stage, m_chimera_stage_memory, 0) != VK_SUCCESS ||
++		vkMapMemory(dev, m_chimera_stage_memory, 0, VK_WHOLE_SIZE, 0, &ptr) != VK_SUCCESS || !ptr)
++	{
++		rsx_log.error("chimera: no buffer for the render targets' pixels; a load will lose them");
++		chimera_stage_release();
++		return false;
++	}
++
++	m_chimera_stage_ptr = static_cast<u8*>(ptr);
++	m_chimera_stage_size = chimera_stage_bytes;
++	return true;
++}
++
++void VKGSRender::chimera_stage_release()
++{
++	if (m_chimera_stage)
++	{
++		vkDestroyBuffer(*m_device, m_chimera_stage, nullptr);
++	}
++
++	if (m_chimera_stage_memory)
++	{
++		vkFreeMemory(*m_device, m_chimera_stage_memory, nullptr);
++	}
++
++	m_chimera_stage = VK_NULL_HANDLE;
++	m_chimera_stage_memory = VK_NULL_HANDLE;
++	m_chimera_stage_ptr = nullptr;
++	m_chimera_stage_size = 0;
++}
++
++void VKGSRender::chimera_shadow_surfaces()
++{
++	if (m_device == VK_NULL_HANDLE)
++	{
++		return;
++	}
++
++	// A state taken straight after a load, before a frame has run: the
++	// surfaces still name the images of the device that is gone, so there is
++	// nothing to read - and nothing to do, because the block came with the
++	// state that was loaded and describes exactly this machine.
++	if (const u64 live = chimera_rpcs3_vulkan_context(); live != 0 && live != m_chimera_vk_device)
++	{
++		return;
++	}
++
++	chimera_rsx_shadow_set_current(0);
++
++	u8* shadow = nullptr;
++	u64 shadow_size = 0;
++	chimera_rsx_shadow_block(&shadow, &shadow_size);
++	if (!shadow || shadow_size <= chimera_shadow_data_at)
++	{
++		return;
++	}
++
++	// This runs with the RSX thread stopped wherever the frame's end found
++	// it. Its command buffer is handed in below, which it can be from most
++	// places - but not from inside the handing in itself, and not before
++	// there is one. A state taken then carries no copies, and a load of it
++	// brings the surfaces back empty.
++	if (m_chimera_vk_rebuilding || !m_current_command_buffer || !m_current_command_buffer->is_recording() ||
++		(m_queue_status & flush_queue_state::flushing) || !chimera_stage_ready())
++	{
++		return;
++	}
++
++	auto head = reinterpret_cast<chimera_shadow_header*>(shadow);
++	auto table = reinterpret_cast<chimera_shadow_record*>(head + 1);
++
++	// Copies are commands, and none may be given inside a render pass. The
++	// renderer opens its pass again before it next draws.
++	if (vk::is_renderpass_open(*m_current_command_buffer))
++	{
++		close_render_pass();
++	}
++
++	struct pending_t { u64 stage_at; u64 shadow_at; u64 bytes; };
++	std::array<pending_t, 64> pending;
++	u32 pending_count = 0;
++	u64 used = 0;
++
++	// What has been asked for is waited for and compared with the copy
++	// already held. Only what differs is written: a page that is not written
++	// is not in the next delta.
++	const auto run_batch = [&]()
++	{
++		if (!pending_count)
++		{
++			return;
++		}
++
++		flush_command_queue(true, true);
++
++		VkMappedMemoryRange range = { .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE };
++		range.memory = m_chimera_stage_memory;
++		range.size = std::min<u64>((used + 4095) & ~u64{4095}, m_chimera_stage_size);
++		vkInvalidateMappedMemoryRanges(*m_device, 1, &range);
++
++		for (u32 i = 0; i < pending_count; i++)
++		{
++			u8* const kept = shadow + pending[i].shadow_at;
++			const u8* const now = m_chimera_stage_ptr + pending[i].stage_at;
++			if (std::memcmp(kept, now, pending[i].bytes) != 0)
++			{
++				std::memcpy(kept, now, pending[i].bytes);
++			}
++		}
++
++		pending_count = 0;
++		used = 0;
++	};
++
++	u64 count = 0;
++	u64 at = chimera_shadow_data_at;
++	m_rtts.chimera_for_each_surface([&](vk::render_target* surface)
++	{
++		// One whose pixels were moved off the device for want of room is not
++		// followed there; it comes back from a load empty
++		if (!surface->value || count >= chimera_shadow_max_records)
++		{
++			return;
++		}
++
++		chimera_shadow_record record = chimera_describe(surface);
++		record.offset = at;
++
++		if (surface->current_layout == VK_IMAGE_LAYOUT_UNDEFINED)
++		{
++			// Made, and nothing drawn to it or loaded into it yet
++			record.kind = vk::render_target::chimera_untouched;
++		}
++		else
++		{
++			const u64 bytes = surface->chimera_copy_bytes();
++			if (!bytes || bytes > m_chimera_stage_size || at + bytes > shadow_size)
++			{
++				return;
++			}
++
++			if (used + bytes > m_chimera_stage_size || pending_count == pending.size())
++			{
++				run_batch();
++			}
++
++			surface->chimera_copy_out(*m_current_command_buffer, m_chimera_stage, used);
++			pending[pending_count++] = { used, at, bytes };
++			used = (used + bytes + 63) & ~u64{63};
++
++			record.kind = vk::render_target::chimera_pixels;
++			record.bytes = bytes;
++			at = (at + bytes + 63) & ~u64{63};
++		}
++
++		if (std::memcmp(&table[count], &record, sizeof(record)) != 0)
++		{
++			table[count] = record;
++		}
++
++		count++;
++	});
++
++	run_batch();
++
++	const chimera_shadow_header now{ chimera_shadow_magic, count, at, 0 };
++	if (std::memcmp(head, &now, sizeof(now)) != 0)
++	{
++		*head = now;
++	}
++
++	chimera_rsx_shadow_set_current(1);
++}
++
++// After the renderer has been made again: every surface the store kept gets an
++// image of the shape it had, and the pixels it had when the state was taken.
++void VKGSRender::chimera_restore_surfaces()
++{
++	u8* shadow = nullptr;
++	u64 shadow_size = 0;
++	chimera_rsx_shadow_block(&shadow, &shadow_size);
++	const auto head = reinterpret_cast<const chimera_shadow_header*>(shadow);
++	const auto table = reinterpret_cast<const chimera_shadow_record*>(head + 1);
++	const u64 count = std::min<u64>(head->count, chimera_shadow_max_records);
++	const bool stage = chimera_stage_ready();
++
++	u64 used = 0;
++	const auto run_batch = [&]()
++	{
++		if (!used)
++		{
++			return;
++		}
++
++		VkMappedMemoryRange range = { .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE };
++		range.memory = m_chimera_stage_memory;
++		range.size = std::min<u64>((used + 4095) & ~u64{4095}, m_chimera_stage_size);
++		vkFlushMappedMemoryRanges(*m_device, 1, &range);
++		flush_command_queue(true, true);
++		used = 0;
++	};
++
++	u32 kept = 0, untouched = 0, empty = 0;
++	m_rtts.chimera_for_each_surface([&](vk::render_target* surface)
++	{
++		const chimera_shadow_record shape = chimera_describe(surface);
++		const chimera_shadow_record* found = nullptr;
++		for (u64 i = 0; i < count; i++)
++		{
++			if (table[i].surface == shape.surface)
++			{
++				found = &table[i];
++				break;
++			}
++		}
++
++		u32 kind = vk::render_target::chimera_lost;
++		u64 stage_at = 0;
++		if (found && found->width == shape.width && found->height == shape.height &&
++			found->format == shape.format && found->samples == shape.samples)
++		{
++			if (found->kind == vk::render_target::chimera_untouched)
++			{
++				kind = vk::render_target::chimera_untouched;
++			}
++			else if (stage && found->kind == vk::render_target::chimera_pixels &&
++				found->bytes == surface->chimera_copy_bytes() && found->bytes <= m_chimera_stage_size &&
++				found->offset + found->bytes <= shadow_size)
++			{
++				if (used + found->bytes > m_chimera_stage_size)
++				{
++					run_batch();
++				}
++
++				std::memcpy(m_chimera_stage_ptr + used, shadow + found->offset, found->bytes);
++				stage_at = used;
++				used = (used + found->bytes + 63) & ~u64{63};
++				kind = vk::render_target::chimera_pixels;
++			}
++		}
++
++		surface->chimera_reseat_vk(*m_current_command_buffer, m_chimera_stage, stage_at, kind);
++		(kind == vk::render_target::chimera_pixels ? kept : kind == vk::render_target::chimera_untouched ? untouched : empty)++;
++	});
++
++	run_batch();
++	rsx_log.warning("chimera: %u surfaces came back from the load with their pixels, %u that had none yet, %u without", kept, untouched, empty);
++}
++
++// chimera: has the ground moved? Every handle this renderer holds was handed
++// out by one Vulkan device and lives in the machine's memory, so a savestate
++// brings the handles back into a session where that device is gone: the
++// frontend refuses every command that names one. So the device the objects
++// came from is compared with the one the commands land on, at the head of
++// the FIFO's local task, and when it has changed everything is let go and
++// made again - with nothing crossing to the frontend while it is let go,
++// because what is named there is another device's.
++//
++// The flag is the frontend's word that the machine was loaded: a state taken
++// before this renderer first looked carries 0 for the device, which then
++// cannot vouch for what the objects are (the OpenGL renderer's trap, chimera
++// issue 126).
++void VKGSRender::chimera_check_vk_device(bool thread_started)
++{
++	if (m_chimera_vk_rebuilding)
++	{
++		return;
++	}
++
++	const bool after_load = chimera_rpcs3_vulkan_take_state_loaded() != 0;
++	const u64 live = chimera_rpcs3_vulkan_context();
++	if (live == 0 || live == m_chimera_vk_device)
++	{
++		return;
++	}
++
++	if ((m_chimera_vk_device != 0 || after_load) && m_device != VK_NULL_HANDLE)
++	{
++		// to stderr, as the OpenGL bridge's cores say it: this is about the
++		// session, never the machine
++		fprintf(stderr, "chimera: these Vulkan objects came from another device (%llu, now %llu); rebuilding\n",
++			static_cast<unsigned long long>(m_chimera_vk_device), static_cast<unsigned long long>(live));
++
++		// The surfaces are kept when the state that was loaded brought their
++		// pixels with it (chimera_shadow_surfaces); otherwise they go with
++		// everything else.
++		const bool keep_surfaces = chimera_shadow_usable(after_load && thread_started);
++
++		m_chimera_vk_rebuilding = true;
++		chimera_rpcs3_vulkan_quiet();
++		vk::destroy_pipe_compiler();
++		chimera_vk_teardown(keep_surfaces);
++		chimera_rpcs3_vulkan_old_device_gone();
++
++		// What the renderer keeps between frames and the destructor leaves as
++		// it was, because after it there is no renderer: frames waiting to be
++		// shown, the pass and the targets being drawn to, the queries open.
++		// All of it names objects of the device that is gone.
++		m_queued_frames.clear();
++		m_current_queue_index = 0;
++		m_current_command_buffer = nullptr;
++		m_primary_cb_list.chimera_forget();
++		m_secondary_cb_list.chimera_forget();
++		m_fragment_prog = nullptr;
++		m_vertex_prog = nullptr;
++		m_program = nullptr;
++		m_prev_program = nullptr;
++		m_pipeline_properties = {};
++		m_vs_binding_table = nullptr;
++		m_fs_binding_table = nullptr;
++		fs_sampler_handles.fill(nullptr);
++		vs_sampler_handles.fill(nullptr);
++		m_samplers_dirty.store(true);
++		m_cond_render_sync_tag = 0;
++		m_async_compute_dependency_info = {};
++		m_async_compute_memory_barrier = {};
++		m_vertex_env_buffer_info = {};
++		m_fragment_env_buffer_info = {};
++		m_vertex_layout_stream_info = {};
++		m_vertex_constants_buffer_info = {};
++		m_fragment_constants_buffer_info = {};
++		m_fragment_texture_params_buffer_info = {};
++		m_raster_env_buffer_info = {};
++		m_instancing_indirection_buffer_info = {};
++		m_instancing_constants_array_buffer_info = {};
++		m_vertex_instructions_buffer_info = {};
++		m_fragment_instructions_buffer_info = {};
++		m_aux_frame_context = {};
++		m_draw_fbo = nullptr;
++		m_fbo_images.clear();
++		m_cached_renderpass = VK_NULL_HANDLE;
++		m_current_renderpass_key = 0;
++		m_current_draw = {};
++		m_overlay_recording_img.reset();
++		m_occlusion_query_active = false;
++		m_active_query_info = nullptr;
++		m_occlusion_map.clear();
++		m_flushable_data_heaps.clear();
++		m_queue_status.clear(flush_queue_state::deadlock);
++		m_queue_status.clear(flush_queue_state::flushing);
++		m_last_heap_sync_time = 0;
++		m_texbuffer_view_size = 0;
++		m_xform_constants_dynamic_offset = 0;
++		m_vertex_env_dynamic_offset = 0;
++		m_vertex_layout_dynamic_offset = 0;
++		m_fragment_constants_dynamic_offset = 0;
++		m_fragment_env_dynamic_offset = 0;
++		m_texture_parameters_dynamic_offset = 0;
++		m_stipple_array_dynamic_offset = 0;
++
++		chimera_vk_setup();
++		if (thread_started)
++		{
++			chimera_vk_thread_setup();
++		}
++
++		if (keep_surfaces)
++		{
++			chimera_restore_surfaces();
++		}
++		m_chimera_vk_rebuilding = false;
++
++		// Nothing the renderer thought was set up still is
++		m_graphics_state |= rsx::pipeline_state::all_dirty;
++	}
++
++	m_chimera_vk_device = live;
++}
++#endif
++
+ void VKGSRender::do_local_task(rsx::FIFO::state state)
+ {
++#if defined(CHIMERA_CORE)
++	chimera_check_vk_device();
++#endif
++
+ 	if (m_queue_status & flush_queue_state::deadlock)
+ 	{
+ 		// Clear offloader deadlock
+diff --git a/rpcs3/Emu/RSX/VK/VKDraw.cpp b/rpcs3/Emu/RSX/VK/VKDraw.cpp
+--- a/rpcs3/Emu/RSX/VK/VKDraw.cpp
++++ b/rpcs3/Emu/RSX/VK/VKDraw.cpp
+@@ -1197,6 +1197,11 @@
+ 
+ void VKGSRender::begin()
+ {
++#if defined(CHIMERA_CORE)
++	// chimera: a draw may be the first thing the renderer does after a load
++	chimera_check_vk_device();
++#endif
++
+ 	// Save shader state now before prefetch and loading happens
+ 	m_interpreter_state = (m_graphics_state.load() & rsx::pipeline_state::invalidate_pipeline_bits);
+ 
+diff --git a/rpcs3/Emu/RSX/VK/VKHelpers.cpp b/rpcs3/Emu/RSX/VK/VKHelpers.cpp
+--- a/rpcs3/Emu/RSX/VK/VKHelpers.cpp
++++ b/rpcs3/Emu/RSX/VK/VKHelpers.cpp
+@@ -52,6 +52,10 @@
+ 		get_upload_heap()->reset_allocation_stats();
+ 	}
+ 
++#if defined(CHIMERA_CORE)
++	void chimera_destroy_upload_heap();
++#endif
++
+ 	void destroy_global_resources()
+ 	{
+ 		VkDevice dev = *g_render_device;
+@@ -61,7 +65,12 @@
+ 		vk::clear_dma_resources();
+ 		vk::clear_scratch_resources();
+ 
++#if defined(CHIMERA_CORE)
++		// chimera: only if there is one (vkutils/data_heap.cpp)
++		chimera_destroy_upload_heap();
++#else
+ 		vk::get_upload_heap()->destroy();
++#endif
+ 
+ 		g_compute_tasks.clear();
+ 
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/image.h b/rpcs3/Emu/RSX/VK/vkutils/image.h
+--- a/rpcs3/Emu/RSX/VK/vkutils/image.h
++++ b/rpcs3/Emu/RSX/VK/vkutils/image.h
+@@ -100,6 +100,15 @@
+ 		// Debug utils
+ 		void set_debug_name(const std::string& name);
+ 
++#if defined(CHIMERA_CORE)
++		// chimera: the driver's half of this image went with its device (a
++		// load): the object forgets it, and is later given an image of the
++		// same shape on the device there is now. Used for render targets,
++		// which the surface store keeps across a load (VKGSRender.cpp).
++		void chimera_forget();
++		void chimera_reseat(const vk::render_device& dev, u32 access_flags, const memory_type_info& memory_type, vmm_allocation_pool allocation_pool);
++#endif
++
+ 	protected:
+ 		VkDevice m_device = VK_NULL_HANDLE;
+ 	};
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/image.cpp b/rpcs3/Emu/RSX/VK/vkutils/image.cpp
+--- a/rpcs3/Emu/RSX/VK/vkutils/image.cpp
++++ b/rpcs3/Emu/RSX/VK/vkutils/image.cpp
+@@ -119,6 +119,25 @@
+ 		vkDestroyImage(m_device, value, nullptr);
+ 	}
+ 
++#if defined(CHIMERA_CORE)
++	void image::chimera_forget()
++	{
++		memory.reset();
++		value = VK_NULL_HANDLE;
++		current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
++		current_queue_family = VK_QUEUE_FAMILY_IGNORED;
++		m_layout_stack = {};
++	}
++
++	void image::chimera_reseat(const vk::render_device& dev, u32 access_flags, const memory_type_info& memory_type, vmm_allocation_pool allocation_pool)
++	{
++		m_device = dev;
++		info.pNext = nullptr;
++		info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++		create_impl(dev, access_flags, memory_type, allocation_pool);
++	}
++#endif
++
+ 	void image::create_impl(const vk::render_device& dev, u32 access_flags, const memory_type_info& memory_type, vmm_allocation_pool allocation_pool)
+ 	{
+ 		ensure(!value && !memory);
+diff --git a/rpcs3/Emu/RSX/VK/VKRenderTargets.h b/rpcs3/Emu/RSX/VK/VKRenderTargets.h
+--- a/rpcs3/Emu/RSX/VK/VKRenderTargets.h
++++ b/rpcs3/Emu/RSX/VK/VKRenderTargets.h
+@@ -123,6 +123,20 @@
+ 		// Memory management
+ 		bool spill(vk::command_buffer& cmd, std::vector<std::unique_ptr<vk::viewable_image>>& resolve_cache);
+ 
++#if defined(CHIMERA_CORE)
++		// chimera: what the GPU drew is kept with the machine (VKGSRender.cpp).
++		// How many bytes this surface's pixels are when copied out; the copy,
++		// into a buffer; everything it holds on the device let go; and an
++		// image of the same shape on the device there is now, with the pixels
++		// (chimera_pixels), with none because it never had any
++		// (chimera_untouched), or with none because they were not kept.
++		enum : u32 { chimera_pixels = 0, chimera_untouched = 1, chimera_lost = 2 };
++		u64 chimera_copy_bytes() const;
++		void chimera_copy_out(vk::command_buffer& cmd, VkBuffer buffer, u64 offset);
++		void chimera_release_vk();
++		void chimera_reseat_vk(vk::command_buffer& cmd, VkBuffer buffer, u64 offset, u32 kind);
++#endif
++
+ 		// Synchronization
+ 		void texture_barrier(vk::command_buffer& cmd);
+ 		void post_texture_barrier(vk::command_buffer& cmd);
+diff --git a/rpcs3/Emu/RSX/VK/VKRenderTargets.cpp b/rpcs3/Emu/RSX/VK/VKRenderTargets.cpp
+--- a/rpcs3/Emu/RSX/VK/VKRenderTargets.cpp
++++ b/rpcs3/Emu/RSX/VK/VKRenderTargets.cpp
+@@ -691,6 +691,113 @@
+ 		vk::get_resource_manager()->dispose(m_spilled_mem);
+ 	}
+ 
++#if defined(CHIMERA_CORE)
++	// chimera: the four below are spill() and unspill() taken apart. Spilling
++	// moves a surface's pixels to a buffer and frees its image; these copy
++	// them to a buffer and leave the surface as it is, and - after a load,
++	// when the image is gone with its device - make the image again and copy
++	// them back.
++	u64 render_target::chimera_copy_bytes() const
++	{
++		u64 element_size;
++		switch (const auto fmt = format())
++		{
++		case VK_FORMAT_D32_SFLOAT:
++			element_size = 4;
++			break;
++		case VK_FORMAT_D32_SFLOAT_S8_UINT:
++		case VK_FORMAT_D24_UNORM_S8_UINT:
++			element_size = 5;
++			break;
++		default:
++			element_size = get_format_texel_width(fmt);
++			break;
++		}
++
++		return element_size * (u64{width()} * samples_x) * (u64{height()} * samples_y);
++	}
++
++	void render_target::chimera_copy_out(vk::command_buffer& cmd, VkBuffer buffer, u64 offset)
++	{
++		vk::viewable_image* src = this;
++		if (samples() > 1)
++		{
++			// The planar image cannot be copied out as it is; its pixels go
++			// through the linear one, as they do when a game samples it
++			if (!resolve_surface)
++			{
++				get_resolve_target_safe(cmd);
++				msaa_flags |= rsx::surface_state_flags::require_resolve;
++			}
++
++			if (msaa_flags & rsx::surface_state_flags::require_resolve)
++			{
++				resolve(cmd);
++			}
++
++			src = resolve_surface.get();
++		}
++
++		auto regions = build_spill_transfer_descriptors(src);
++		for (auto& region : regions)
++		{
++			region.bufferOffset += offset;
++		}
++
++		src->push_layout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
++		vkCmdCopyImageToBuffer(cmd, src->value, src->current_layout, buffer, ::size32(regions), regions.data());
++		src->pop_layout(cmd);
++	}
++
++	void render_target::chimera_release_vk()
++	{
++		views.clear();
++		resolve_surface.reset();
++		m_spilled_mem.reset();
++		m_cyclic_ref_tracker.reset();
++		chimera_forget();
++	}
++
++	void render_target::chimera_reseat_vk(vk::command_buffer& cmd, VkBuffer buffer, u64 offset, u32 kind)
++	{
++		const auto pdev = vk::get_current_renderer();
++		chimera_reseat(*pdev, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, pdev->get_memory_mapping().device_local, VMM_ALLOCATION_POOL_SURFACE_CACHE);
++
++		if (kind == chimera_untouched)
++		{
++			// Nothing had been drawn to it or loaded into it, and what was
++			// still to happen to it is in its flags
++			return;
++		}
++
++		change_layout(cmd, is_depth_surface() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
++
++		if (kind != chimera_pixels)
++		{
++			// It holds nothing now, and says so
++			clear_rw_barrier();
++			state_flags |= rsx::surface_state_flags::erase_bkgnd;
++			return;
++		}
++
++		vk::image* dst = (samples() > 1) ? get_resolve_target_safe(cmd) : this;
++		auto regions = build_spill_transfer_descriptors(dst);
++		for (auto& region : regions)
++		{
++			region.bufferOffset += offset;
++		}
++
++		dst->change_layout(cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++		vkCmdCopyBufferToImage(cmd, buffer, dst->value, dst->current_layout, ::size32(regions), regions.data());
++
++		if (samples() > 1)
++		{
++			msaa_flags &= ~rsx::surface_state_flags::require_resolve;
++			msaa_flags |= rsx::surface_state_flags::require_unresolve;
++		}
++	}
++#endif
++
+ 	// Load memory from cell and use to initialize the surface
+ 	void render_target::load_memory(vk::command_buffer& cmd)
+ 	{
+diff --git a/rpcs3/Emu/RSX/GL/GLGSRender.cpp b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.cpp
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+@@ -1523,12 +1523,42 @@
+ 	s_chimera_shadow_usable = s_chimera_shadow_current;
+ }
+ 
++// The Vulkan renderer keeps its render targets the same way, in the same
++// block, and is told and asked through these (VKGSRender.cpp)
++#if defined(HAVE_VULKAN)
++extern "C" void chimera_vk_shadow_save(void);
++#endif
++
++extern "C" void chimera_rsx_shadow_block(u8** shadow, u64* shadow_size)
++{
++	*shadow = s_chimera_shadow;
++	*shadow_size = s_chimera_shadow_size;
++}
++
++extern "C" void chimera_rsx_shadow_set_current(int current)
++{
++	s_chimera_shadow_current = current != 0;
++}
++
++extern "C" int chimera_rsx_shadow_take_usable(void)
++{
++	const bool usable = s_chimera_shadow_usable;
++	s_chimera_shadow_usable = false;
++	return usable ? 1 : 0;
++}
++
+ extern "C" void chimera_rsx_shadow_save(void)
+ {
+ 	if (auto render = dynamic_cast<GLGSRender*>(rsx::get_current_renderer()))
+ 	{
+ 		render->chimera_shadow_surfaces();
+ 	}
++#if defined(HAVE_VULKAN)
++	else
++	{
++		chimera_vk_shadow_save();
++	}
++#endif
+ }
+ 
+ void GLGSRender::chimera_shadow_surfaces()
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/commands.h b/rpcs3/Emu/RSX/VK/vkutils/commands.h
+--- a/rpcs3/Emu/RSX/VK/vkutils/commands.h
++++ b/rpcs3/Emu/RSX/VK/vkutils/commands.h
+@@ -120,6 +120,20 @@
+ 		bool is_recording() const { return is_open; }
+ 
+ 		void clear_flags() { flags = 0; }
++
++#if defined(CHIMERA_CORE)
++		// chimera: the device this buffer was on is gone with a load. What it
++		// says about itself - open, handed in and not done yet, what is bound
++		// in it - was about that device, and a buffer taken for handed in is
++		// waited for, for ever.
++		void chimera_forget()
++		{
++			is_open = false;
++			is_pending = false;
++			flags = 0;
++			clear_state_cache();
++		}
++#endif
+ 		void set_flag(command_buffer_data_flag flag) { flags |= flag; }
+ 
+ 		operator VkCommandBuffer() const
+diff --git a/rpcs3/Emu/RSX/VK/VKGSRenderTypes.hpp b/rpcs3/Emu/RSX/VK/VKGSRenderTypes.hpp
+--- a/rpcs3/Emu/RSX/VK/VKGSRenderTypes.hpp
++++ b/rpcs3/Emu/RSX/VK/VKGSRenderTypes.hpp
+@@ -343,5 +343,19 @@
+ 		{
+ 			return &m_cb_list[m_current_index % Count];
+ 		}
++
++#if defined(CHIMERA_CORE)
++		// chimera: see vk::command_buffer::chimera_forget
++		void chimera_forget()
++		{
++			for (auto& cb : m_cb_list)
++			{
++				cb.chimera_forget();
++				cb.eid_tag = 0;
++			}
++
++			m_current_index = 0;
++		}
++#endif
+ 	};
+ }
+diff --git a/rpcs3/Emu/RSX/VK/VKCommandStream.h b/rpcs3/Emu/RSX/VK/VKCommandStream.h
+--- a/rpcs3/Emu/RSX/VK/VKCommandStream.h
++++ b/rpcs3/Emu/RSX/VK/VKCommandStream.h
+@@ -53,6 +53,15 @@
+ 		static constexpr std::string_view thread_name = "Vulkan Driver Manager"sv;
+ 		void operator()();
+ 
++#if defined(CHIMERA_CORE)
++		// chimera: this thread is made when the Vulkan renderer is
++		// (VKGSRender.cpp). Left as it was, it is made with every machine,
++		// whichever renderer draws - and a machine drawn by OpenGL would have
++		// one thread more than the same machine in a build without Vulkan.
++		struct chimera_made_by_the_renderer {};
++		driver_manager_t(chimera_made_by_the_renderer) {}
++#endif
++
+ 		void notify_completed(u64 eid);
+ 		void drain();
+ 

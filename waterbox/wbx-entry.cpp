@@ -23,6 +23,7 @@ extern "C" void chimera_rpcs3_install_gpu_bridge(uint64_t addr);
 // gl-shim.cpp: the engine told us the machine's memory was replaced, and the
 // renderer needs to hear it (chimera issue 126)
 extern "C" void chimera_gl_note_state_loaded(void);
+extern "C" void chimera_rpcs3_vulkan_note_state_loaded(void);
 
 extern "C" {
 
@@ -152,6 +153,11 @@ ECL_EXPORT int Init(void)
   char renderer[32] = "null";
   wbx_setting_str("renderer", renderer, sizeof renderer);
   chimera_rpcs3_set_renderer(renderer);
+  if (const char* refusal = chimera_rpcs3_renderer_refusal())
+  {
+    snprintf(g_loadError, sizeof g_loadError, "%s", refusal);
+    return 0;
+  }
   char spuDecoder[16] = "asmjit";
   wbx_setting_str("spu_decoder", spuDecoder, sizeof spuDecoder);
   chimera_rpcs3_set_spu_decoder(spuDecoder);
@@ -212,6 +218,15 @@ ECL_EXPORT int Init(void)
 ECL_EXPORT void SetGpuBridge(uint64_t addr)
 {
   chimera_rpcs3_install_gpu_bridge(addr);
+}
+
+// The Vulkan bridge: the same, for a frontend that has a Vulkan device to
+// offer (see waterbox/vk-shim.cpp). Chimera hands a core both bridges when it
+// exports both, and the Renderer setting picks.
+extern "C" void chimera_rpcs3_install_vulkan_bridge(uint64_t addr);
+ECL_EXPORT void SetVulkanBridge(uint64_t addr)
+{
+  chimera_rpcs3_install_vulkan_bridge(addr);
 }
 
 // miniBox calls this on the faulting thread when a guest instruction hits a
@@ -352,6 +367,7 @@ ECL_EXPORT int IsGpuActive(void)
 ECL_EXPORT void StateLoaded(void)
 {
   chimera_gl_note_state_loaded();
+  chimera_rpcs3_vulkan_note_state_loaded();
   // whether the state that has just been loaded brought the render targets'
   // pixels with it, said before a frame can say otherwise
   chimera_rsx_shadow_state_loaded();

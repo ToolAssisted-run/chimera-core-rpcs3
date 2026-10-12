@@ -2762,3 +2762,93 @@ CPU), building one needs the PSL1GHT toolchain, and a commercial game through
 llvmpipe does not reach such a scene in a time a gate can spend. The gate's
 own runner does tell the core before each state it takes now, as the engine
 does, so the rewind, rerecord and context legs run the same code.
+
+## The Vulkan renderer (chimera issue 248, user-decided 2026-10-11)
+
+The owner asked for Vulkan in every core whose emulator has it. This is
+RPCS3's own Vulkan renderer, on the Vulkan device Chimera hands a core: the
+Renderer setting has a second value, `vulkan-hw`. OpenGL stays the default.
+It needs a Chimera with the Vulkan bridge (Development build 4ca6e302 or
+later) and a graphics driver with Vulkan; without either a project set to it
+does not start and says why.
+
+**What had to change** (patch 0051, `waterbox/vk-shim.cpp`, `waterbox/vk/`):
+
+- *The commands.* The renderer calls Vulkan through volk, a table of function
+  pointers, filled from the bridge by name. A command the bridge does not
+  carry is a named stop, not a jump to nothing.
+- *No window.* The renderer draws to an image of its own and the picture is
+  read back from it; the code for a window's surface is not built.
+- *Mapped memory is a copy.* The bridge gives a mapping as a buffer of the
+  core's own and moves bytes only when told, so every mapping is flushed
+  before the card reads it and invalidated before the core does.
+- *A load is another device.* Every handle the renderer holds is in the
+  machine's memory and names an object of a device that is gone after a load.
+  The renderer's constructor and destructor became two functions that can run
+  again: the old objects are let go with nothing crossing to the frontend,
+  everything is made again, and what the renderer keeps between frames
+  (queued frames, the command buffers' "handed in" marks, the programs and
+  samplers last bound) is cleared with them. Found one at a time: each was a
+  wait that never ended or a pointer into freed memory.
+- *What the card drew comes back* (the section before this one, for Vulkan).
+  The render targets' pixels are copied out when a state is about to be taken
+  and given back after a load. Two things are this renderer's own: what was
+  drawn is still in a command buffer, which is handed in and waited for
+  first; and a multisampled target is copied through the linear twin RPCS3
+  already keeps for it, so those come back too, which they do not under
+  OpenGL.
+- *One thread fewer.* RPCS3 built with Vulkan starts a "Vulkan Driver
+  Manager" thread with every machine. It is now made with the Vulkan
+  renderer, so a machine drawn by OpenGL has the threads it had.
+
+**Measured on a GeForce GTX 1060** (Windows, Vulkan 1.4.312), Dead or Alive 5
+Last Round, 5200 frames into a fight with one button pressed once a second:
+
+- Against OpenGL, straight: the machine's memory is the same byte for byte at
+  the end, and five pictures along the way differ in 42, 372, 1, 1 and 0 of
+  921,600 pixels. 273 s against 266 s, with other work on the computer; no
+  quiet timing was taken.
+- Two straight Vulkan runs end with the same memory.
+- After a load on frame 5100: 50 render targets came back with their pixels.
+  Of the 12 frames drawn next, 11 are exactly the pictures they were (OpenGL:
+  0.6 to 0.8% of pixels differ in those). One, the eleventh, shows the frame
+  before it under both renderers alike; that is the machine's timing after a
+  load and not a renderer's, and is not chased here.
+- Three rewinds from frame 5100 and on to 5200: the picture at 5150 is the
+  straight run's, pixel for pixel. The memory at the end differs from the
+  straight run's in 37,443 bytes - under OpenGL in the same 37,443 bytes,
+  and the two rewound runs agree with each other byte for byte. So a rewound
+  run is not a straight run in this game with either renderer. Not looked
+  into; it is older than this work.
+
+**On Mesa's software Vulkan** (lavapipe), `tests/roms/flip.elf`: frame 150 is
+OpenGL's picture, and a state saved and loaded around every frame leaves the
+memory and the picture of a run without one. These three are in the test
+script (`vk:bridge`, `vk:picture`, `vk:rerecord`).
+
+**Not proved, and not done.**
+
+- **One game works and one does not.** Dengeki Bunko Fighting Climax Ignition
+  draws nothing under Vulkan on the same card: the picture stays the empty
+  1920x1080 one for 4000 frames and the memory at the end differs from the
+  OpenGL run's in 164,370 bytes, where OpenGL draws the game. The log names
+  no error. Found at the end of this work and not looked into. Bejeweled 3
+  shows a black picture for 6000 frames under both renderers in the headless
+  runner, so it compared nothing.
+- The test script was not run to its end with this change. Its first 27
+  checks passed (OpenGL and the renderer that draws nothing; they include
+  native against sandbox, rewind, a state around every frame, the firmware,
+  input, audio, the disc and package checks up to `spu:agree`), one program
+  among them ended with "Aborted" without failing a check and was not traced,
+  and the rest - the `gpu:*` checks and the three new Vulkan ones - did not
+  run. The Vulkan checks' own runs were done by hand and gave what the
+  section says. Chimera's contract tests were not run against this package.
+- What the copies cost a state was not measured. The buffer the pixels cross
+  through is mapped memory, which the bridge keeps in the core's own memory,
+  so unlike OpenGL's scratch block it is carried in every state.
+- A render target RPCS3 moved off the card for want of room comes back from a
+  load empty.
+- The picture is read back through a buffer made and mapped every frame.
+  It works and is slower than it need be.
+- The test script has no check that a render target comes back after a load:
+  no program in `tests/` uses one (the gap the section before this names).

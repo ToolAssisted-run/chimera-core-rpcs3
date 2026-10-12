@@ -21,8 +21,12 @@ SPECS   := -specs $(SR)/lib/musl-gcc.specs
 CXXINCS := -nostdinc++ -I$(SR)/include/c++/$(GCCVER) -I$(SR)/include/c++/$(GCCVER)/x86_64-linux-musl
 MBINCS  := -I$(MB)/extern/emulibc -I$(MB)/source/guest/include -I$(MB)/extern/jsmn
 GLINCS  := -I$(MB)/source/gl -I$(MB)/source/cache -Iglad/include -Igenerated-gl
+# The Vulkan renderer's side of the adapter: the headers build-guest.sh put
+# together (miniBox's, a vulkan.h that is those, volk's), miniBox's bridge
+# header, and the guest half build-core.sh generated.
+VKINCS  := -I$(ROOT)/build/vk-include -I$(MB)/source/vk -Igenerated-vk
 
-CXXFLAGS := $(WBFLAGS) $(TUFLAGS) -DCHIMERA_GUEST -DCHIMERA_CORE -DCHIMERA_NO_TLS -DCHIMERA_GL_BRIDGE $(MBINCS) $(GLINCS) -I. -isystem guest-include $(CXXINCS)
+CXXFLAGS := $(WBFLAGS) $(TUFLAGS) -DCHIMERA_GUEST -DCHIMERA_CORE -DCHIMERA_NO_TLS -DCHIMERA_GL_BRIDGE -DCHIMERA_VK_BRIDGE $(MBINCS) $(GLINCS) $(VKINCS) -I. -isystem guest-include $(CXXINCS)
 CFLAGS   := $(WBFLAGS) -DCHIMERA_GUEST -DCHIMERA_CORE
 
 # upstream sources that live in rpcs3's user-interface library but are not
@@ -45,7 +49,24 @@ SZ_OBJS := $(patsubst %.c,$(O)/7z/%.o,$(SZ_SRCS))
 
 OBJS := $(O)/rpcs3-driver.o $(O)/archive.o $(O)/sevenzip.o $(SZ_OBJS) $(O)/host-stubs.o $(O)/host-plumbing.o $(O)/memfs.o $(O)/wbx-entry.o $(O)/guest-syscalls.o $(O)/vsched.o $(O)/gl-shim.o $(O)/gl-bridge-guest.o $(O)/gl-traps.o $(O)/glad-gl.o $(O)/generated-assets.o $(O)/wiki-compat.o $(UPSTREAM_OBJS)
 
+OBJS += $(O)/vk-shim.o $(O)/volk.o $(O)/vk-guest.o $(O)/vk-bridge-guest.o
 all: $(OBJS)
+
+$(O)/vk-shim.o: vk-shim.cpp vk/volk.h
+	@mkdir -p $(O)
+	g++ $(SPECS) $(WBFLAGS) -DCHIMERA_GUEST $(VKINCS) $(CXXINCS) -c -o $@ $<
+
+$(O)/volk.o: vk/volk.c vk/volk.h
+	@mkdir -p $(O)
+	gcc $(SPECS) $(WBFLAGS) -DCHIMERA_GUEST -DVK_NO_PROTOTYPES $(VKINCS) -c -o $@ $<
+
+$(O)/vk-guest.o: $(MB)/source/vk/vk-guest.c generated-vk/vk-bridge-ops.h
+	@mkdir -p $(O)
+	gcc $(SPECS) $(WBFLAGS) -DCHIMERA_GUEST -I$(MB)/extern/vulkan-headers/include -I$(MB)/source/vk -Igenerated-vk -c -o $@ $<
+
+$(O)/vk-bridge-guest.o: generated-vk/vk-bridge-guest.c
+	@mkdir -p $(O)
+	gcc $(SPECS) $(WBFLAGS) -DCHIMERA_GUEST -I$(MB)/extern/vulkan-headers/include -I$(MB)/source/vk -Igenerated-vk -c -o $@ $<
 
 $(O)/upstream/%.o: $(ROOT)/extern/rpcs3/rpcs3/%.cpp
 	@mkdir -p $(dir $@)
@@ -54,6 +75,11 @@ $(O)/upstream/%.o: $(ROOT)/extern/rpcs3/rpcs3/%.cpp
 $(O)/%.o: %.cpp rpcs3-driver.h vsched.h
 	@mkdir -p $(O)
 	g++ $(SPECS) $(CXXFLAGS) -c -o $@ $<
+
+# The driver makes the renderers, so it is built again when either class
+# changes. An object left over from before a member was added lays the class
+# out the old way and reads another member's bytes.
+$(O)/rpcs3-driver.o: $(ROOT)/extern/rpcs3/rpcs3/Emu/RSX/GL/GLGSRender.h $(ROOT)/extern/rpcs3/rpcs3/Emu/RSX/VK/VKGSRender.h
 
 # Z7_ST: the guest is one host thread with green threads on it, so the SDK's
 # threaded paths have nothing to gain and a thread it cannot have to lose.

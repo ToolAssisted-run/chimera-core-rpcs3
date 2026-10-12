@@ -162,7 +162,8 @@ missing:
    `waterbox/configure-flags.sh`, and builds `rpcs3_emu` and `Fusion` into
    `build/guest`.
 4. `sh waterbox/build-core.sh -m "$mb"` - always. Generates
-   `waterbox/generated-gl` from miniBox's GL entry list, compiles the adapter
+   `waterbox/generated-gl` from miniBox's GL entry list and
+   `waterbox/generated-vk` from its list of Vulkan commands, compiles the adapter
    (`waterbox/guest.mk`), links `waterbox/bin/core.wbx`, runs miniBox's
    `check-wbx.sh` on it, and builds `waterbox/bin/run-wbx`, the host driver
    the gates use.
@@ -296,6 +297,13 @@ the user's own and all under the gitignored `tests/roms-local/`:
 - `rsx:frame-limit` - a `.zip` or `.iso` in `tests/roms-local/frame-limit/`.
 - The `gpu:*` legs also need a GL context from the host (EGL; llvmpipe will
   do) and SKIP when there is none.
+- `vk:bridge`, `vk:picture`, `vk:rerecord` - the Vulkan renderer. They go
+  through Chimera's headless runner, so they need a built Chimera with this
+  package installed in it (`CHIMERA_ROOT`, default `~/chimera`) and a Vulkan
+  driver; one that draws on the processor will do (Mesa's lavapipe, packages
+  `libvulkan1 mesa-vulkan-drivers`). They run `tests/roms/flip.elf`: 200
+  frames on a Vulkan device, frame 150 against OpenGL's, and a state saved
+  and loaded around every frame against a run without one.
 
 CI has no firmware and no disc, so on a runner only the content-free legs run.
 `docs/PLAN.md`, "What CI runs, and what it does not", says who runs the others
