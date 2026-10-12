@@ -2873,3 +2873,67 @@ script (`vk:bridge`, `vk:picture`, `vk:rerecord`).
   It works and is slower than it need be.
 - The test script has no check that a render target comes back after a load:
   no program in `tests/` uses one (the gap the section before this names).
+
+## The machine stands still while the renderer is made again (2026-10-12)
+
+Found while adding the Vulkan renderer, and older than it: in Dead or Alive 5
+a run that had been rewound was not the run that had not. A hundred frames
+after one rewind in a fight, 37,443 bytes of main memory differed from a
+straight run's - the same bytes under OpenGL and under Vulkan - and of the
+twelve frames drawn right after a load, the eleventh showed the frame before
+it. The owner asked for it to be looked into.
+
+**What it was not.** Taking states changes nothing: a run that takes a state
+every 1700 frames and loads none ends with a straight run's memory. Drawing
+or not drawing a frame changes nothing either. With the frontend told to keep
+its OpenGL objects across the load (`CHIMERA_GL_KEEP_OBJECTS_ON_LOAD`), so
+that the renderer has nothing to make again, the rewound run is the straight
+run byte for byte.
+
+**What it was.** After a load the renderer makes all its objects again, on
+the RSX thread, in the middle of the first frame. That work waits - for the
+shader compiler's threads, for the card - and on this core's scheduler
+waiting is giving way: the console's CPUs ran on beside it. Nothing the game
+could measure with a clock had happened (the rebuild charges no machine
+time), but the RSX had fallen behind the CPUs by the turns it gave away, and
+the game went on from a slightly different machine.
+
+**The fix** is in the scheduler (`waterbox/vsched.cpp`, "aside"; patch 0052
+puts both renderers' rebuilds inside one). Between `vsched_aside_begin` and
+`vsched_aside_end` the machine stands still: no CPU of the console runs,
+nobody who was about to run runs, no wait that began before it times out,
+and the clock is put back where it was when the work is done. What can run
+is the thread that asked, threads made meanwhile, and threads that were
+waiting to be asked for something and are asked - the helpers a renderer
+hands work to. If the work turns out to need a thread that is standing
+still, the aside is given up and the machine runs beside it as it always
+did; a line on standard error says so.
+
+**Measured on a GeForce GTX 1060**, Dead or Alive 5, a load on frame 5100:
+
+- Vulkan, one rewind, memory at frame 5200 against a straight run: 37,443
+  bytes differed; now none.
+- Vulkan, the twelve frames drawn after the load: all twelve are exactly the
+  pictures they were, the eleventh included.
+- OpenGL, three rewinds, memory at frame 5200 against a straight run:
+  37,443 bytes differed; now none.
+- OpenGL, the twelve frames after the load: the eleventh differed from what
+  it was in 96.5% of its pixels (it was the frame before); now 0.65%, like
+  the other eleven, which is what two OpenGL contexts differ by in this
+  scene.
+- The rebuild reports how long it took on its own clock: 0 us in every one
+  of these runs. It charged the machine no time before either; what it cost
+  was the turns.
+
+**The test** is the scheduler alone (`tests/vsched/aside-test.cpp`, check
+`vsched:aside`, no content needed): a CPU thread, a timer, a helper and a
+piece of work that asks the helper, sleeps, makes a thread and yields. Done
+plainly the CPU runs 200 times beside it and the clock moves; set aside,
+neither, and the work is done all the same; and work that needs the CPU
+gives the aside up. Broken on purpose twice - held threads allowed to run,
+old waits allowed to time out - it failed both times.
+
+**Not proved.** One game and one scene. The aside is given up when the
+rebuild needs a thread that is standing still; that did not happen in these
+runs, and a game where it does keeps the old behaviour. A machine that
+differs after a rewind for another reason would not be found by this.

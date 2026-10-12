@@ -99,6 +99,16 @@ void vsched_register_slot_reset(void (*fn)(int slot));
 // destructor used to do).
 void vsched_register_thread_exit(void (*fn)(int slot));
 
+// Work the machine must not notice (what a renderer does after a savestate
+// is loaded). Between the two calls the machine's clock and the console's
+// CPUs stand still, and only the caller, threads made meanwhile and helpers
+// that were waiting to be asked run. vsched_aside_end gives the time the
+// work took on its own clock, which the machine did not see; 0 when there
+// was no aside, or it had to be given up (vsched.cpp says when).
+void vsched_aside_begin(void);
+uint64_t vsched_aside_end(void);
+uint64_t vsched_aside_given_up(void);
+
 // Diagnostics.
 int vsched_thread_count(void);
 uint32_t vsched_current_id(void);

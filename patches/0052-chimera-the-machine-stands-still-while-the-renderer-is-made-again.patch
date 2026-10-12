@@ -1,0 +1,71 @@
+diff --git a/rpcs3/Emu/RSX/GL/GLGSRender.cpp b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+--- a/rpcs3/Emu/RSX/GL/GLGSRender.cpp
++++ b/rpcs3/Emu/RSX/GL/GLGSRender.cpp
+@@ -1719,6 +1719,10 @@
+ 	rsx_log.warning("chimera: %u surfaces came back from the load with their pixels, %u without", kept, empty);
+ }
+ 
++// The machine stands still while the renderer is made again (waterbox/vsched.h)
++extern "C" void vsched_aside_begin(void);
++extern "C" u64 vsched_aside_end(void);
++
+ // chimera: has the ground moved? The objects this renderer holds are names a
+ // particular GL context handed out, and a savestate carries those names into
+ // whatever session loads it. Comparing the context they came from with the one
+@@ -1773,6 +1777,12 @@
+ 		const bool keep_surfaces = after_load && s_chimera_shadow_usable && s_chimera_shadow &&
+ 			reinterpret_cast<const chimera_shadow_header*>(s_chimera_shadow)->magic == chimera_shadow_magic;
+ 		s_chimera_shadow_usable = false;
++
++		// What follows waits and yields like any other work on this thread.
++		// Left in the machine's time, the console's CPUs ran on beside it and
++		// the clock moved, and a run that had been rewound was not the run
++		// that had not (vsched.cpp, "aside").
++		vsched_aside_begin();
+ 		chimera_gl_teardown(keep_surfaces);
+ 		// the cache of what the driver has bound describes objects that are gone
+ 		gl_state.reset();
+@@ -1782,6 +1792,8 @@
+ 			chimera_restore_surfaces();
+ 		}
+ 
++		rsx_log.warning("chimera: the renderer was made again; the machine did not see the %llu us it took", vsched_aside_end() / 1000);
++
+ 		// Nothing the renderer thought was set up still is: the program it had
+ 		// bound, the framebuffer it was drawing into, the textures it had
+ 		// uploaded were all named by the context that is gone. Saying so is
+diff --git a/rpcs3/Emu/RSX/VK/VKGSRender.cpp b/rpcs3/Emu/RSX/VK/VKGSRender.cpp
+--- a/rpcs3/Emu/RSX/VK/VKGSRender.cpp
++++ b/rpcs3/Emu/RSX/VK/VKGSRender.cpp
+@@ -1810,6 +1810,10 @@
+ extern "C" void chimera_rpcs3_vulkan_quiet(void);
+ extern "C" void chimera_rpcs3_vulkan_old_device_gone(void);
+ 
++// The machine stands still while the renderer is made again (waterbox/vsched.h)
++extern "C" void vsched_aside_begin(void);
++extern "C" u64 vsched_aside_end(void);
++
+ // ---- chimera: what the GPU drew is kept with the machine (chimera issue 190) ----
+ //
+ // A render target lives on the device, a savestate is the machine's memory and
+@@ -2231,6 +2235,11 @@
+ 		// everything else.
+ 		const bool keep_surfaces = chimera_shadow_usable(after_load && thread_started);
+ 
++		// What follows waits and yields like any other work on this thread.
++		// Left in the machine's time, the console's CPUs ran on beside it and
++		// the clock moved, and a run that had been rewound was not the run
++		// that had not (vsched.cpp, "aside").
++		vsched_aside_begin();
+ 		m_chimera_vk_rebuilding = true;
+ 		chimera_rpcs3_vulkan_quiet();
+ 		vk::destroy_pipe_compiler();
+@@ -2305,6 +2314,8 @@
+ 		}
+ 		m_chimera_vk_rebuilding = false;
+ 
++		rsx_log.warning("chimera: the renderer was made again; the machine did not see the %llu us it took", vsched_aside_end() / 1000);
++
+ 		// Nothing the renderer thought was set up still is
+ 		m_graphics_state |= rsx::pipeline_state::all_dirty;
+ 	}

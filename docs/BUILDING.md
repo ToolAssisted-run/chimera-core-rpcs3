@@ -280,6 +280,10 @@ Legs that need no content, and so run in CI:
 - `sandbox:reservation-held` - `rsrvtest.elf`, assembled by the gate, runs to
   its end: a CPU waiting for a locked reservation line gives way to the
   holder.
+- `vsched:aside` - the scheduler by itself (`tests/vsched/aside-test.cpp`,
+  built with `g++` by the script): work set aside from the machine, which is
+  what a renderer does after a savestate is loaded, leaves the console's
+  CPUs, its waits and its clock alone and still gets done.
 
 Every other leg needs `tests/roms-local/PS3UPDAT.PUP` and prints SKIP by name
 without it. With the firmware alone the legs over the committed test programs

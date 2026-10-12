@@ -5,6 +5,8 @@
 #   sandbox:equivalent     core.wbx under miniBox prints the native run's lines
 #   sandbox:rewind         save mid-run, finish, load, finish again: equal
 #   sandbox:rerecord       save+load around every frame changes nothing
+#   vsched:aside           the scheduler alone: work set aside from the
+#                          machine leaves its CPUs, waits and clock alone
 #   sandbox:reservation-held  rsrvtest.elf: a 0xAAAAAAAA store meeting a line
 #                          another CPU locked and then gave way inside waits
 #                          by giving way too, and the program runs to its end
@@ -340,6 +342,23 @@ if [ "$have_wbx" = 1 ]; then
 			failed "sandbox:reservation-held - rsrvtest stopped at '${rlast:-no TTY at all}': a CPU waiting for a held reservation line is not giving the machine to its holder ($(tail -1 "$work/rsrv.err"))"
 		fi
 	fi
+fi
+
+# ---- vsched:aside ---------------------------------------------------------
+# The scheduler alone, no emulator: tests/vsched/aside-test.cpp. Work set
+# aside from the machine - what a renderer does after a savestate is loaded -
+# must leave the console's CPUs not run, old waits not timed out and the clock
+# where it was, and must still get done; and work that needs a CPU gives the
+# aside up instead of waiting for ever. The program's first step is its own
+# control: the same work done plainly moves all three.
+if g++ -O1 -pthread -I"$here" -o "$work/aside-test" "$root/tests/vsched/aside-test.cpp" "$here/vsched.cpp" 2>"$work/aside-test.err"; then
+	if timeout 120 "$work/aside-test" > "$work/aside-test.txt" 2>"$work/aside-test.log"; then
+		pass "vsched:aside - $(grep -c '^ok' "$work/aside-test.txt") checks: set aside, the work is done and the machine has not moved ($(sed -n 's/^aside: //p' "$work/aside-test.txt"))"
+	else
+		failed "vsched:aside - $(grep -m1 '^WRONG' "$work/aside-test.txt" || echo 'the program did not finish') (see $work/aside-test.txt)"
+	fi
+else
+	failed "vsched:aside - tests/vsched/aside-test.cpp does not build (see $work/aside-test.err)"
 fi
 
 # ---- everything below needs the user's PS3UPDAT.PUP ---------------------

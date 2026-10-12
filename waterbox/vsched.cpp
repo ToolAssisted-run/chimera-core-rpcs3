@@ -45,6 +45,10 @@ struct vthread
   void* arg;
   int slot;
   vthread* next;  // creation-order ring
+  // see "aside" below
+  bool cpu;         // has run guest instructions: one of the console's CPUs
+  bool held;        // does not run until the aside ends
+  bool aside_wait;  // its wait began during the aside, on the aside's clock
 };
 
 
@@ -107,11 +111,95 @@ static void fpu_restore(const vthread* t)
   __asm__ volatile("fldcw %0" : : "m"(t->fcw));
 }
 
+// ---- aside: work the machine must not notice ------------------------------
+//
+// After a savestate is loaded the renderer makes all its objects again, on
+// the RSX thread, in the middle of a frame. That work waits and yields like
+// any other, so it used to cost the machine time and turns: the console's
+// CPUs ran on while the RSX stood there, and the clock moved. A run that had
+// been rewound was therefore not the run that had not - in Dead or Alive 5,
+// 37,443 bytes of memory apart a hundred frames later, and one frame shown a
+// frame late.
+//
+// Between vsched_aside_begin and vsched_aside_end the machine stands still:
+//  - nobody who was about to run runs, and no CPU of the console runs at all;
+//  - no wait that began before it times out;
+//  - the clock the work sees keeps going, so that its own sleeps end, and is
+//    put back where it was when the work is done.
+// Who can run is the thread that asked, threads made during it, and threads
+// that were waiting to be asked for something and are asked: the helpers a
+// renderer hands work to.
+//
+// If the work turns out to need someone who is standing still - nothing can
+// run and nothing is due, or it goes on past any sensible length - the aside
+// is given up: everyone runs again, as they always did, and a line says so.
+static vthread* g_aside;        // who asked; null when there is none
+static uint64_t g_aside_then;   // the machine's time when it began
+static uint64_t g_aside_switches;
+static uint64_t g_aside_last_ns;
+static uint64_t g_aside_given_up;
+static const uint64_t ASIDE_LIMIT_NS = 120ull * 1000000000ull;
+static const uint64_t ASIDE_LIMIT_SWITCHES = 200ull * 1000 * 1000;
+
+static void aside_close(const char* gave_up)
+{
+  if (!g_aside)
+    return;
+  const uint64_t spent = g_now - g_aside_then;
+  for (vthread* t = g_head; t; t = t->next)
+  {
+    // a wait still running on the aside's clock has the rest of its time
+    // on the machine's
+    if (t->state == WAITING && t->aside_wait && t->deadline != VSCHED_INFINITE)
+      t->deadline = t->deadline > g_now ? g_aside_then + (t->deadline - g_now) : g_aside_then;
+    t->held = false;
+    t->aside_wait = false;
+  }
+  g_now = g_aside_then;
+  g_aside_last_ns = spent;
+  g_aside = nullptr;
+  if (gave_up)
+  {
+    g_aside_given_up++;
+    fprintf(stderr, "vsched: work set aside from the machine was given up after %llu us (%s); the machine runs on beside it\n",
+            (unsigned long long)(spent / 1000), gave_up);
+  }
+}
+
+void vsched_aside_begin(void)
+{
+  if (!g_cur || g_aside)
+    return;
+  g_aside = g_cur;
+  g_aside_then = g_now;
+  g_aside_switches = g_switches;
+  for (vthread* t = g_head; t; t = t->next)
+  {
+    t->held = t != g_cur && (t->state == RUNNABLE || t->cpu);
+    t->aside_wait = false;
+  }
+}
+
+uint64_t vsched_aside_end(void)
+{
+  if (g_aside != g_cur)
+    return 0;  // none, or given up, or not this thread's to end
+  aside_close(nullptr);
+  return g_aside_last_ns;
+}
+
+uint64_t vsched_aside_given_up(void)
+{
+  return g_aside_given_up;
+}
+
 // Wake every timed waiter whose deadline has passed.
 static void wake_expired(void)
 {
+  if (g_aside && (g_now - g_aside_then > ASIDE_LIMIT_NS || g_switches - g_aside_switches > ASIDE_LIMIT_SWITCHES))
+    aside_close("it went on too long");
   for (vthread* t = g_head; t; t = t->next)
-    if (t->state == WAITING && t->deadline <= g_now)
+    if (t->state == WAITING && t->deadline <= g_now && (!g_aside || t->aside_wait))
     {
       t->state = RUNNABLE;
       t->timed_out = 1;
@@ -124,7 +212,7 @@ static vthread* next_runnable_after(vthread* from)
   vthread* t = from->next ? from->next : g_head;
   for (int i = 0; i < g_count; i++)
   {
-    if (t->state == RUNNABLE)
+    if (t->state == RUNNABLE && !(g_aside && t->held))
       return t;
     t = t->next ? t->next : g_head;
   }
@@ -136,8 +224,15 @@ static void advance_to_next_deadline(void)
 {
   uint64_t best = VSCHED_INFINITE;
   for (vthread* t = g_head; t; t = t->next)
-    if (t->state == WAITING && t->deadline < best)
+    if (t->state == WAITING && t->deadline < best && (!g_aside || t->aside_wait))
       best = t->deadline;
+  if (best == VSCHED_INFINITE && g_aside)
+  {
+    // the work needs someone who is standing still
+    aside_close("it waited for a thread that was standing still");
+    wake_expired();
+    return;
+  }
   if (best == VSCHED_INFINITE)
     die("every thread is waiting forever");
   if (best > g_now)
@@ -339,6 +434,7 @@ int vsched_wait(const vsched_wait_item* items, int n, uint64_t timeout_ns)
   self->timed_out = 0;
   self->wait_seq = ++g_wait_seq;
   self->deadline = timeout_ns == VSCHED_INFINITE ? VSCHED_INFINITE : g_now + timeout_ns;
+  self->aside_wait = g_aside != nullptr;
   self->state = WAITING;
   schedule_away();
   self->state = RUNNABLE;
@@ -386,6 +482,8 @@ void vsched_budget_expired(int kind)
   uint64_t q10 = kind == VSCHED_PPU ? PPU_INSTR_NS_Q10 : kind == VSCHED_SPU ? SPU_INSTR_NS_Q10 : RSX_CMD_NS_Q10;
   uint64_t cost = ((uint64_t)BUDGET_PER_SLICE * q10) >> 10;
   vsched_budget = BUDGET_PER_SLICE;
+  if (g_cur && (kind == VSCHED_PPU || kind == VSCHED_SPU))
+    g_cur->cpu = true;
   vsched_yield(cost);
 }
 
