@@ -141,9 +141,19 @@ extern "C" const char* chimera_rpcs3_vulkan_describe(void)
 // are. Taken and cleared by the renderer when it next looks.
 static int s_state_loaded;
 
+// The switch goes on here, at the load itself, and not when the renderer
+// notices: the renderer is not the only thread that calls Vulkan. RPCS3's
+// "Vulkan Driver Manager" thread frees objects the card has finished with,
+// and after a load it can run before the RSX thread has made the renderer
+// again - handing the frontend objects of the device that is gone, which the
+// frontend refuses with "device lost", which RPCS3 takes for the end
+// (Dead or Alive 5, a load on frame 1700). From the load until the renderer
+// has let go of everything, every command is answered "done" and none crosses.
 extern "C" void chimera_rpcs3_vulkan_note_state_loaded(void)
 {
   s_state_loaded = 1;
+  if (s_installed)
+    s_quiet = true;
 }
 
 extern "C" int chimera_rpcs3_vulkan_take_state_loaded(void)

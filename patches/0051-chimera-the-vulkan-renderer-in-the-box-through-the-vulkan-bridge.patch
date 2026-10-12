@@ -704,7 +704,7 @@ diff --git a/rpcs3/Emu/RSX/VK/VKGSRender.cpp b/rpcs3/Emu/RSX/VK/VKGSRender.cpp
  	if (skip_current_frame || swapchain_unavailable) return;
  
  	// If stencil write mask is disabled, remove clear_stencil bit
-@@ -1720,8 +1800,525 @@
+@@ -1720,8 +1800,529 @@
  	}
  }
  
@@ -1217,6 +1217,10 @@ diff --git a/rpcs3/Emu/RSX/VK/VKGSRender.cpp b/rpcs3/Emu/RSX/VK/VKGSRender.cpp
 +		m_graphics_state |= rsx::pipeline_state::all_dirty;
 +	}
 +
++	// Commands were switched off at the load (waterbox/vk-shim.cpp). The
++	// rebuild above switched them on again; where there was nothing to make
++	// again, this does.
++	chimera_rpcs3_vulkan_old_device_gone();
 +	m_chimera_vk_device = live;
 +}
 +#endif

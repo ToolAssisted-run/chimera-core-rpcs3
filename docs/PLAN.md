@@ -2832,6 +2832,16 @@ renderer now says when it is inside its cache, as the OpenGL one does. After
 it, on the same card, 4000 frames: memory equal to the OpenGL run byte for
 byte and four pictures equal pixel for pixel, 105 s against 97 s.
 
+**A third fault, found by a load early in the same game.** A load on frame
+1700 of Dead or Alive 5 ended the core with "device lost". RPCS3's "Vulkan
+Driver Manager" thread frees objects the card has finished with, and after a
+load it ran before the RSX thread had made the renderer again, handing the
+frontend objects of the device that was gone. Commands are now switched off
+at the load itself (StateLoaded) and on again when the renderer has let go of
+everything, so no thread can cross with an old object in between. After it:
+one rewind from frame 1700 runs to frame 1800 and leaves the memory of a
+straight run, byte for byte.
+
 **Vulkan is the default** (user-decided, 2026-10-12): a core whose emulator
 prefers Vulkan defaults to it, and RPCS3's own default renderer is Vulkan.
 `opengl-hw` is still there to choose. The test scripts name `opengl-hw`
