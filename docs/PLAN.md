@@ -2937,3 +2937,20 @@ old waits allowed to time out - it failed both times.
 rebuild needs a thread that is standing still; that did not happen in these
 runs, and a game where it does keeps the old behaviour. A machine that
 differs after a rewind for another reason would not be found by this.
+
+**The whole test script with this change (2026-10-12): 37 passed, 1 failed,
+none skipped.** The one that failed is `gpu:disc`, and it is not this
+change's: on `bejeweled3.iso` the machine's memory under the OpenGL renderer
+is not its memory under the renderer that draws nothing (digests differ from
+frame 20 on; 35 threads against 33; the clock a few microseconds apart by
+frame 40). The published core before today's work (942ba728) gives the same
+two sets of digests, number for number, run through the same test runner. It
+looks new only because this check never reached a result on this machine
+before: the entry above ("gpu:disc, gpu:rewind and gpu:context still fail")
+has the sandbox's OpenGL run on this disc never finishing a frame. It
+finishes now - `gpu:rewind` and `gpu:context` pass - and what `gpu:disc`
+shows is that a renderer's own waiting gives turns to the console's CPUs in
+ordinary frames too, not only in a rebuild. Whether the machine should be the
+same under every renderer, and what that would cost, is the owner's to say;
+nothing was changed for it. One program in the run printed "Aborted (core
+dumped)" without failing a check; it was not traced.
