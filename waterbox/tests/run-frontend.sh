@@ -416,7 +416,9 @@ PYEOF
 fi
 
 # --- 4. the package's bindings became the frontend's defaults ---------------
-if out="$(python3 "$here/check-keybinds.py" "$config" "$wb/default_keybinds.json" "PlayStation 3 Controller" 2>&1)"; then
+# (read from the settings file the first run used and wrote back, not the
+# one it was copied from)
+if out="$(python3 "$here/check-keybinds.py" "$work/config.base.ini" "$wb/default_keybinds.json" "PlayStation 3 Controller" 2>&1)"; then
 	report "keybinds" PASS "$out"
 else
 	report "keybinds" FAIL "$out"
