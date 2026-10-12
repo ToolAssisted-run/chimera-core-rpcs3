@@ -119,9 +119,13 @@ reference_ram() {
 settings_config() { python3 "$here/settings-config.py" "$config" "$1" "$2" "${3:-{\}}"; }
 
 # --- 1. lv2test through the frontend: RAM == the sandbox reference ---------
+# The renderer is named in every run here. The package's default is Vulkan,
+# which a computer without a Vulkan driver - a CI runner - cannot give, and
+# these runs are about the frontend and the machine, not about that.
+settings_config "$work/config.base.ini" '{"renderer": "opengl-hw"}'
 if ! reference_ram "base" "$game"; then
 	report "game:frontend" FAIL "reference runner error (see tests/work/ref.base.log)"
-elif ! run_frontend "base" "$config" "$frames" "$work/base.png" "$game"; then
+elif ! run_frontend "base" "$work/config.base.ini" "$frames" "$work/base.png" "$game"; then
 	report "game:frontend" FAIL "no OK meta (see tests/work/base.log)"
 elif ! cmp -s "$work/ref.base.ram.bin" "$work/base.ram.bin"; then
 	report "game:frontend" FAIL "main memory differs from the sandbox reference"
@@ -304,7 +308,7 @@ cache_root="$data_home/Cache/PrecompiledCode"
 if [ ! -f "$pup" ]; then
 	report "precompile:frontend" SKIP "needs the firmware"
 else
-	settings_config "$work/config.llvm.ini" '{"ppu_decoder": "llvm"}' "$firmware_json"
+	settings_config "$work/config.llvm.ini" '{"renderer": "opengl-hw", "ppu_decoder": "llvm"}' "$firmware_json"
 	rm -rf "$data_home"
 	( cd "$chimera_root" && CHIMERA_DATA_HOME="$data_home" timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=0/2/game" "$game" ) > "$work/precompile-0.log" 2>&1 &
 	pre0=$!
