@@ -239,7 +239,7 @@ if [ -z "$disc" ] || [ ! -f "$pup" ]; then
 	report "disc:frontend" SKIP "needs a decrypted .iso and PS3UPDAT.PUP in tests/roms-local"
 else
 	firmware_json="$(python3 -c "import json,sys; print(json.dumps({'PS3UPDAT.PUP': sys.argv[1]}))" "$pup")"
-	settings_config "$work/config.disc.ini" '{}' "$firmware_json"
+	settings_config "$work/config.disc.ini" '{"renderer": "opengl-hw"}' "$firmware_json"
 	if ! env -u LD_LIBRARY_PATH timeout 900 "$runwbx" "$wbx" --firmware "$pup" \
 		--frames "$dframes" --report "$dframes" --ram-out "$work/ref.disc.ram.full" \
 		"$disc" > "$work/ref.disc.log" 2>&1; then
@@ -263,7 +263,7 @@ fi
 if [ -z "$disc" ] || [ ! -f "$pup" ]; then
 	report "gpu:frontend" SKIP "needs the disc and the firmware"
 else
-	settings_config "$work/config.gpu.ini" '{}' "$firmware_json"
+	settings_config "$work/config.gpu.ini" '{"renderer": "opengl-hw"}' "$firmware_json"
 	# Far enough in that the game has drawn: this disc's first picture is at
 	# frame 200 and nothing before it is anything but black, so a shorter run
 	# proves only that a file was written.

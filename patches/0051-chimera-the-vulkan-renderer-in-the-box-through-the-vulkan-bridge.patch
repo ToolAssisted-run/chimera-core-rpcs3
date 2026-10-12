@@ -519,7 +519,7 @@ diff --git a/rpcs3/Emu/RSX/VK/VKPresent.cpp b/rpcs3/Emu/RSX/VK/VKPresent.cpp
 diff --git a/rpcs3/Emu/RSX/VK/VKGSRender.h b/rpcs3/Emu/RSX/VK/VKGSRender.h
 --- a/rpcs3/Emu/RSX/VK/VKGSRender.h
 +++ b/rpcs3/Emu/RSX/VK/VKGSRender.h
-@@ -299,6 +299,36 @@
+@@ -299,6 +299,41 @@
  
  	void on_init_thread() override;
  	void on_exit() override;
@@ -551,6 +551,11 @@ diff --git a/rpcs3/Emu/RSX/VK/VKGSRender.h b/rpcs3/Emu/RSX/VK/VKGSRender.h
 +public:
 +	// called between frames, before a savestate is taken
 +	void chimera_shadow_surfaces();
++	// whether the RSX thread is inside its texture cache right now: a fault it
++	// takes there, on a page the emulator itself locked, is served by opening
++	// the page and not by this renderer's handler, which would wait for a
++	// lock the thread already holds (chimera_rpcs3_on_fault in the driver)
++	bool chimera_texture_cache_busy() const override { return m_texture_cache.chimera_busy(); }
 +protected:
 +#endif
  	void flip(const rsx::display_flip_info_t& info) override;

@@ -2767,7 +2767,7 @@ does, so the rewind, rerecord and context legs run the same code.
 
 The owner asked for Vulkan in every core whose emulator has it. This is
 RPCS3's own Vulkan renderer, on the Vulkan device Chimera hands a core: the
-Renderer setting has a second value, `vulkan-hw`. OpenGL stays the default.
+Renderer setting has a second value, `vulkan-hw`.
 It needs a Chimera with the Vulkan bridge (Development build 4ca6e302 or
 later) and a graphics driver with Vulkan; without either a project set to it
 does not start and says why.
@@ -2821,6 +2821,22 @@ Last Round, 5200 frames into a fight with one button pressed once a second:
   run is not a straight run in this game with either renderer. Not looked
   into; it is older than this work.
 
+**A second game, and a fault it found (2026-10-12, later).** Dengeki Bunko
+Fighting Climax Ignition drew nothing under Vulkan. Its first blit loads a
+render target from the console's memory, the copy faulted on a page the
+renderer itself had locked, and the renderer's fault handler waited for the
+texture cache's lock - which the same thread held. The OpenGL renderer has
+had the answer since chimera issue 128: a fault the RSX thread takes inside
+its own cache opens the page instead of calling the handler. The Vulkan
+renderer now says when it is inside its cache, as the OpenGL one does. After
+it, on the same card, 4000 frames: memory equal to the OpenGL run byte for
+byte and four pictures equal pixel for pixel, 105 s against 97 s.
+
+**Vulkan is the default** (user-decided, 2026-10-12): a core whose emulator
+prefers Vulkan defaults to it, and RPCS3's own default renderer is Vulkan.
+`opengl-hw` is still there to choose. The test scripts name `opengl-hw`
+wherever they ran the default before, so they test what they tested.
+
 **On Mesa's software Vulkan** (lavapipe), `tests/roms/flip.elf`: frame 150 is
 OpenGL's picture, and a state saved and loaded around every frame leaves the
 memory and the picture of a run without one. These three are in the test
@@ -2828,13 +2844,8 @@ script (`vk:bridge`, `vk:picture`, `vk:rerecord`).
 
 **Not proved, and not done.**
 
-- **One game works and one does not.** Dengeki Bunko Fighting Climax Ignition
-  draws nothing under Vulkan on the same card: the picture stays the empty
-  1920x1080 one for 4000 frames and the memory at the end differs from the
-  OpenGL run's in 164,370 bytes, where OpenGL draws the game. The log names
-  no error. Found at the end of this work and not looked into. Bejeweled 3
-  shows a black picture for 6000 frames under both renderers in the headless
-  runner, so it compared nothing.
+- Two games. Bejeweled 3 shows a black picture for 6000 frames under both
+  renderers in the headless runner, so it compared nothing.
 - The test script was not run to its end with this change. Its first 27
   checks passed (OpenGL and the renderer that draws nothing; they include
   native against sandbox, rewind, a state around every frame, the firmware,
