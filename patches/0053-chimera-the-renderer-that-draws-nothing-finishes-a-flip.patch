@@ -1,0 +1,30 @@
+diff --git a/rpcs3/Emu/RSX/GSRender.cpp b/rpcs3/Emu/RSX/GSRender.cpp
+--- a/rpcs3/Emu/RSX/GSRender.cpp
++++ b/rpcs3/Emu/RSX/GSRender.cpp
+@@ -51,12 +51,25 @@ void GSRender::on_exit()
+ 	}
+ }
+ 
+-void GSRender::flip(const rsx::display_flip_info_t&)
++void GSRender::flip(const rsx::display_flip_info_t& info)
+ {
+ 	if (m_frame)
+ 	{
+ 		m_frame->flip(m_context);
+ 	}
++
++#ifdef CHIMERA_CORE
++	// chimera: the renderer that draws nothing finishes a flip as the others
++	// do. This is the flip it inherits, and it did not go on to the RSX
++	// thread's own (rsx::thread::flip), which OpenGL's and Vulkan's both do
++	// last: that is where a flip that was asked for stops being asked for.
++	// A flip that had been held for its slot (see handle_emu_flip) was
++	// therefore done again at once, a frame was ended that the program had
++	// not ended, and the program saw five flips where it had made four -
++	// "Display queue was discarded while not empty!" in the log, and a
++	// machine that was not the one the other renderers run.
++	rsx::thread::flip(info);
++#endif
+ }
+ 
+ f64 GSRender::get_display_refresh_rate() const

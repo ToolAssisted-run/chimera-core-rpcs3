@@ -2954,3 +2954,46 @@ ordinary frames too, not only in a rebuild. Whether the machine should be the
 same under every renderer, and what that would cost, is the owner's to say;
 nothing was changed for it. One program in the run printed "Aborted (core
 dumped)" without failing a check; it was not traced.
+
+
+## The renderer that draws nothing finishes a flip (user-decided, 2026-10-13)
+
+The owner's decision: the machine is to be the same whichever renderer draws
+it, and with none. The test that says so, `gpu:disc`, failed: on a disc
+(Bejeweled 3) the console's memory with OpenGL differed from its memory with
+the renderer that draws nothing, from the third frame on, and the published
+core before the Vulkan work gave the same two answers.
+
+**The reference was the wrong one.** The renderer that draws nothing
+(`NullGSRender`) has no flip of its own; it inherits `GSRender::flip`, which
+turns the frame and stops. OpenGL's and Vulkan's flips both end by calling
+the RSX thread's own (`rsx::thread::flip`), and that is where a flip that was
+asked for stops being asked for. This core holds a flip until its slot and
+tries it again (patch 0046): under the renderer that draws nothing the
+request was never cleared, so a flip that had just been done was done again,
+a frame was ended that the program had not ended, and the program counted
+five flips where it had made four. RPCS3's log said it each time - "Display
+queue was discarded while not empty!" - and the console's interrupt thread
+ran 964 instructions where it runs 736.
+
+**The change** (patch 0053): the inherited flip goes on to the RSX thread's
+own, as the other two do.
+
+**How it was found.** The RSX thread asked exactly the same of the scheduler
+in both runs. The first thing that differed was a CPU thread's slice: 15
+instructions more in one run, with everything before it the same - so the
+program had read something else. The two runs' logs, compared with their
+times taken out, had the discarded queue in one and not the other.
+
+A first idea was wrong and is not in the code: OpenGL brings two threads the
+other does not have (a pipeline compiler and the overlays' input thread),
+and keeping such threads out of the machine's turns was written and tried.
+It changed nothing here and was taken out again.
+
+**Measured** (native build, Bejeweled 3, every frame compared): memory,
+sound, lag count and the machine's time are the same with no renderer and
+with OpenGL at all 300 frames. Before: the same for two frames.
+
+Every run with the renderer that draws nothing changes with this - it is
+what most of this repository's tests run on - but no project uses it: a
+package's renderers are the two that draw.
