@@ -51,6 +51,10 @@ python3 "$mb/source/gl/gen-gl-bridge.py" "$here/glad/include/glad/gl.h" \
 mkdir -p "$here/generated-vk"
 python3 "$mb/source/vk/gen-vk-bridge.py" "$mb/extern/vulkan-headers/registry/vk.xml" \
 	"$mb/source/vk/vk-entry-points.txt" "$here/generated-vk"
+# the device extensions that bridge offers, as its host half lists them: the
+# test script holds them against the commands RPCS3 asks for by name
+sed -n '/^static const char \*const kDeviceExtensions\[\]/,/^};/p' "$mb/source/vk/vk-host.c" \
+	| grep -o '"VK_[A-Za-z0-9_]*"' | tr -d '"' > "$here/generated-vk/offered-extensions.txt"
 make -f "$here/guest.mk" -C "$here" -j"$jobs" MB="$mb"
 
 mkdir -p "$out"

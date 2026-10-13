@@ -1166,6 +1166,25 @@ fi
 # What they do NOT hold: flip.elf draws with the processor and has no render
 # target, so nothing here shows that what the card drew comes back after a
 # load. That was measured in games on a GeForce GTX 1060 (docs/PLAN.md).
+# One more needs no firmware, no card and no run: RPCS3 asks the device by
+# name for the commands of a few extensions, and calls one when the device
+# says it has the extension - whether or not the name was answered. So every
+# such command of an extension the bridge offers has to be answered. Tekken 6
+# ended on a call to address 0 for want of one (chimera issue 268).
+vknames="$here/generated-vk"
+if [ ! -f "$vknames/vk-bridge-guest.c" ] || [ ! -f "$vknames/offered-extensions.txt" ]; then
+	skip "vk:names - needs waterbox/generated-vk, which build-core.sh writes"
+else
+	rc=0
+	said="$(python3 "$here/tests/check-vk-names.py" "$root/extern/rpcs3/rpcs3/Emu/RSX/VK/VKProcTable.h" \
+		"$vknames/vk-bridge-guest.c" "$vknames/offered-extensions.txt" 2>&1)" || rc=$?
+	if [ "$rc" = 0 ]; then
+		pass "vk:names - $said"
+	else
+		failed "vk:names - $said"
+	fi
+fi
+
 vk_legs="vk:bridge vk:picture vk:rerecord"
 crunroot=""
 for c in "${CHIMERA_ROOT:-}" "$root/../chimera" "$HOME/chimera"; do

@@ -2997,3 +2997,53 @@ with OpenGL at all 300 frames. Before: the same for two frames.
 Every run with the renderer that draws nothing changes with this - it is
 what most of this repository's tests run on - but no project uses it: a
 package's renderers are the two that draw.
+
+## A Vulkan command asked for by name has to be answered (chimera issue 268, 2026-10-13)
+
+**Reported:** Tekken 6 with the Vulkan renderer ended the program at frame
+67, calling address 0. Two people, two computers, the same place.
+
+**Cause.** RPCS3 keeps its own table of the commands of a few extensions
+(`VKProcTable.h`) and fills it by asking the device for each by name
+(`vk::init`). Whether it then calls one is decided elsewhere, by whether the
+device says it has the extension. Chimera's Vulkan bridge offered
+`VK_KHR_synchronization2` and knew its commands by the names they have had
+since Vulkan 1.3 (`vkCmdSetEvent2`), not by the extension's
+(`vkCmdSetEvent2KHR`). So the table held nothing for three commands RPCS3
+believed it had. The first one called is the event a texture read-back waits
+on (`vk::event::signal`, from `cached_texture_section::dma_transfer`), and
+few programs take that road in their first frames - which is why the games
+the Vulkan renderer was proved with did not find it.
+
+**The change is not in this repository.** The bridge (miniBox, commit
+2b86a8a) now answers a command under every name it has, and Chimera's half
+asks the driver under each name. The half this core carries is generated
+when it is built (`waterbox/generated-vk`), so the fix is a rebuild. A core
+built this way runs on a Chimera built before the change; on a driver that
+answers the newer name only to a program that asked for Vulkan 1.3 - Mesa's
+do, and RPCS3 asks for 1.2 - it also needs a Chimera built after it, or the
+event is never set and the renderer waits for it for ever.
+
+**The check** (`vk:names`, `waterbox/tests/check-vk-names.py`): every command
+of `VKProcTable.h` that belongs to an extension the bridge offers is answered
+by the bridge. It needs no firmware and no card, so it runs in CI. Seen to
+fail against the bridge as it was: "offered but not answered:
+vkCmdSetEvent2KHR, vkCmdWaitEvents2KHR, vkCmdPipelineBarrier2KHR". Of the
+twelve commands in the table five belong to offered extensions today; the
+other seven (debug names, device faults, multi-draw, host memory) belong to
+extensions the bridge does not offer, and RPCS3 does not call them.
+
+**Measured** (Tekken 6, a folder dump packed as a .zip, the Vulkan renderer):
+
+- Linux, Mesa's software driver (llvmpipe 25.2.8): the published core
+  (8c1e01fd) ends at the call to address 0. Rebuilt, with a Chimera from
+  before the change: it spins, asking `vkGetEventStatus`, for as long as it
+  is left (ten minutes). With both: 300 frames.
+- A GeForce GTX 1060 on Windows (Vulkan 1.4.312): the published core ends as
+  reported. Rebuilt: 6,000 frames with Start and Cross pressed in turn - the
+  logos, the main menu, the opening of the Scenario Campaign and into its
+  first fight - and the pictures at frames 3,000 and 5,999 are the same with
+  a Chimera from before the change and one from after it.
+
+**Not proven:** nothing was played past that first fight, and sound was not
+listened to. The OpenGL renderer was not tried with this game.

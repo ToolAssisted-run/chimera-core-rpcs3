@@ -308,6 +308,10 @@ the user's own and all under the gitignored `tests/roms-local/`:
   `libvulkan1 mesa-vulkan-drivers`). They run `tests/roms/flip.elf`: 200
   frames on a Vulkan device, frame 150 against OpenGL's, and a state saved
   and loaded around every frame against a run without one.
+- `vk:names` needs nothing but a built core: it holds the commands RPCS3 asks
+  a Vulkan device for by name (`VKProcTable.h`) against the names the bridge
+  answers and the extensions it offers (`waterbox/generated-vk`, written by
+  `build-core.sh`). It runs in CI.
 
 CI has no firmware and no disc, so on a runner only the content-free legs run.
 `docs/PLAN.md`, "What CI runs, and what it does not", says who runs the others
