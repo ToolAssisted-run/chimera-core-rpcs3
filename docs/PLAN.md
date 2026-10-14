@@ -3047,3 +3047,17 @@ extensions the bridge does not offer, and RPCS3 does not call them.
 
 **Not proven:** nothing was played past that first fight, and sound was not
 listened to. The OpenGL renderer was not tried with this game.
+
+## 2026-10-14: the default bindings name keys Chimera sends
+
+The d-pad was on UpArrow, DownArrow, LeftArrow and RightArrow, L2 and R2 on 1
+and 3; they are on Up, Down, Left, Right, Number1 and Number3. Chimera hands a
+key to the bindings under one name: the name its DistinctKeyNameOverrides
+gives it ("Number1", "Enter", "Backtick", "KeypadAdd") or else its DistinctKey
+name ("Up"); and unless told otherwise it reads the left and right Shift, Ctrl
+and Alt as one key each, "Shift", "Ctrl" and "Alt" (Input.cs,
+Config.MergeLAndRModifierKeys). A default binding to another name never fired,
+so those controls shipped unbound on the keyboard. Checked on Xvfb: with 1,
+Return, left Shift and Up held, Chimera reports Number1, Enter, Shift and Up.
+Left and right names stay beside the merged one, for a setup with the merging
+off.
