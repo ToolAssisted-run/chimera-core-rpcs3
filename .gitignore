@@ -17,3 +17,5 @@ waterbox/generated-vk/
 waterbox/generated-assets.cpp
 waterbox/wiki-compat.cpp
 tools/wiki-ids.cache.jsonl
+# logs of past runs and builds written at the top
+/*.log

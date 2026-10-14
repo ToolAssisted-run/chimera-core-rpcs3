@@ -1,6 +1,0 @@
-PASS: native deterministic at 600 frames (30651 TTY bytes, threads 29 time 11000001 running 1)
-PASS: native == sandbox at 600 frames (RAM + TTY digests)
-PASS: rewind leg - rewind: pass1 236b81133760bd66 pass2 236b81133760bd66 -> EQUAL (state 21983146 bytes)
-PASS: rerecord leg - save+load around every frame changes nothing (200 frames)
-PASS: firmware:lle - threads 28 firmware 4.82, liblv2 LLE, native == sandbox at 200 frames
-GATE EXIT 0
