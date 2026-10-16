@@ -78,6 +78,14 @@ enum vsched_kind
 };
 extern int64_t vsched_budget;
 void vsched_budget_expired(int kind);
+
+// A poll that found nothing: a CPU read the count of a channel that only
+// another thread can fill, and it was empty (chimera#294). Gives the machine to
+// another runnable thread, charging the `used` instructions of `kind` run since
+// the slice began, and at least a microsecond. Returns 1 when it gave way. With
+// nobody else to run it charges nothing and returns 0, and the poller goes on
+// with its slice as it always did.
+int vsched_poll_yield(int kind, int64_t used);
 // the size of one budget, for code that keeps its own counter (a recompiler)
 int64_t vsched_budget_slice(void);
 

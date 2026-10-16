@@ -3089,3 +3089,52 @@ CPU: a PPU compile worker had stopped on the layout check of 2026-10-16
 (the budget field paragraph under PPU LLVM, above) in a native runner that was out
 of date. Checked by making the same check fail on purpose: the run that hung
 before ended in 1.7 s, and the fatal error was printed.
+
+## 2026-10-16: an SPU that polls an empty mailbox gives way (chimera#294)
+
+Pac-Man Championship Edition DX+ (NPUB30304) ran its main menu at about seven
+pictures a second while its music played at the right speed. A temporary
+probe of the scheduler (time charged to each thread, every 120 frames) showed
+where the machine's time went in the menu: 88% to one raw SPU, 7% to a SPURS
+kernel, 4% to the RSX thread, and almost nothing to the PPU main thread,
+which only polled the raw SPU's registers. The raw SPU sat in a loop of
+`rchcnt SPU_RdInMbox` / `brz` back to the top: it waits for a job by polling
+its inbound mailbox. The game hands it a job by mailbox and polls for the
+reply, about six hundred times a frame.
+
+Natively that SPU spins on a core of its own while the PPU runs. Here one
+thread runs at a time on one clock, so a poll that found the mailbox empty
+kept running until its slice of 80,000 instructions was spent and charged the
+machine 25 us for it before the PPU could answer. Every round trip cost a
+slice: 600 x 25 us is most of a 16.7 ms frame.
+
+Patch 0055: when an SPU reads the count of a channel only another thread
+fills (inbound mailbox, signal notifications, event status, room in the
+outbound mailboxes) and it is zero, `vsched_poll_yield` gives the machine to
+another runnable thread at once, charging what the SPU ran since its slice
+began and at least a microsecond, so that pollers waiting on a clock still
+move it. With nobody else runnable it charges nothing and the SPU goes on as
+before. Both SPU decoders do it: the ASMJIT recompiler in the emitted RCHCNT
+(and the event-status helper), the interpreter in its RCHCNT.
+
+Measured in the sandbox, null renderer, the same presses, 2880 frames:
+
+| | flips per 120 frames in the menu | host time |
+| --- | --- | --- |
+| before | 14 (7 a second) | 61 s |
+| poll gives way, at least 1 us | 120 (60 a second) | 51 s |
+| the same, doubling the minimum for each empty poll in a row | 67 | 33 s |
+
+The doubling version was tried to keep idle SPUs from switching threads so
+often, and lost half the speed; the flat microsecond was kept. On the GTX
+1060 under Vulkan the menu's picture now changes on every frame (it changed
+every eight or nine), and the same 2,721-frame run took 68 s against about 8
+minutes before. This changes the machine of every game whose SPUs poll a
+channel, so a movie made with an earlier version of the core does not play
+back on this one; projects keep the core version they were made with.
+
+Not fixed: the white band drawn over the menu's panels in the same game. The
+reporter's standalone RPCS3 draws coloured light streaks behind the panels.
+It is the same under OpenGL and Vulkan and with zcull accuracy, strict
+rendering, writing colour buffers, disabling zcull queries, anti-aliasing and
+SPU xfloat accuracy changed one at a time, so it is none of those settings.

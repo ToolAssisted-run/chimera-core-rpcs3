@@ -13,6 +13,9 @@
 #   rsx:frame-limit        with a game in tests/roms-local/frame-limit: at
 #                          frameLimit 60 the flip is held, not slept, and a
 #                          game streaming at its memory ceiling does not run out
+#   spu:mailbox-poll       with a game in tests/roms-local/spu-poll whose SPU
+#                          polls its mailbox: the menu runs at its own speed
+#                          because an empty poll gives way (chimera#294)
 #   firmware:lle           with Sony's PUP (tests/roms-local, never committed):
 #                          the firmware installs in the box, liblv2 is LLE, and
 #                          native == sandbox still holds
@@ -1036,6 +1039,54 @@ else
 		failed "rsx:frame-limit - $(basename "$limitgame") at frameLimit 60 ran, but $lnomem allocations failed on the way: the limit is starving the threads that free memory"
 	else
 		pass "rsx:frame-limit - $(basename "$limitgame") at frameLimit 60: 200 frames, no allocation failed (the sleeping limiter ran it out of memory by frame 150)"
+	fi
+fi
+
+# ---- spu:mailbox-poll ----------------------------------------------------
+# An SPU that waits for work by polling its inbound mailbox (rchcnt, then a
+# branch back) ran out its whole slice of 80,000 instructions before the PPU
+# could hand it the next job, and the machine was charged 25 us of spinning
+# for every round trip. Pac-Man Championship Edition DX+ passes its raw SPU
+# about six hundred jobs a frame, and its menu drew seven pictures a second
+# (chimera#294). Patch 0055 makes an empty poll give way at once.
+#
+# The subject is that game as a package, its update, its unlock key and the
+# key's licence, in tests/roms-local/spu-poll/: the largest package is the
+# game, and the other packages and the .rap go in as a project's Packages and
+# Licences would. Start is pressed through the
+# title screen, and over 2880 frames (its loading and about 750 frames of the
+# menu) the RSX must show at least 2600 flips.
+#
+# NEGATIVE CONTROL, measured 2026-10-16: the same core without patch 0055 (the
+# poll never gives way) shows 1936 flips, and 14 in each 120 frames of the
+# menu; with it, 2726 and 120.
+pollgame=""
+pollextra=""
+if [ -d "$root/tests/roms-local/spu-poll" ]; then
+	pollgame="$(ls -S "$root"/tests/roms-local/spu-poll/*.pkg 2>/dev/null | head -1)"
+fi
+for f in "$root"/tests/roms-local/spu-poll/*.pkg; do
+	[ -f "$f" ] && [ "$f" != "$pollgame" ] && pollextra="$pollextra --pkg $f"
+done
+for f in "$root"/tests/roms-local/spu-poll/*.rap; do
+	[ -f "$f" ] && pollextra="$pollextra --rap $f"
+done
+if [ -z "$pollgame" ]; then
+	skip "spu:mailbox-poll - no game in tests/roms-local/spu-poll/ (would prove: an SPU polling an empty mailbox gives way, so a game that hands its SPU jobs by mailbox runs at its own speed)"
+elif [ "$have_wbx" != 1 ]; then
+	skip "spu:mailbox-poll - needs the sandbox build"
+else
+	# shellcheck disable=SC2086 # the package and licence list is split on purpose
+	timeout 1800 "$wbx" "$core" --firmware "$pup" $pollextra --settings '{"renderer":"null"}' \
+		--press 1700:6:5 --press 1900:6:5 --press 2100:6:5 --frames 2880 --report 2880 "$pollgame" \
+		> "$work/poll-out.txt" 2>"$work/poll.err"
+	pflips="$(sed -n 's/^rsx: [0-9]* frames ended for \([0-9]*\) flips$/\1/p' "$work/poll.err" | tail -1)"
+	if ! grep -q '^frame  2880' "$work/poll-out.txt"; then
+		failed "spu:mailbox-poll - $(basename "$pollgame") did not run 2880 frames (see $work/poll.err)"
+	elif [ -z "$pflips" ] || [ "$pflips" -lt 2600 ]; then
+		failed "spu:mailbox-poll - ${pflips:-no} flips in 2880 frames, want at least 2600 (1936 when the poll never gives way)"
+	else
+		pass "spu:mailbox-poll - $pflips flips in 2880 frames (1936 when an empty poll does not give way)"
 	fi
 fi
 

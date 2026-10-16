@@ -19,6 +19,7 @@ static const uint64_t RSX_CMD_NS_Q10 = 20480;   // 20 ns
 static const int64_t BUDGET_PER_SLICE = 80000;  // instructions before a thread gives way
 static const uint32_t RSX_CMDS_PER_SLICE = 2500;  // 50 us of FIFO work
 static const uint64_t YIELD_COST_NS = 1000;
+static const uint64_t POLL_YIELD_MIN_NS = 1000;  // what a poll that gave way costs at least
 static const size_t THREAD_STACK_BYTES = 4u << 20;
 
 enum state_t
@@ -475,6 +476,32 @@ void vsched_sleep(uint64_t ns)
   static uint32_t nobody;
   vsched_wait_item it = {&nobody, 0};
   vsched_wait(&it, 1, ns);
+}
+
+// A CPU polling a channel nobody has filled: natively it spins on a core of
+// its own while the thread that will fill it runs on another. Here one thread
+// runs at a time, so a poll that ran out its slice charged the machine a whole
+// slice of spinning (25 us for an SPU) before the other thread could answer,
+// and a game that passes an SPU a job by mailbox and waits for the reply paid
+// that on every round trip: Pac-Man Championship Edition DX's menu made about
+// six hundred of them a frame and drew seven pictures a second. Giving way at
+// once makes the round trip cost what was run, and a microsecond at least, so
+// that pollers waiting on a clock still move it.
+int vsched_poll_yield(int kind, int64_t used)
+{
+  if (!g_cur || g_aside)
+    return 0;
+  vthread* other = next_runnable_after(g_cur);
+  if (!other || other == g_cur)
+    return 0;
+  const uint64_t q10 = kind == VSCHED_PPU ? PPU_INSTR_NS_Q10 : SPU_INSTR_NS_Q10;
+  uint64_t cost = used > 0 ? ((uint64_t)used * q10) >> 10 : 0;
+  if (cost < POLL_YIELD_MIN_NS)
+    cost = POLL_YIELD_MIN_NS;
+  g_cur->cpu = true;
+  vsched_budget = BUDGET_PER_SLICE;
+  vsched_yield(cost);
+  return 1;
 }
 
 void vsched_budget_expired(int kind)
