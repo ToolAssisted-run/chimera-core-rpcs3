@@ -1,21 +1,25 @@
 diff --git a/rpcs3/Emu/Cell/PPUThread.h b/rpcs3/Emu/Cell/PPUThread.h
-index 9a135c00c..0aae8bf49 100644
+index 9a135c00c..d39c17519 100644
 --- a/rpcs3/Emu/Cell/PPUThread.h
 +++ b/rpcs3/Emu/Cell/PPUThread.h
-@@ -230,6 +230,13 @@ public:
- 	u32 vrsave{0xffffffff}; // VR Save Register
- 	u32 cia{}; // Current Instruction Address
+@@ -260,6 +260,17 @@ public:
+ 	// Optimization: precomputed java-mode mask for handling denormals
+ 	u32 jm_mask = 0x7f80'0000;
  
 +#ifdef CHIMERA_CORE
 +	// Chimera: instructions this thread may still run before the scheduler
 +	// takes the clock forward; LLVM-compiled code charges it per basic block
-+	// (PPUTranslator.cpp), the interpreter charges its own per instruction
++	// (PPUTranslator.cpp), the interpreter charges its own per instruction.
++	// It stays after jm_mask: the PPU recompiler describes every field from
++	// gpr to jm_mask as one fixed list (PPUTranslator's context_t), and a
++	// field inside that range moves the ones after it out from under the
++	// compiled code
 +	s64 chimera_budget = 0;
 +#endif
 +
- 	// Fixed-Point Exception Register (abstract representation)
- 	struct
- 	{
+ 	u32 raddr{0}; // Reservation addr
+ 	u64 rtime{0};
+ 	alignas(64) std::byte rdata[128]{}; // Reservation data
 diff --git a/rpcs3/Emu/Cell/PPUThread.cpp b/rpcs3/Emu/Cell/PPUThread.cpp
 index f63adc580..844f3e3bf 100644
 --- a/rpcs3/Emu/Cell/PPUThread.cpp
@@ -82,10 +86,29 @@ index 1d99b27f8..f35ac5b84 100644
  	bs_t<ppu_attr> m_attr{};
  
 diff --git a/rpcs3/Emu/Cell/PPUTranslator.cpp b/rpcs3/Emu/Cell/PPUTranslator.cpp
-index 864eb63d6..4771064ac 100644
+index 864eb63d6..7c5a9846d 100644
 --- a/rpcs3/Emu/Cell/PPUTranslator.cpp
 +++ b/rpcs3/Emu/Cell/PPUTranslator.cpp
-@@ -300,6 +300,9 @@ Function* PPUTranslator::Translate(const ppu_function& info)
+@@ -101,6 +101,18 @@ PPUTranslator::PPUTranslator(LLVMContext& context, Module* _module, const ppu_mo
+ 
+ 	m_thread_type = StructType::create(m_context, thread_struct, "context_t");
+ 
++#ifdef CHIMERA_CORE
++	// Chimera: the list above must describe ppu_thread exactly; a field the
++	// core adds inside it moves XER, NJ, SAT and jm_mask out from under the
++	// compiled code (Tekken 5 DR's allocator read CR7 through a moved XER.SO)
++	{
++		const auto layout = _module->getDataLayout().getStructLayout(m_thread_type);
++		const u64 so = layout->getElementOffset(::size32(thread_struct) - 8);
++		const u64 jm = layout->getElementOffset(::size32(thread_struct) - 1);
++		ensure(so == offset32(&ppu_thread::xer) && jm == offset32(&ppu_thread::jm_mask));
++	}
++#endif
++
+ 	const auto md_name = MDString::get(m_context, "branch_weights");
+ 	const auto md_low = ValueAsMetadata::get(ConstantInt::get(GetType<u32>(), 1));
+ 	const auto md_high = ValueAsMetadata::get(ConstantInt::get(GetType<u32>(), 666));
+@@ -300,6 +312,9 @@ Function* PPUTranslator::Translate(const ppu_function& info)
  
  			const u32 op = *ensure(m_info.get_ptr<u32>(::narrow<u32>(m_addr + base)));
  
@@ -95,7 +118,7 @@ index 864eb63d6..4771064ac 100644
  			(this->*(s_ppu_decoder.decode(op)))({op});
  
  			if (m_rel)
-@@ -541,8 +544,30 @@ Value* PPUTranslator::RotateLeft(Value* arg, Value* n)
+@@ -541,8 +556,30 @@ Value* PPUTranslator::RotateLeft(Value* arg, Value* n)
  	return m_ir->CreateOr(m_ir->CreateShl(arg, m_ir->CreateAnd(n, mask)), m_ir->CreateLShr(arg, m_ir->CreateAnd(m_ir->CreateNeg(n), mask)));
  }
  
@@ -126,7 +149,7 @@ index 864eb63d6..4771064ac 100644
  	const auto type = m_function->getFunctionType();
  	const auto block = m_ir->GetInsertBlock();
  
-@@ -834,6 +859,9 @@ Value* PPUTranslator::Trunc(Value* value, Type* type)
+@@ -834,6 +871,9 @@ Value* PPUTranslator::Trunc(Value* value, Type* type)
  
  void PPUTranslator::UseCondition(MDNode* hint, Value* cond)
  {
@@ -136,7 +159,7 @@ index 864eb63d6..4771064ac 100644
  	FlushRegisters();
  
  	if (cond)
-@@ -854,6 +882,9 @@ llvm::Value* PPUTranslator::GetMemory(llvm::Value* addr)
+@@ -854,6 +894,9 @@ llvm::Value* PPUTranslator::GetMemory(llvm::Value* addr)
  
  void PPUTranslator::TestAborted()
  {

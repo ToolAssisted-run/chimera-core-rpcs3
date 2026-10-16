@@ -357,7 +357,14 @@ optimisation. No user interface, no networking, no real audio or input devices.
   charges the budget at every point control may leave the straight line
   (CallFunction, UseCondition, TestAborted), calling `__chimera_budget` when it
   runs dry; and no boot-time sweep of the firmware's libraries (that alone was
-  three minutes of host time per session). Pins: one compile thread, target
+  three minutes of host time per session). The budget field sits after
+  `jm_mask`: the translator describes ppu_thread from `state` to `jm_mask` as
+  one fixed list of types, and until 2026-10-16 the field sat after `cia`,
+  inside that list, so compiled code read and wrote XER (SO, OV, CA), NJ, SAT
+  and `jm_mask` 8 bytes off, in the budget counter. Tekken 5 Dark
+  Resurrection Online crashed from it (its `mfocrf` took in a changing SO
+  bit). The translator now checks the list against the real offsets and
+  stops at once if they differ. Pins: one compile thread, target
   CPU x86-64-v3, no precompilation. lv2test on LLVM: deterministic natively,
   liblv2 + the program compile in about ten seconds. GTA: 80 modules compile
   in 464 s, then 94 fps against the interpreter's 47 in the same phase.

@@ -288,6 +288,18 @@ int main(int argc, char** argv)
         chimera_gl_host_state_loaded();
       }
 #endif
+    // CHIMERA_PEEK_FRAME=ADDR:N: guest memory after every frame, for a value
+    // that goes wrong between two reports
+    if (const char* pf = getenv("CHIMERA_PEEK_FRAME"))
+    {
+      unsigned long a = 0;
+      int n = 0;
+      if (sscanf(pf, "%lx:%d", &a, &n) == 2)
+      {
+        fprintf(stderr, "== frame %ld\n", f);
+        chimera_rpcs3_peek((uint32_t)a, 0, n, 0);
+      }
+    }
     if (f % report == 0 || f == frames)
     {
       int64_t tn;
