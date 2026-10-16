@@ -3068,3 +3068,24 @@ so those controls shipped unbound on the keyboard. Checked on Xvfb: with 1,
 Return, left Shift and Up held, Chimera reports Number1, Enter, Shift and Up.
 Left and right names stay beside the merged one, for a setup with the merging
 off.
+
+## 2026-10-16: a thread that dies of a fatal error leaves the scheduler
+
+A thread that hit a fatal error (an `ensure` that failed, for one) stopped the
+whole machine for good: nothing crashed, nothing ran again, and the process
+used no CPU. Every thread of the machine runs only when the scheduler
+(`waterbox/vsched.cpp`) gives it the turn, and a thread hands the turn on
+when it leaves through `vsched_exit`. Patch 0003 sends a thread's normal
+exit there, but RPCS3 ends a thread that died of a fatal error through its
+own `pthread_exit`, in `thread_ctrl::emergency_exit` and
+`thread_ctrl::silent_exit`. The dead thread kept the turn, and every other
+thread waited for it forever.
+
+Patch 0054 sends those two exits through `vsched_exit` as well. The thread
+is still gone, as it is upstream, and the rest of the machine goes on.
+
+Found when the test script's LLVM test hung for two hours with 1 second of
+CPU: a PPU compile worker had stopped on the layout check of 2026-10-16
+(the budget field paragraph under PPU LLVM, above) in a native runner that was out
+of date. Checked by making the same check fail on purpose: the run that hung
+before ended in 1.7 s, and the fatal error was printed.

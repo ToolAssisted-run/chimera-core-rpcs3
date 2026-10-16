@@ -126,7 +126,7 @@ CI skips each `meson setup` when the directory's `build.ninja` is already there
 ### Patches
 
 `patches/` holds the numbered patch series against `extern/rpcs3` (0001 to
-0053). `waterbox/apply-patches.sh` applies it, and `build-guest.sh` and
+0054). `waterbox/apply-patches.sh` applies it, and `build-guest.sh` and
 `build-native.sh` both run it first, so there is normally nothing to do by
 hand. The series is judged as a whole:
 

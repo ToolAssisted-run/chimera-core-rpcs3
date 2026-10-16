@@ -1,0 +1,24 @@
+diff --git a/Utilities/Thread.cpp b/Utilities/Thread.cpp
+--- a/Utilities/Thread.cpp
++++ b/Utilities/Thread.cpp
+@@ -3561,6 +3561,10 @@
+ 
+ #ifdef _WIN32
+ 		_endthreadex(0);
++#elif defined(CHIMERA_CORE)
++		// Chimera: leave the scheduler too, or the dead thread keeps the turn
++		// and every other thread of the machine waits for it forever
++		vsched_exit();
+ #else
+ 		pthread_exit(nullptr);
+ #endif
+@@ -3588,6 +3592,9 @@
+ 
+ #ifdef _WIN32
+ 	_endthreadex(0);
++#elif defined(CHIMERA_CORE)
++	// Chimera: as in emergency_exit
++	vsched_exit();
+ #else
+ 	pthread_exit(nullptr);
+ #endif
