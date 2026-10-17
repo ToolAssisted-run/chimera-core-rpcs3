@@ -1,0 +1,19 @@
+diff --git a/rpcs3/Emu/CPU/CPUThread.cpp b/rpcs3/Emu/CPU/CPUThread.cpp
+--- a/rpcs3/Emu/CPU/CPUThread.cpp
++++ b/rpcs3/Emu/CPU/CPUThread.cpp
+@@ -1065,7 +1065,14 @@
+ 				// threads started, behind the autosave notice (chimera#179).
+ 				// The thread is flagged as waiting, as the holder needs; let
+ 				// the holder finish.
+-				if (!cpu_can_stop && is_paused())
++				//
++				// A thread returning from a callback (cpu_flag::ret), or
++				// stopped, does not wait on the next pass either: those flags
++				// make it leave at once, back to this same test. Rayman
++				// Legends' main thread went round here for good, returning
++				// from its trophy status callback while another thread wanted
++				// the memory lock (chimera#294, under a frame limit of 60).
++				if ((!cpu_can_stop && is_paused()) || state & cpu_flag::ret || is_stopped())
+ 				{
+ 					CHIMERA_YIELD();
+ 				}

@@ -1,0 +1,28 @@
+diff --git a/rpcs3/Emu/RSX/RSXFIFO.cpp b/rpcs3/Emu/RSX/RSXFIFO.cpp
+--- a/rpcs3/Emu/RSX/RSXFIFO.cpp
++++ b/rpcs3/Emu/RSX/RSXFIFO.cpp
+@@ -11,6 +11,10 @@
+ 
+ #include "util/asm.hpp"
+ 
++#ifdef CHIMERA_CORE
++#include "vsched.h"
++#endif
++
+ #include <thread>
+ 
+ using spu_rdata_t = std::byte[128];
+@@ -669,7 +673,13 @@
+ 				}
+ 				else
+ 				{
++#ifdef CHIMERA_CORE
++					// Chimera: the next CPU to move PUT hands the RSX the
++					// machine (vsched_rsx_idle, chimera#294)
++					vsched_rsx_idle(&ctrl->put);
++#else
+ 					CHIMERA_YIELD();
++#endif
+ 				}
+ 
+ 				return;

@@ -17,6 +17,7 @@ static const uint64_t PPU_INSTR_NS_Q10 = 640;   // 0.625 ns in 1/1024 ns
 static const uint64_t SPU_INSTR_NS_Q10 = 320;   // 0.3125 ns
 static const uint64_t RSX_CMD_NS_Q10 = 20480;   // 20 ns
 static const int64_t BUDGET_PER_SLICE = 80000;  // instructions before a thread gives way
+static const int64_t BUDGET_PER_LOOK = 4000;     // instructions between looks at an idle RSX (see "the RSX's queue")
 static const uint32_t RSX_CMDS_PER_SLICE = 2500;  // 50 us of FIFO work
 static const uint64_t YIELD_COST_NS = 1000;
 static const uint64_t POLL_YIELD_MIN_NS = 1000;  // what a poll that gave way costs at least
@@ -63,11 +64,15 @@ static uint64_t g_wait_seq;
 static uint64_t g_switches;
 static int g_count;
 
-int64_t vsched_budget = BUDGET_PER_SLICE;
+int64_t vsched_budget = BUDGET_PER_LOOK;
+static int64_t g_turn_run;  // instructions charged since the running thread's turn began
+static vthread* g_rsx_idle;  // the RSX while its queue is empty (see "the RSX's queue"), or null
+static const volatile uint32_t* g_rsx_put;
+static uint32_t g_rsx_put_seen;
 
 int64_t vsched_budget_slice(void)
 {
-  return BUDGET_PER_SLICE;
+  return BUDGET_PER_LOOK;
 }
 
 [[noreturn]] static void die(const char* what)
@@ -259,7 +264,10 @@ static void switch_to(vthread* t)
   fpu_save(self);
   g_cur = t;
   g_switches++;
-  vsched_budget = BUDGET_PER_SLICE;
+  vsched_budget = BUDGET_PER_LOOK;
+  g_turn_run = 0;
+  if (t == g_rsx_idle)
+    g_rsx_idle = nullptr;
   sem_post(&t->sem);
   while (sem_wait(&self->sem) != 0)
   {
@@ -319,6 +327,28 @@ void vsched_init(void)
   g_now = 1000000000ull;
 }
 
+// The RSX's queue. Natively the RSX runs beside the CPUs and starts on new
+// commands as soon as a CPU moves the queue's write pointer. Here one thread
+// runs at a time, and an RSX that found its queue empty used to wait for the
+// next round of turns, while the CPU that had just given it commands went on
+// for the rest of its 50 us slice. A game may count on the RSX having used
+// what it was given by then: Pac-Man Championship Edition DX wrote the next
+// picture's background over the vertices of the menu text it had queued, and
+// the RSX drew the text with the background's shape, a white smear
+// (chimera#294). So while the RSX waits for commands, a CPU's slice stops
+// every few thousand instructions to look at the write pointer, and when it
+// moved, the RSX has the next turn. A look costs nothing on the clock: the
+// instructions are charged as before, in smaller pieces.
+void vsched_rsx_idle(const void* put)
+{
+  if (!g_cur)
+    return;
+  g_rsx_idle = g_cur;
+  g_rsx_put = (const volatile uint32_t*)put;
+  g_rsx_put_seen = *g_rsx_put;
+  vsched_yield(YIELD_COST_NS);
+}
+
 // The RSX thread charges one FIFO command and gives way every so often.
 void vsched_rsx_step(void)
 {
@@ -374,6 +404,8 @@ void vsched_exit(void)
     g_thread_exits[i](self->slot);
   self->state = DEAD;
   g_slot_used[self->slot] = false;
+  if (g_rsx_idle == self)
+    g_rsx_idle = nullptr;
   // unlink
   vthread* prev = g_head;
   while (prev->next != self)
@@ -394,7 +426,10 @@ void vsched_exit(void)
   }
   g_cur = t;
   g_switches++;
-  vsched_budget = BUDGET_PER_SLICE;
+  vsched_budget = BUDGET_PER_LOOK;
+  g_turn_run = 0;
+  if (t == g_rsx_idle)
+    g_rsx_idle = nullptr;
   sem_post(&t->sem);
   // the thread struct outlives us until nobody can name it; leak it
   // deliberately (a few hundred bytes per thread ever created)
@@ -499,19 +534,36 @@ int vsched_poll_yield(int kind, int64_t used)
   if (cost < POLL_YIELD_MIN_NS)
     cost = POLL_YIELD_MIN_NS;
   g_cur->cpu = true;
-  vsched_budget = BUDGET_PER_SLICE;
+  vsched_budget = BUDGET_PER_LOOK;
+  g_turn_run = 0;
   vsched_yield(cost);
   return 1;
 }
 
+// A budget of BUDGET_PER_LOOK instructions ran out: charge it, give the RSX
+// the machine if a CPU gave it commands, and end the turn once the thread has
+// run a whole slice.
 void vsched_budget_expired(int kind)
 {
   uint64_t q10 = kind == VSCHED_PPU ? PPU_INSTR_NS_Q10 : kind == VSCHED_SPU ? SPU_INSTR_NS_Q10 : RSX_CMD_NS_Q10;
-  uint64_t cost = ((uint64_t)BUDGET_PER_SLICE * q10) >> 10;
-  vsched_budget = BUDGET_PER_SLICE;
-  if (g_cur && (kind == VSCHED_PPU || kind == VSCHED_SPU))
+  vsched_budget = BUDGET_PER_LOOK;
+  if (!g_cur)
+    return;
+  if (kind == VSCHED_PPU || kind == VSCHED_SPU)
     g_cur->cpu = true;
-  vsched_yield(cost);
+  g_now += ((uint64_t)BUDGET_PER_LOOK * q10) >> 10;
+  g_turn_run += BUDGET_PER_LOOK;
+  vthread* rsx = g_rsx_idle;
+  if (rsx && rsx != g_cur && *g_rsx_put != g_rsx_put_seen && rsx->state == RUNNABLE && !(g_aside && rsx->held))
+  {
+    wake_expired();
+    switch_to(rsx);
+    return;
+  }
+  if (g_turn_run < BUDGET_PER_SLICE)
+    return;
+  g_turn_run = 0;
+  vsched_yield(0);
 }
 
 int vsched_slot(void)

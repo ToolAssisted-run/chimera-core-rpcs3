@@ -3133,8 +3133,106 @@ minutes before. This changes the machine of every game whose SPUs poll a
 channel, so a movie made with an earlier version of the core does not play
 back on this one; projects keep the core version they were made with.
 
-Not fixed: the white band drawn over the menu's panels in the same game. The
-reporter's standalone RPCS3 draws coloured light streaks behind the panels.
-It is the same under OpenGL and Vulkan and with zcull accuracy, strict
-rendering, writing colour buffers, disabling zcull queries, anti-aliasing and
-SPU xfloat accuracy changed one at a time, so it is none of those settings.
+Not fixed by this patch: the white band drawn over the menu's panels in the
+same game. The reporter's standalone RPCS3 draws coloured light streaks
+behind the panels. It is the same under OpenGL and Vulkan and with zcull accuracy,
+strict rendering, writing colour buffers, disabling zcull queries,
+anti-aliasing and SPU xfloat accuracy changed one at a time, so it is none of
+those settings. The next section finds and fixes it.
+
+## 2026-10-17: an idle RSX starts when a CPU gives it commands (chimera#294)
+
+The white smear over Pac-Man Championship Edition DX+'s menu is one draw of
+menu text. A temporary probe in the OpenGL renderer (not committed) followed
+frame 2040, where the smear shows: draw 1160 of that frame is a letter of the
+menu text, and its vertices were right when the frame began. By the time the
+RSX reached the draw, the game's main thread had written the next frame's
+full-screen background quad (160x90, scaled by 8) over the same memory, so
+the letter was drawn as a rectangle the size of the screen with the font's
+picture stretched over it.
+
+Why the game could do that: the RSX had used every command it had (its read
+pointer was at the write pointer) and gave way. The main thread then took its
+turn: it wrote the rest of frame 2040's commands, moved the queue's write
+pointer, and went on to build frame 2041, all in one slice of 80,000
+instructions (50 us). Natively the RSX runs beside the CPUs and starts on
+new commands as soon as the write pointer moves, so it would have drawn the
+text long before the game wrote the background. Here it only ran again when
+the main thread's slice was over.
+
+Patch 0056 and `vsched_rsx_idle` (waterbox/vsched.cpp): when the RSX finds
+its queue empty, it tells the scheduler where the write pointer is and what
+it holds, and gives way as before. A CPU's slice is now counted in budgets of
+4,000 instructions; at the end of each one the scheduler charges the clock
+for them (the same cost as before, in smaller pieces), and when an idle RSX's
+write pointer has moved, it hands the RSX the machine at once. Otherwise the
+CPU goes on until it has run its whole slice, as before. Nothing else about
+the order of threads changes. A look is one compare and costs nothing on the
+clock.
+
+Tried first, and rejected:
+
+- Holding the RSX after it writes a label until its next draw is done (the
+  game writes a counter label between draws). It did not help: the RSX was
+  not behind, it was idle.
+- Slices of 4,000 instructions for every thread. It fixed the smear too, and
+  the menu ran as fast, but every slice ends in a switch of host threads,
+  twenty times as many as before; it was not measured on a heavier game.
+- 22 settings, one at a time, among them FIFO accuracy, frame limit, driver
+  wake-up delay, host GPU labels, the SPU interpreter and the shader modes.
+
+Measured on the GTX 1060 with Vulkan, the same project (Start at frames 1700,
+1900 and 2100), a picture every 20 frames from 1720 to 2600: before the
+patch 12 of the 45 menu pictures are smeared, after it none. The same 12 on
+Linux through chimera-run with llvmpipe, which is the test script's new test
+`rsx:queue-start`. Run time is unchanged: 2,601 frames of the menu took 62 s
+before and 63 s after; 4,000 frames of a Street Fighter IV movie, 86 s and
+87 s; 1,200 frames of Super Stardust HD in the sandbox runner, 31.8 s and
+31.5 s.
+
+The scheduler alone has a test of its own too, `vsched:rsx-idle`
+(tests/vsched/rsx-idle-test.cpp), so the test script checks the hand-over on
+a computer without the game: commands given in the 7th budget of a slice are
+taken at the end of that budget. With the hand-over taken out they are taken
+at the end of the slice, and the test fails.
+
+This changes the order in which threads run in every game, so a movie made
+with an earlier version of the core does not play back on this one; projects
+keep the core version they were made with.
+
+### Patch 0057: a thread returning from a callback gives way to the memory lock
+
+The new order of turns showed an old trap. The test script's
+`rsx:frame-limit` (Rayman Legends at a frame limit of 60) stopped at frame
+120 and never went on: one host thread at 100% and no frame. Stopped in a
+debugger eight times, the main PPU thread was always in
+`cpu_thread::check_state`, inside the game's trophy status callback, with
+its flags at `wait + ret + memory` (0x244). Another thread wanted the memory
+lock and was waiting for this one to let go of its own. `check_state` marks
+the thread as waiting and goes round its loop again; but `ret` (returning
+from a callback) makes the next pass leave at once, back to the same test,
+so it never waited and never gave way. On the console the lock's holder
+finishes on another core; here it runs only when it is given the machine.
+
+Patch 0049 gave way in that loop for a thread that is suspended and may not
+stop (MotorStorm, chimera#179). Patch 0057 gives way there also when the
+thread is returning from a callback or is stopped: those flags, too, make
+the next pass leave without waiting.
+
+Measured: before 0057, with 0056, `rsx:frame-limit` stalls at frame 120 (it
+failed in the test script, and again three times by hand); with it, the 200
+frames run in 19 s with no allocation failed. The published core without
+either patch runs them in 20 s.
+
+### The Unreal Engine 3 tests run again, on Mortal Kombat
+
+`rsx:drain` and `spu:barrier` had been skipped since the disk cleanup of
+2026-10-16 removed their game. They now take a .zip as well as an .iso (the
+core reads both), and `tests/roms-local/rsx-drain/` holds Mortal Kombat
+Komplete Edition repacked as a stored .zip (7-Zip's solid .7z is refused:
+it cannot be read in place). `rsx:drain` passes: label 255 at 1529 after
+1500 frames. `spu:barrier`'s line was drawn on Injustice alone (39 stalled,
+4735 running; the test asked for more than 1000). Mortal Kombat stalls at
+180 with the give-way off and runs at 779 on the published core and 778 on
+this one, so it failed while working properly. The line is now 500, between
+both games' stalls and both games' running values.

@@ -82,9 +82,9 @@ void vsched_budget_expired(int kind);
 // A poll that found nothing: a CPU read the count of a channel that only
 // another thread can fill, and it was empty (chimera#294). Gives the machine to
 // another runnable thread, charging the `used` instructions of `kind` run since
-// the slice began, and at least a microsecond. Returns 1 when it gave way. With
-// nobody else to run it charges nothing and returns 0, and the poller goes on
-// with its slice as it always did.
+// its budget was last filled, and at least a microsecond. Returns 1 when it
+// gave way. With nobody else to run it charges nothing and returns 0, and the
+// poller goes on with its slice as it always did.
 int vsched_poll_yield(int kind, int64_t used);
 // the size of one budget, for code that keeps its own counter (a recompiler)
 int64_t vsched_budget_slice(void);
@@ -92,6 +92,10 @@ int64_t vsched_budget_slice(void);
 // The RSX thread charges one FIFO command per call and gives way every so
 // often; the emulator's own spin-and-yield sites pay a fixed yield cost.
 void vsched_rsx_step(void);
+// The RSX found its queue empty: it gives way, and the next CPU to move the
+// queue's write pointer `put` hands it the machine within a few thousand
+// instructions (chimera#294).
+void vsched_rsx_idle(const void* put);
 void vsched_yield_default(void);
 
 // Thread-local storage without ELF TLS: every thread owns a slot in

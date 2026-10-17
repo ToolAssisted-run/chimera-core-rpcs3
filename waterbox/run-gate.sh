@@ -7,6 +7,9 @@
 #   sandbox:rerecord       save+load around every frame changes nothing
 #   vsched:aside           the scheduler alone: work set aside from the
 #                          machine leaves its CPUs, waits and clock alone
+#   vsched:rsx-idle        the scheduler alone: a CPU that gives an idle RSX
+#                          commands mid-slice hands it the machine at the end
+#                          of that budget, not of the slice (chimera#294)
 #   sandbox:reservation-held  rsrvtest.elf: a 0xAAAAAAAA store meeting a line
 #                          another CPU locked and then gave way inside waits
 #                          by giving way too, and the program runs to its end
@@ -16,6 +19,10 @@
 #   spu:mailbox-poll       with a game in tests/roms-local/spu-poll whose SPU
 #                          polls its mailbox: the menu runs at its own speed
 #                          because an empty poll gives way (chimera#294)
+#   rsx:queue-start        the same game through chimera-run on OpenGL: the
+#                          RSX starts on commands soon after a CPU gives them,
+#                          so its menu text is not drawn from memory the game
+#                          has already reused - a white smear (chimera#294)
 #   firmware:lle           with Sony's PUP (tests/roms-local, never committed):
 #                          the firmware installs in the box, liblv2 is LLE, and
 #                          native == sandbox still holds
@@ -362,6 +369,27 @@ if g++ -O1 -pthread -I"$here" -o "$work/aside-test" "$root/tests/vsched/aside-te
 	fi
 else
 	failed "vsched:aside - tests/vsched/aside-test.cpp does not build (see $work/aside-test.err)"
+fi
+
+# ---- vsched:rsx-idle ------------------------------------------------------
+# The scheduler alone: tests/vsched/rsx-idle-test.cpp. An RSX with nothing to
+# do waits with vsched_rsx_idle, and a CPU that gives it commands in the middle
+# of its slice hands it the machine at the end of that budget of 4000
+# instructions, not at the end of the slice (chimera#294). Its control: with
+# nothing given, the CPU still runs its whole slice of 20 budgets between two
+# turns of the RSX, and the clock is charged 50 us for it as before.
+#
+# NEGATIVE CONTROL, measured 2026-10-17: with the hand-over taken out of
+# vsched_budget_expired, the commands given in budget 47 are taken in budget
+# 60, at the end of the slice, and the program says WRONG.
+if g++ -O1 -pthread -I"$here" -o "$work/rsx-idle-test" "$root/tests/vsched/rsx-idle-test.cpp" "$here/vsched.cpp" 2>"$work/rsx-idle-test.err"; then
+	if timeout 120 "$work/rsx-idle-test" > "$work/rsx-idle-test.txt" 2>&1; then
+		pass "vsched:rsx-idle - $(grep -c '^ok' "$work/rsx-idle-test.txt") checks: $(head -1 "$work/rsx-idle-test.txt")"
+	else
+		failed "vsched:rsx-idle - $(grep -m1 '^WRONG' "$work/rsx-idle-test.txt" || echo 'the program did not finish') (see $work/rsx-idle-test.txt)"
+	fi
+else
+	failed "vsched:rsx-idle - tests/vsched/rsx-idle-test.cpp does not build (see $work/rsx-idle-test.err)"
 fi
 
 # ---- everything below needs the user's PS3UPDAT.PUP ---------------------
@@ -929,15 +957,15 @@ fi
 # 7807), and the old leg failed the healthy machine. put and get are still
 # reported, for whoever reads the result.
 #
-# The subject is whatever .iso the user put in tests/roms-local/rsx-drain/ (a
-# symlink will do; both reproducers are UE3 games). Native only: the question
-# is the RSX's, not the sandbox's.
+# The subject is whatever .iso or .zip the user put in
+# tests/roms-local/rsx-drain/ (both reproducers are UE3 games). Native only:
+# the question is the RSX's, not the sandbox's.
 drainiso=""
-for f in "$root"/tests/roms-local/rsx-drain/*.iso; do
+for f in "$root"/tests/roms-local/rsx-drain/*.iso "$root"/tests/roms-local/rsx-drain/*.zip; do
 	[ -f "$f" ] && { drainiso="$f"; break; }
 done
 if [ -z "$drainiso" ]; then
-	skip "rsx:drain - no .iso in tests/roms-local/rsx-drain/ (would prove: on a game whose render thread fences every present, the RSX reads everything the game submits and the fence label keeps moving - no frame limiter sleeps the FIFO puller)"
+	skip "rsx:drain - no .iso or .zip in tests/roms-local/rsx-drain/ (would prove: on a game whose render thread fences every present, the RSX reads everything the game submits and the fence label keeps moving - no frame limiter sleeps the FIFO puller)"
 else
 	drainkey=""
 	[ -f "${drainiso%.iso}.dkey" ] && drainkey="--dkey ${drainiso%.iso}.dkey"
@@ -982,8 +1010,13 @@ fi
 # Measured 2026-09-21 on Injustice: off 39 (90 s), on 4735 (410 s). The extra
 # time is the collector actually running; a game that never reaches this
 # barrier pays nothing (Resident Evil 5, 300 frames: 125 s off, 124 s on).
+# Measured 2026-10-17 on Mortal Kombat Komplete Edition (a .zip): off 180,
+# on 779, and 778 with chimera#294's change to the scheduler. The label moves
+# at each game's own rate, so the line is drawn between the two games'
+# stalls and their running values: above 500. It was 1000, Injustice's
+# alone, which Mortal Kombat failed while running properly.
 if [ -z "$drainiso" ]; then
-	skip "spu:barrier - no .iso in tests/roms-local/rsx-drain/ (would prove: a UE3 game's SPU garbage collector gets past its participant barrier, which needs one CPU to observe another's idle window)"
+	skip "spu:barrier - no .iso or .zip in tests/roms-local/rsx-drain/ (would prove: a UE3 game's SPU garbage collector gets past its participant barrier, which needs one CPU to observe another's idle window)"
 else
 	barkey=""
 	[ -f "${drainiso%.iso}.dkey" ] && barkey="--dkey ${drainiso%.iso}.dkey"
@@ -995,10 +1028,10 @@ else
 		failed "spu:barrier - the run did not reach frame 750 ($(tail -1 "$work/barrier.err"))"
 	elif [ -z "$blabel" ]; then
 		failed "spu:barrier - no fence label read at the end of the run"
-	elif [ "$blabeln" -le 1000 ]; then
-		failed "spu:barrier - $(basename "$drainiso"): the fence label stands at $blabeln after 750 frames, which is where it sits when the SPU garbage collector's barrier never closes (39). The give-way after a contended conditional store is not reaching the machine"
+	elif [ "$blabeln" -le 500 ]; then
+		failed "spu:barrier - $(basename "$drainiso"): the fence label stands at $blabeln after 750 frames, which is where it sits when the SPU garbage collector's barrier never closes (39 in Injustice, 180 in Mortal Kombat). The give-way after a contended conditional store is not reaching the machine"
 	else
-		pass "spu:barrier - $(basename "$drainiso"): the fence label stands at $blabeln after 750 frames, so the SPU garbage collector's participant barrier closes (it stalls at 39 with CHIMERA_SPU_YIELD=0); native only"
+		pass "spu:barrier - $(basename "$drainiso"): the fence label stands at $blabeln after 750 frames, so the SPU garbage collector's participant barrier closes (it stalls at 39 in Injustice and 180 in Mortal Kombat with CHIMERA_SPU_YIELD=0); native only"
 	fi
 fi
 
@@ -1296,6 +1329,93 @@ else
 			failed "vk:rerecord - the renderer was made again $made times in the run with the loads and $made_straight in the one without, where 190 or more and 0 are expected: the loads did not happen, or the log changed (see $vk/rr.log)"
 		else
 			pass "vk:rerecord - 200 frames with a state saved and loaded around every one leave the memory and the picture of a run without one; the renderer was made again $made times"
+		fi
+	fi
+fi
+
+# ---- rsx:queue-start (chimera issue 294) -------------------------------------
+# Natively the RSX starts on new commands as soon as a CPU moves the write
+# pointer of its command queue. Here one thread runs at a time: an RSX that
+# found its queue empty waited for the next round of turns, while the CPU that
+# had just given it commands ran on for the rest of its slice (50 us).
+# Pac-Man Championship Edition DX+ wrote the next picture's background over
+# the vertices of menu text it had queued and the RSX had not drawn yet, and
+# the text came out in the background's shape: a white smear over the lower
+# right of the menu. With patch 0056 the RSX gets the machine within 4000
+# instructions of a CPU moving the pointer (vsched_rsx_idle).
+#
+# The game is the one spu:mailbox-poll uses (tests/roms-local/spu-poll). A
+# project with Start pressed at frames 1700, 1900 and 2100 runs through
+# chimera-run on the OpenGL renderer (llvmpipe will do), and 45 pictures of
+# the menu, one every 20 frames from 1720 to 2600, must each be under 10%
+# bright in the box where the smear lay (x 700-1250, y 400-620 of 1280x720).
+# The menu is about 1% bright there. The title screen at frame 1700 is white
+# there and must read over 90%: it shows that the check sees a bright box.
+#
+# NEGATIVE CONTROL, measured 2026-10-17: the core published before this patch
+# (Development build b2d1165f) smears 12 of the 45 pictures, 18% to 75% bright
+# (frames 1900, 2000, 2040, 2100, ...); with the patch, none is over 1.1%. The
+# same 12 frames smear on a GeForce GTX 1060 with the Vulkan renderer.
+if [ -z "$pollgame" ]; then
+	skip "rsx:queue-start - no game in tests/roms-local/spu-poll/ (would prove: the RSX starts on commands soon after a CPU gives them, so a game that reuses memory the RSX has just been told to read draws what it meant)"
+elif [ -z "$crunroot" ] || [ ! -f "$pup" ]; then
+	skip "rsx:queue-start - needs the firmware in tests/roms-local, plus chimera-run and an installed rpcs3.chimeraCore (set CHIMERA_ROOT)"
+else
+	qs="$work/queue-start"
+	rm -rf "$qs"
+	mkdir -p "$qs"
+	# the project: the game, its other packages and the licence by their SHA-1,
+	# and the pad's input, one line a frame
+	python3 - "$(dirname "$pollgame")" "$pollgame" "$pup" "$qs/pacman.chimeraProject" <<'EOF'
+import hashlib, json, os, sys
+folder, game, pup, out = sys.argv[1:5]
+def sha1(path):
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest().upper()
+files = [{"name": os.path.basename(game), "sha1": sha1(game), "slot": "game"}]
+for name in sorted(os.listdir(folder)):
+    path = os.path.join(folder, name)
+    if name.endswith(".pkg") and path != game:
+        files.append({"name": name, "sha1": sha1(path), "slot": "pkg"})
+    elif name.endswith(".rap"):
+        files.append({"name": name, "sha1": sha1(path), "slot": "rap"})
+idle = "||    0,    0,    0,    0,.................|"
+start = "||    0,    0,    0,    0,.....S...........|"
+lines = [start if any(f <= i < f + 6 for f in (1700, 1900, 2100)) else idle for i in range(2700)]
+project = {"title": "rsx:queue-start", "description": "",
+           "core": {"name": "RPCS3", "version": "gate", "sha1": "0" * 40}, "rerecords": 0,
+           "files": files, "settings": {"renderer": "opengl-hw"},
+           "firmware": [{"id": "PS3UPDAT.PUP", "sha1": sha1(pup)}],
+           "input": "\n".join(lines) + "\n"}
+json.dump(project, open(out, "w"), indent=1)
+EOF
+	qshots=""
+	for f in $(seq 1720 20 2600); do qshots="$qshots --screenshot $f=$qs/f$f.tga"; done
+	# shellcheck disable=SC2086 # the screenshot list is split on purpose
+	env -u DISPLAY timeout 2400 "$crunroot/build/meson-linux/chimera-run" --project "$qs/pacman.chimeraProject" \
+		"$crunroot/build/Cores/rpcs3.chimeraCore" --files "$(dirname "$pollgame")" --allow-core-mismatch \
+		--firmware "PS3UPDAT.PUP=$pup" --gpu --frames 2601 --screenshot "1700=$qs/title.tga" $qshots \
+		> "$qs/run.log" 2>&1 || true
+	if ! grep -q '^frames=2601' "$qs/run.log"; then
+		failed "rsx:queue-start - the run did not reach frame 2601 (see $qs/run.log)"
+	else
+		rc=0
+		python3 "$here/tests/bright-box.py" 700 400 1250 620 "$qs/title.tga" $(for f in $(seq 1720 20 2600); do echo "$qs/f$f.tga"; done) \
+			> "$qs/bright.txt" 2>&1 || rc=$?
+		title="$(awk 'NR == 1 {print $2}' "$qs/bright.txt")"
+		smeared="$(awk 'NR > 1 && $2 >= 10 {n++; s = s " " substr($1, length($1) - 7, 4)} END {print n + 0 ":" s}' "$qs/bright.txt")"
+		most="$(awk 'NR > 1 && $2 > m {m = $2} END {print m + 0}' "$qs/bright.txt")"
+		if [ "$rc" != 0 ] || [ "$(wc -l < "$qs/bright.txt")" -ne 46 ]; then
+			failed "rsx:queue-start - the pictures could not be read: $(head -1 "$qs/bright.txt")"
+		elif ! awk -v t="$title" 'BEGIN {exit !(t > 90)}'; then
+			failed "rsx:queue-start - the title screen at frame 1700 is $title% bright in the box, where over 90% is expected: the check cannot see a bright box, or the run is not at the title"
+		elif [ "${smeared%%:*}" != 0 ]; then
+			failed "rsx:queue-start - ${smeared%%:*} of 45 menu pictures are smeared (10% or more bright in the box), at frames${smeared#*:}; 12 were before patch 0056"
+		else
+			pass "rsx:queue-start - none of 45 menu pictures is smeared (the brightest box is $most% bright; 12 were 18-75% before patch 0056); the title screen reads $title%"
 		fi
 	fi
 fi
