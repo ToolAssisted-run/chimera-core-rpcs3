@@ -53,6 +53,21 @@ namespace chimera
   // this enables - see "not carrying the disc twice" in memfs.cpp.
   void memfs_mark_disc_image(const std::string& rel);
 
+  // Say that a grafted file is a PS3 PACKAGE, and how its data is encrypted.
+  // Installing a package writes each file's decrypted bytes into a fresh
+  // memory file right after reading the same stretch of the package; with
+  // this, those bytes are recognised as the package's own, read the way the
+  // installer reads them, and the file is kept as a reference to the package
+  // instead of a copy, as a file copied off a disc is (chimera#300: a 16 GB
+  // game installed into memory once per compile session ran a 31 GB computer
+  // out of memory). The data region is [data_offset, data_offset + data_size);
+  // `debug` picks the debug package's keystream (SHA-1 of the QA digest) over
+  // the retail one (AES-128 of klicensee + block under `key`). The three byte
+  // arrays are as the header and the reader hold them. False when `rel` is not
+  // a grafted file.
+  bool memfs_mark_package(const std::string& rel, unsigned long long data_offset, unsigned long long data_size, bool debug,
+                          const unsigned char key[16], const unsigned char klicensee[16], const unsigned char qa_digest[16]);
+
   // Whether that image turned out to need decrypting to be read (for the log).
   bool memfs_disc_image_is_encrypted(const std::string& rel);
 

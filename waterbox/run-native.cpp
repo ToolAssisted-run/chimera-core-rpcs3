@@ -115,6 +115,8 @@ int main(int argc, char** argv)
       dkey = argv[++i];
     else if (!strcmp(argv[i], "--disc-copy") && i + 1 < argc)
       discCopy = argv[++i];
+    else if (!strcmp(argv[i], "--pkg-copies"))
+      chimera_rpcs3_set_package_references(0);
     else if (!strcmp(argv[i], "--disc-copy-raw"))
       discCopyFlags |= 1;
     else if (!strcmp(argv[i], "--disc-verify"))
@@ -201,7 +203,7 @@ int main(int argc, char** argv)
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--rap licence.rap]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--ram-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] [--gl-rebuild-at N[,N...]] [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]] [--window-probe PAGES] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--pkg-copies] [--rap licence.rap]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--ram-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] [--gl-rebuild-at N[,N...]] [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]] [--window-probe PAGES] <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb

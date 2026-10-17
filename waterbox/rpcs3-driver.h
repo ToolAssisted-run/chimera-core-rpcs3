@@ -31,6 +31,10 @@ void chimera_rpcs3_set_savedata(const char* zip_path);
 // own package reader onto /dev_hdd0 before _init seals the machine: DLC,
 // patches, unlocks. One that will not install fails the load.
 void chimera_rpcs3_add_package(const char* pkg_path);
+// Installed packages' files are references to the package (the default:
+// chimera#300) or copies in memory (0, as before). The test script's negative
+// control; nothing else calls it.
+void chimera_rpcs3_set_package_references(int on);
 // A .rap the project carries (the rap slot, any number): the per-account
 // licence for a package that was paid for. It is a 16-byte key file named
 // after the content it licenses, and it goes into the console's user exdata

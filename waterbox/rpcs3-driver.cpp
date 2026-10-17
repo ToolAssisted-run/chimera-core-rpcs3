@@ -480,6 +480,11 @@ namespace
   // package that created none. That is how the installer answers "was this a
   // game?" - see install_game_package, where a .pkg in the game slot is the
   // game itself.
+  // Whether an installed package's files are references to it (the normal
+  // case) or copies in memory, as they were before chimera#300. Only the test
+  // script's negative control turns it off.
+  bool g_package_references = true;
+
   bool install_pkg_paths(const std::vector<std::string>& paths, const std::vector<std::string>& names, const char* whence,
                          std::deque<std::string>* bootable_out = nullptr)
   {
@@ -494,6 +499,18 @@ namespace
         g_install_error = "the file is not a PS3 package: " + names[i];
         return false;
       }
+      // A package the reader reads out of the memory filesystem (the project's
+      // own) is told its encryption, so the files the install writes are kept
+      // as references to the package rather than as copies in memory
+      // (memfs_mark_package, chimera#300). A disc's packages are read through
+      // the disc and stay as they were.
+      const std::string memfs_prefix = chimera::memfs_root + "/";
+      const PKGHeader& header = readers.back().get_header();
+      if (g_package_references && paths[i].rfind(memfs_prefix, 0) == 0 && header.pkg_platform == PKG_PLATFORM_TYPE_PS3 &&
+          chimera::memfs_mark_package(paths[i].substr(memfs_prefix.size()), header.data_offset, header.data_size,
+                                      header.pkg_type == PKG_RELEASE_TYPE_DEBUG, readers.back().chimera_dec_key().data(),
+                                      reinterpret_cast<const u8*>(&header.klicensee), reinterpret_cast<const u8*>(&header.qa_digest)))
+        chimera_log.notice("package %s: what it installs is served from the package itself", names[i]);
       const auto& meta = readers.back().get_metadata();
       // the title id is a fixed field, NUL-padded: cut it, or the line ends there
       chimera_log.notice("package %s (from %s): title %s, install dir %s, content type 0x%x, %u entries", names[i], whence,
@@ -1492,6 +1509,11 @@ namespace
     g_game_pkg_boot = boot;
     return true;
   }
+}
+
+void chimera_rpcs3_set_package_references(int on)
+{
+  g_package_references = on != 0;
 }
 
 void chimera_rpcs3_add_package(const char* pkg_path)

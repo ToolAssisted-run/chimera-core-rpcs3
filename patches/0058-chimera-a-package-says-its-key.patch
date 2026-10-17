@@ -1,0 +1,16 @@
+diff --git a/rpcs3/Crypto/unpkg.h b/rpcs3/Crypto/unpkg.h
+--- a/rpcs3/Crypto/unpkg.h
++++ b/rpcs3/Crypto/unpkg.h
+@@ -370,6 +370,12 @@
+ 
+ 	bool is_valid() const { return m_is_valid; }
+ 	const PKGHeader& get_header() const { return m_header; }
++#ifdef CHIMERA_CORE
++	// Chimera: the key the package's data is decrypted with, so the memory
++	// filesystem can read any stretch of the package in the clear and keep an
++	// installed file as a reference to it (memfs_mark_package, chimera#300)
++	const std::array<uchar, 16>& chimera_dec_key() const { return m_dec_key; }
++#endif
+ 	const PKGMetaData& get_metadata() const { return m_metadata; }
+ 	package_install_result check_target_app_version() const;
+ 	static package_install_result extract_data(std::deque<package_reader>& readers, std::deque<std::string>& bootable_paths, bool from_optical_drive);

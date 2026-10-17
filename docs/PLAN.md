@@ -3236,3 +3236,43 @@ it cannot be read in place). `rsx:drain` passes: label 255 at 1529 after
 180 with the give-way off and runs at 779 on the published core and 778 on
 this one, so it failed while working properly. The line is now 500, between
 both games' stalls and both games' running values.
+
+## 2026-10-17: an installed package is kept as references to it (chimera#300)
+
+Ratchet & Clank: Tools of Destruction is a 16 GB package. Compiling it on a
+31 GB Linux computer, the kernel stopped Chimera for want of memory a minute
+in. Measured here: one compile session of Tekken 5 Dark Resurrection (a 0.6
+GB package) holds 6.4 GB of memory (proportional set size; 5.6 GB of it the
+sandbox's), and the system lost about the same. The rest of the report's
+figure was the package itself: a package is installed by RPCS3's own
+package_reader into the memory filesystem, which is the machine's memory, so
+every byte of the game was a second time in memory, once per session. Two
+sessions of Ratchet & Clank wanted about 44 GB.
+
+The memory filesystem already avoids exactly that for discs ("not carrying
+the disc twice", memfs.cpp): a fresh file whose first big write equals what
+was just read from a read-only file is kept as a reference to it (a mirror),
+and so is everything appended that keeps matching. The installer does read
+the package and then write the same bytes, but decrypted: a package's data
+region is a stream cipher, so the written bytes are nowhere in the package
+as it lies, and nothing matched.
+
+Now the package is told its encryption (`memfs_mark_package`, with the key
+from patch 0058's `chimera_dec_key`): the comparison, and every later read
+of a mirror, read the package the way the installer does. The keystream
+depends only on the position (a retail package's block is AES-128 of
+klicensee + block number; a debug package's is the SHA-1 of its QA digest
+and the block number), so any stretch decrypts on its own. Files that the
+installer changes on the way (EDATs it decrypts) still match nothing and are
+copied as before. A disc's own packages (INSDIR and the like) are read
+through the disc and are left as they were.
+
+Measured, Super Stardust HD (305 MB) and its update (249 MB), natively:
+installing the game added 1,008 bytes of memory files instead of 305 MB,
+and the update 32 bytes; 1,200 frames with Start pressed were the same
+machine at all twelve reports with and without (`--pkg-copies`, the test
+script's control). The game's reads of its installed files decrypted 45 MB
+in those 1,200 frames, and 700 frames took 327.6 s with references and
+329.0 s with copies. Test: `pkg:references`. Savestates no longer carry
+the installed files either: like a disc's, they are the project's files.
+

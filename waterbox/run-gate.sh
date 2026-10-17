@@ -81,6 +81,9 @@
 #   pkg:licence            a purchased title (REQUIRE_LICENSE) boots with its
 #                          .rap in the Licence slot, and without it says which
 #                          licence is missing
+#   pkg:references         an installed package's files are references to the
+#                          package, not copies in memory, and the machine is
+#                          the same as with copies (chimera#300)
 #   gpu:flip               the GL renderer through the GPU bridge (a host EGL
 #                          context, llvmpipe will do): the flip program's
 #                          pictures are the machine's own pixels, the same
@@ -775,6 +778,54 @@ else
 		pass "pkg:boot - $(basename "$pkggame" | cut -c1-40): the package installed and the machine booted what it installed, 120 frames, memory different at every report, $agree"
 	else
 		failed "pkg:boot - expected 6 different memory digests, got $rams ($(tail -1 "$work/pkg-native.err"))"
+	fi
+fi
+# ---- pkg:references (chimera issue 300) --------------------------------------
+# A package used to be installed by copying every file it holds into the
+# memory filesystem, which is the machine's memory: a 16 GB game took 16 GB
+# of it, once per compile session, and two sessions ran a 31 GB computer out
+# of memory. Now the package is told its encryption (memfs_mark_package), the
+# files the install writes are recognised as the package's own bytes, and
+# they are kept as references to it, as files copied off a disc are. The
+# same game package as pkg:boot, natively, 120 frames, twice: with references
+# (as always now) and with --pkg-copies (as before). The machine must be the
+# same at every report, and what the install added to the memory files must
+# be under a twentieth of the package with references and over half of it
+# with copies - the copies run is the control that shows the figure sees a
+# copy when there is one.
+#
+# NEGATIVE CONTROL, measured 2026-10-17 on Super Stardust HD (305 MB, and its
+# 249 MB update): copies add 305 MB, references 1,008 bytes; 1,200 frames
+# were the same at all twelve reports.
+if [ -z "$pkggame" ]; then
+	skip "pkg:references - no digital-only game .pkg in tests/roms-local (would prove: an installed package's files are kept as references to the package, not copied into memory, and the machine is the same)"
+else
+	for mode in refs copies; do
+		flag=""
+		[ "$mode" = copies ] && flag="--pkg-copies"
+		rm -rf "$work/pkgref-$mode"
+		# shellcheck disable=SC2086
+		"$native" --work "$work/pkgref-$mode" $flag --firmware "$pup" $raparg --frames 120 --report 20 "$pkggame" 2>"$work/pkgref-$mode.err" | grep '^frame\|^booted' > "$work/pkgref-$mode.txt"
+	done
+	# what the install added: the memory files after it, less after the firmware
+	added() {
+		fw="$(sed -n 's/.*firmware .* installed into the machine (\([0-9]*\) bytes.*/\1/p' "$work/pkgref-$1/RPCS3.log" 2>/dev/null | tail -1)"
+		pk="$(sed -n 's/.*package(s) from the game slot installed into the machine (\([0-9]*\) bytes.*/\1/p' "$work/pkgref-$1/RPCS3.log" 2>/dev/null | tail -1)"
+		if [ -n "$fw" ] && [ -n "$pk" ]; then echo $((pk - fw)); fi
+	}
+	refs_added="$(added refs)"
+	copies_added="$(added copies)"
+	pkgsize="$(stat -c %s "$pkggame")"
+	if [ ! -s "$work/pkgref-refs.txt" ] || [ -z "$refs_added" ] || [ -z "$copies_added" ]; then
+		failed "pkg:references - a run did not boot or did not say what it installed (see $work/pkgref-refs.err, $work/pkgref-copies.err)"
+	elif ! cmp -s "$work/pkgref-refs.txt" "$work/pkgref-copies.txt"; then
+		failed "pkg:references - the machine with references is not the machine with copies (diff $work/pkgref-refs.txt $work/pkgref-copies.txt)"
+	elif [ "$copies_added" -le $((pkgsize / 2)) ]; then
+		failed "pkg:references - the control did not copy: with --pkg-copies the install added $copies_added bytes for a $pkgsize-byte package, so the figure measures nothing"
+	elif [ "$refs_added" -ge $((pkgsize / 20)) ]; then
+		failed "pkg:references - the install still added $refs_added bytes of memory files for a $pkgsize-byte package (copies: $copies_added)"
+	else
+		pass "pkg:references - $(basename "$pkggame" | cut -c1-40): installing it added $refs_added bytes of memory files, against $copies_added copied; the machine is the same at all 6 reports"
 	fi
 fi
 if [ -z "$pkgcontent" ]; then

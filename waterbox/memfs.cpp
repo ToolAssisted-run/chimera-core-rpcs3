@@ -4,6 +4,8 @@
 
 #include "Utilities/File.h"
 #include "Loader/ISO.h"
+#include "Crypto/aes.h"
+#include "Crypto/sha1.h"
 #include "util/shared_ptr.hpp"
 #include "vsched.h"
 
@@ -25,6 +27,77 @@ namespace chimera
 {
   namespace
   {
+    // How a PS3 package's data is read in the clear (memfs_mark_package). The
+    // data region is a stream cipher whose keystream depends only on where in
+    // the region a byte lies, 16 bytes to a block: a retail package's block is
+    // AES-128 of (klicensee + block number) under the package's key, a debug
+    // package's is the SHA-1 of its QA digest and the block number. So any
+    // stretch can be decrypted without the rest, which is what lets a file the
+    // installer wrote be served from the package itself. Plain data, as a
+    // disc's decryption is: a savestate carries it with everything else here.
+    struct pkg_decryption
+    {
+      u64 data_offset = 0, data_size = 0;
+      bool debug = false;
+      u8 key[16]{}, klicensee[16]{}, qa_digest[16]{};
+
+      static u64 be64(const u8* p)
+      {
+        u64 v = 0;
+        for (int i = 0; i < 8; i++)
+          v = v << 8 | p[i];
+        return v;
+      }
+      static void put_be64(u8* p, u64 v)
+      {
+        for (int i = 7; i >= 0; i--, v >>= 8)
+          p[i] = static_cast<u8>(v);
+      }
+
+      // XOR the keystream into `buf`, which holds the package's raw bytes from
+      // `at`; bytes outside the data region are left as they are
+      void apply(u64 at, u8* buf, u64 size) const
+      {
+        const u64 begin = std::max(at, data_offset);
+        const u64 end = std::min(at + size, data_offset + data_size);
+        if (begin >= end)
+          return;
+        aes_context ctx;
+        if (!debug)
+          aes_setkey_enc(&ctx, key, 128);
+        for (u64 pos = begin; pos < end;)
+        {
+          const u64 rel = pos - data_offset;
+          const u64 block = rel / 16, within = rel % 16;
+          u8 stream[20];
+          if (debug)
+          {
+            u8 input[64]{};
+            std::memcpy(input, qa_digest, 8);
+            std::memcpy(input + 8, qa_digest, 8);
+            std::memcpy(input + 16, qa_digest + 8, 8);
+            std::memcpy(input + 24, qa_digest + 8, 8);
+            put_be64(input + 56, block);
+            sha1(input, sizeof(input), stream);
+          }
+          else
+          {
+            // klicensee + block, as one big-endian 128-bit number
+            const u64 lo = be64(klicensee + 8) + block;
+            const u64 hi = be64(klicensee) + (lo < block ? 1 : 0);
+            u8 counter[16];
+            put_be64(counter, hi);
+            put_be64(counter + 8, lo);
+            aes_crypt_ecb(&ctx, AES_ENCRYPT, counter, stream);
+          }
+          const u64 n = std::min<u64>(16 - within, end - pos);
+          for (u64 i = 0; i < n; i++)
+            buf[pos - at + i] ^= stream[within + i];
+          pos += n;
+        }
+      }
+    };
+
     struct node
     {
       bool dir = false;
@@ -38,6 +111,8 @@ namespace chimera
       std::shared_ptr<iso_file_decryption> disc_dec;
       std::shared_ptr<iso_file_decryption> disc_dec_off;  // held aside by memfs_set_disc_decryption
       bool disc_dec_tried = false;
+      // A package's: how its data region reads in the clear (memfs_mark_package)
+      std::shared_ptr<const pkg_decryption> pkg_dec;
       std::shared_ptr<const zip_index> arch;             // zip entry (read-only)
       size_t arch_entry = 0;
       std::shared_ptr<const sz_index> sz;                // .7z entry (read-only)
@@ -318,6 +393,14 @@ namespace chimera
         // path a mirror of an encrypted disc reads by as much as on any other
         if (n->disc_dec)
           return read_through_disc(offset, buffer, size);
+        // a package's data the way its installer reads it: decrypted
+        if (n->pkg_dec)
+        {
+          const u64 got = read_raw(offset, buffer, size);
+          n->pkg_dec->apply(offset, static_cast<u8*>(buffer), got);
+          g_mirrorStats.decryptedBytes += got;
+          return got;
+        }
         return read_raw(offset, buffer, size);
       }
     };
@@ -870,6 +953,24 @@ namespace chimera
     if (dec->get_enc_type() == iso_encryption_type::NONE)
       return;
     n->disc_dec = std::move(dec);
+  }
+
+  bool memfs_mark_package(const std::string& rel, unsigned long long data_offset, unsigned long long data_size, bool debug,
+                          const unsigned char key[16], const unsigned char klicensee[16], const unsigned char qa_digest[16])
+  {
+    auto n = lookup(rel);
+    if (!n || n->dir || n->host_path.empty())
+      return false;
+    auto dec = std::make_shared<pkg_decryption>();
+    dec->data_offset = data_offset;
+    dec->data_size = data_size;
+    dec->debug = debug;
+    std::memcpy(dec->key, key, 16);
+    std::memcpy(dec->klicensee, klicensee, 16);
+    std::memcpy(dec->qa_digest, qa_digest, 16);
+    n->pkg_dec = std::move(dec);
+    g_sourceReaders.clear();
+    return true;
   }
 
   bool memfs_disc_image_is_encrypted(const std::string& rel)
