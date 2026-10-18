@@ -312,7 +312,12 @@ optimisation. No user interface, no networking, no real audio or input devices.
   the ZCULL protects are real again (patch 0015 no longer touches them). GTA:
   1380 faults served in 1800 frames, memory unchanged, the pictures now
   refresh where the CPU rewrote textures. The gate's gpu:disc leg requires
-  both flavors to serve the same number of faults.
+  both flavors to serve the same number of faults. (2026-10-18: that disc
+  serves none, and the leg's condition was read as "(A || B) && C", so 0
+  against 0 passed as though it proved something. The condition is fixed, and
+  `gpu:page-watch` runs Rayman Legends on the GL renderer in the sandbox
+  twice: 727 faults in 300 frames, the same in both runs. The native flavor
+  runs threads in real time and served 738, so it is not compared there.)
 - **Savestates under the GL renderer (2026-09-02)**: a state taken and loaded
   while GTA draws through the bridge replays to the same memory (run-wbx
   --rewind, 240 frames, EQUAL; gate leg `gpu:rewind`). The renderer's caches

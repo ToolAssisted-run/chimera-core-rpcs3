@@ -298,6 +298,9 @@ the user's own and all under the gitignored `tests/roms-local/`:
 - `pkg:boot`, `pkg:content`, `pkg:licence` - `.pkg` files, and a `.rap` for
   the licence leg.
 - `rsx:drain`, `spu:barrier` - an `.iso` in `tests/roms-local/rsx-drain/`.
+- `rsx:frame-limit`, `gpu:page-watch` - a game in
+  `tests/roms-local/frame-limit/` (Rayman Legends); `gpu:page-watch` needs one
+  whose writes hit pages the GL renderer has cached.
 - `rsx:frame-limit` - a `.zip` or `.iso` in `tests/roms-local/frame-limit/`.
 - The `gpu:*` legs also need a GL context from the host (EGL; llvmpipe will
   do) and SKIP when there is none.

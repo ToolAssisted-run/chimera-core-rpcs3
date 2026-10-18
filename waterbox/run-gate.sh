@@ -93,6 +93,9 @@
 #   gpu:disc               the disc on the GL renderer: memory identical to
 #                          the null renderer's run (the GPU changes the
 #                          picture, not the machine), native == sandbox
+#   gpu:page-watch         a game whose writes hit pages the GL renderer has
+#                          cached (tests/roms-local/frame-limit/): faults are
+#                          served, the same ones in two sandbox runs
 #   gpu:rewind             a savestate taken and loaded while the GL renderer
 #                          draws: the machine after the load runs on to the
 #                          same memory (the renderer's caches, in guest
@@ -407,7 +410,7 @@ if [ ! -f "$pup" ]; then
 		pkg:boot pkg:content pkg:licence ppu:llvm \
 		cache:objects cache:warm cache:precompile \
 		spu:interpreter spu:asmjit spu:agree rsx:drain spu:barrier \
-		gpu:flip gpu:disc gpu:rewind gpu:context; do
+		gpu:flip gpu:disc gpu:page-watch gpu:rewind gpu:context; do
 		skip "$leg - the same firmware"
 	done
 	summary
@@ -1126,6 +1129,43 @@ else
 	fi
 fi
 
+# ---- gpu:page-watch ------------------------------------------------------
+# The GL renderer watches the guest pages it has cached, and a write to one
+# raises a fault the renderer serves. gpu:disc counts them, but its disc writes
+# to no watched page, so 0 against 0 passed and nothing was proved (and its
+# condition read "A || B && C" as "(A || B) && C"; fixed 2026-10-18). This leg
+# runs a game that does: the one in tests/roms-local/frame-limit/ (Rayman
+# Legends, 727 faults in 300 frames). In the sandbox, twice: the faults must be
+# served, and the same number, with the same memory, picture and sound, both
+# times. The native flavor runs its threads in real time, so a game's faults
+# there differ by timing (738 against 727, measured 2026-10-18) and it is not
+# compared.
+if [ -z "$limitgame" ]; then
+	skip "gpu:page-watch - no game in tests/roms-local/frame-limit/ (would prove: the GL renderer's page watch serves faults, the same ones every run)"
+elif [ "$have_wbx" != 1 ]; then
+	skip "gpu:page-watch - needs the sandbox build"
+elif grep -q "gpu bridge: no context" "$work/gflip-native.err" 2>/dev/null; then
+	skip "gpu:page-watch - the host offers no GL context"
+else
+	for wrun in 1 2; do
+		CHIMERA_GPU=1 timeout 1200 "$wbx" "$core" --firmware "$pup" --settings '{"renderer":"opengl-hw"}' --frames 300 --report 50 \
+			--tty-out "$work/tty-watch$wrun.txt" "$limitgame" 2>"$work/watch$wrun.err" | grep '^frame' > "$work/watch$wrun.txt"
+	done
+	wfaults1="$(sed -n 's/^page faults served by the renderer: //p' "$work/watch1.err")"
+	wfaults2="$(sed -n 's/^page faults served by the renderer: //p' "$work/watch2.err")"
+	if ! bridge_answered "$work/watch1.err" "$work/watch2.err"; then
+		failed "gpu:page-watch - $bridge_gap"
+	elif ! grep -q '^frame   300' "$work/watch1.txt"; then
+		failed "gpu:page-watch - $(basename "$limitgame") did not run 300 frames on the GL renderer ($(tail -1 "$work/watch1.err"))"
+	elif [ -z "$wfaults1" ] || [ "$wfaults1" = 0 ]; then
+		failed "gpu:page-watch - the renderer served no page fault in 300 frames of $(basename "$limitgame"): nothing it caches was watched"
+	elif [ "$wfaults1" != "$wfaults2" ] || ! cmp -s "$work/watch1.txt" "$work/watch2.txt" || ! cmp -s "$work/tty-watch1.txt" "$work/tty-watch2.txt"; then
+		failed "gpu:page-watch - two runs differ: ${wfaults1} and ${wfaults2:-0} faults (diff $work/watch1.txt $work/watch2.txt)"
+	else
+		pass "gpu:page-watch - $(basename "$limitgame"): $wfaults1 page faults served by the renderer in 300 frames, the same faults, memory, picture and sound in two sandbox runs"
+	fi
+fi
+
 # ---- spu:mailbox-poll ----------------------------------------------------
 # An SPU that waits for work by polling its inbound mailbox (rchcnt, then a
 # branch back) ran out its whole slice of 80,000 instructions before the PPU
@@ -1226,10 +1266,14 @@ else
 		elif [ -s "$work/gdisc-got.txt" ] && cmp -s "$work/gdisc-want.txt" "$work/gdisc-got.txt"; then
 			if ! same_both gdisc; then
 				failed "gpu:disc - the sandbox's GL run differs from the native GL run (diff $work/gdisc-native.txt $work/gdisc-wbx.txt)"
-			elif [ -z "$faults_native" ] || [ "$have_wbx" = 1 ] && [ "$faults_native" != "$faults_wbx" ]; then
-				failed "gpu:disc - the renderer's page watch served ${faults_native:-0} faults natively and ${faults_wbx:-0} in the sandbox (both must, equally)"
+			elif [ "$have_wbx" = 1 ] && [ "${faults_native:-0}" != "${faults_wbx:-0}" ]; then
+				# a runner prints the count only when it is not zero
+				failed "gpu:disc - the renderer's page watch served ${faults_native:-0} faults natively and ${faults_wbx:-0} in the sandbox (they must be equal)"
 			else
-				pass "gpu:disc - 120 frames on the GL renderer, memory identical to the null renderer's run, ${faults_native} page faults served by the renderer in each flavor, $(vs_sandbox)"
+				# This disc writes to no page the renderer watches, so the count
+				# is 0 in each flavor; gpu:page-watch is the leg that needs faults
+				# (2026-10-18: this one passed on 0 against 0 claiming it proved them).
+				pass "gpu:disc - 120 frames on the GL renderer, memory identical to the null renderer's run, ${faults_native:-0} page faults served by the renderer in each flavor, $(vs_sandbox)"
 			fi
 		else
 			failed "gpu:disc - the GL run's memory differs from the null renderer's (diff $work/gdisc-want.txt $work/gdisc-got.txt; $(tail -1 "$work/gdisc-native.err"))"
