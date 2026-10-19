@@ -110,7 +110,7 @@ reference_ram() {
 	local tag="$1" game="$2" settings="${3:-}"
 	# run-wbx carries its own libminiboxhost via rpath; the chimera
 	# LD_LIBRARY_PATH exported above would shadow it
-	env -u LD_LIBRARY_PATH timeout 900 "$runwbx" "$wbx" \
+	env -u LD_LIBRARY_PATH timeout 900 "$runwbx" "$wbx" ${settings:+--settings "$settings"} \
 		--frames "$frames" --report "$frames" --ram-out "$work/ref.$tag.ram.full" \
 		"$game" > "$work/ref.$tag.log" 2>&1 || return 1
 	head -c "$SLICE" "$work/ref.$tag.ram.full" > "$work/ref.$tag.ram.bin"
@@ -122,7 +122,14 @@ settings_config() { python3 "$here/settings-config.py" "$config" "$1" "$2" "${3:
 # The renderer is named in every run here. The package's default is Vulkan,
 # which a computer without a Vulkan driver - a CI runner - cannot give, and
 # these runs are about the frontend and the machine, not about that.
-settings_config "$work/config.base.ini" '{"renderer": "opengl-hw"}'
+# The reference runs the interpreter (run-wbx's own fallback) and the null
+# renderer, this run GL. On LLVM, the package's default since chimera#316,
+# one counter of lv2test's ends one apart from the reference's (the two
+# decoders keep slightly different time), so this run names the
+# interpreter. The legs below run the package's default against the same
+# reference and their slices of memory agree; precompile:frontend holds that
+# the default is LLVM.
+settings_config "$work/config.base.ini" '{"renderer": "opengl-hw", "ppu_decoder": "interpreter"}'
 if ! reference_ram "base" "$game"; then
 	report "game:frontend" FAIL "reference runner error (see tests/work/ref.base.log)"
 elif ! run_frontend "base" "$work/config.base.ini" "$frames" "$work/base.png" "$game"; then
@@ -308,7 +315,10 @@ cache_root="$data_home/Cache/PrecompiledCode"
 if [ ! -f "$pup" ]; then
 	report "precompile:frontend" SKIP "needs the firmware"
 else
-	settings_config "$work/config.llvm.ini" '{"renderer": "opengl-hw", "ppu_decoder": "llvm"}' "$firmware_json"
+	# no ppu_decoder: the warm run takes the package's default, which is the
+	# LLVM recompiler (user-decided, 2026-10-19, chimera#316). Were it the
+	# interpreter, the warm run would fetch nothing and this leg would fail.
+	settings_config "$work/config.llvm.ini" '{"renderer": "opengl-hw"}' "$firmware_json"
 	rm -rf "$data_home"
 	( cd "$chimera_root" && CHIMERA_DATA_HOME="$data_home" timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=0/2/game" "$game" ) > "$work/precompile-0.log" 2>&1 &
 	pre0=$!

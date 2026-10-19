@@ -3281,3 +3281,42 @@ in those 1,200 frames, and 700 frames took 327.6 s with references and
 329.0 s with copies. Test: `pkg:references`. Savestates no longer carry
 the installed files either: like a disc's, they are the project's files.
 
+
+## 2026-10-19: the PPU runs on LLVM by default (user-decided, chimera#316)
+
+The owner decided that new projects use the LLVM recompiler for the main
+processor. The interpreter was the default "until compiled modules can be
+kept between sessions"; the compile cache has kept them since (Chimera's
+docs/compile-cache.md), so a game's modules are compiled once, on its first
+boot or in the precompile sessions before it, and later sessions start warm.
+
+`ppu_decoder` now declares `llvm` as its default. Chimera's project wizard
+records every setting, so a project made before keeps the interpreter it
+recorded and plays back as it did; only a hand-made project that never named
+the setting takes the new default. The core's own fallback when no settings
+are given (the gate's runners) stays the interpreter, so the legs that do not
+ask for LLVM measure what they did.
+
+The recompiler compiles for one target, x86-64-v3, so its code is the same
+on every machine; a processor without AVX2 and its companions would die on
+the first compiled instruction. With LLVM the default more people meet that,
+so Init now refuses `llvm` on such a processor and says to choose the
+interpreter (wbx-entry.cpp). Not tested on such a processor: there is none
+here.
+
+Measured on the GeForce GTX 1060 (chimera-run, Bejeweled 3, 900 frames, GL
+renderer): the first run with an empty compile cache took 104 s and stored 28
+objects; the next took 18 s and fetched all 28; the interpreter takes 20 s.
+Every LLVM run ended with the same main memory and picture, also with 8
+rewinds to frame 600. A light game, so the speed is the compile's and the
+cache's, not the recompiler's.
+
+game:frontend compares the frontend's run with run-wbx's, which takes the
+interpreter (its own fallback) and the null renderer. On LLVM one counter of
+lv2test's ends one apart, so that leg names the interpreter; the other
+frontend legs run the package's default against the same reference.
+
+Test: the frontend gate's precompile:frontend leg no longer names the
+decoder. Its warm run takes the package's default and must fetch every object
+the precompile sessions stored; with the interpreter as the default it fetches
+none and fails.

@@ -163,6 +163,15 @@ ECL_EXPORT int Init(void)
   chimera_rpcs3_set_spu_decoder(spuDecoder);
   char ppuDecoder[16] = "interpreter";
   wbx_setting_str("ppu_decoder", ppuDecoder, sizeof ppuDecoder);
+  // The recompiler compiles for x86-64-v3 (AVX2 and its companions), one
+  // target for every machine so the code is the same everywhere. A processor
+  // without it would die on the first compiled instruction; it is told so
+  // instead, now that LLVM is the default (chimera#316).
+  if (strcmp(ppuDecoder, "llvm") == 0 && !__builtin_cpu_supports("x86-64-v3"))
+  {
+    snprintf(g_loadError, sizeof g_loadError, "the PPU Decoder setting is 'llvm', whose compiled code needs a processor with AVX2 (x86-64-v3), and this one has none: choose 'interpreter' for this project");
+    return 0;
+  }
   chimera_rpcs3_set_ppu_decoder(ppuDecoder);
   // whether finished render targets are written back into the console's
   // memory, where a game that reads its own picture expects them
