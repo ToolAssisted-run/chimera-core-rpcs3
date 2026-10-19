@@ -141,142 +141,142 @@
 	"AllTrollersAnalog": {
 		"PlayStation 3 Controller": {
 			"P1 Left Stick X": {
-				"Value": "J1 X Axis, X1 LStickX",
+				"Value": "J1 X Axis, X1 LeftThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P1 Left Stick Y": {
-				"Value": "J1 Y Axis, X1 LStickY",
+				"Value": "J1 Y Axis, X1 LeftThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P1 Right Stick X": {
-				"Value": "J1 Z Axis, X1 RStickX",
+				"Value": "J1 Z Axis, X1 RightThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P1 Right Stick Y": {
-				"Value": "J1 RotationZ Axis, X1 RStickY",
+				"Value": "J1 S Axis, X1 RightThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P2 Left Stick X": {
-				"Value": "J2 X Axis, X2 LStickX",
+				"Value": "J2 X Axis, X2 LeftThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P2 Left Stick Y": {
-				"Value": "J2 Y Axis, X2 LStickY",
+				"Value": "J2 Y Axis, X2 LeftThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P2 Right Stick X": {
-				"Value": "J2 Z Axis, X2 RStickX",
+				"Value": "J2 Z Axis, X2 RightThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P2 Right Stick Y": {
-				"Value": "J2 RotationZ Axis, X2 RStickY",
+				"Value": "J2 S Axis, X2 RightThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P3 Left Stick X": {
-				"Value": "J3 X Axis, X3 LStickX",
+				"Value": "J3 X Axis, X3 LeftThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P3 Left Stick Y": {
-				"Value": "J3 Y Axis, X3 LStickY",
+				"Value": "J3 Y Axis, X3 LeftThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P3 Right Stick X": {
-				"Value": "J3 Z Axis, X3 RStickX",
+				"Value": "J3 Z Axis, X3 RightThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P3 Right Stick Y": {
-				"Value": "J3 RotationZ Axis, X3 RStickY",
+				"Value": "J3 S Axis, X3 RightThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P4 Left Stick X": {
-				"Value": "J4 X Axis, X4 LStickX",
+				"Value": "J4 X Axis, X4 LeftThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P4 Left Stick Y": {
-				"Value": "J4 Y Axis, X4 LStickY",
+				"Value": "J4 Y Axis, X4 LeftThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P4 Right Stick X": {
-				"Value": "J4 Z Axis, X4 RStickX",
+				"Value": "J4 Z Axis, X4 RightThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P4 Right Stick Y": {
-				"Value": "J4 RotationZ Axis, X4 RStickY",
+				"Value": "J4 S Axis, X4 RightThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P5 Left Stick X": {
-				"Value": "J5 X Axis, X5 LStickX",
+				"Value": "J5 X Axis, X5 LeftThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P5 Left Stick Y": {
-				"Value": "J5 Y Axis, X5 LStickY",
+				"Value": "J5 Y Axis, X5 LeftThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P5 Right Stick X": {
-				"Value": "J5 Z Axis, X5 RStickX",
+				"Value": "J5 Z Axis, X5 RightThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P5 Right Stick Y": {
-				"Value": "J5 RotationZ Axis, X5 RStickY",
+				"Value": "J5 S Axis, X5 RightThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P6 Left Stick X": {
-				"Value": "J6 X Axis, X6 LStickX",
+				"Value": "J6 X Axis, X6 LeftThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P6 Left Stick Y": {
-				"Value": "J6 Y Axis, X6 LStickY",
+				"Value": "J6 Y Axis, X6 LeftThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P6 Right Stick X": {
-				"Value": "J6 Z Axis, X6 RStickX",
+				"Value": "J6 Z Axis, X6 RightThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P6 Right Stick Y": {
-				"Value": "J6 RotationZ Axis, X6 RStickY",
+				"Value": "J6 S Axis, X6 RightThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P7 Left Stick X": {
-				"Value": "J7 X Axis, X7 LStickX",
+				"Value": "J7 X Axis, X7 LeftThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P7 Left Stick Y": {
-				"Value": "J7 Y Axis, X7 LStickY",
+				"Value": "J7 Y Axis, X7 LeftThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P7 Right Stick X": {
-				"Value": "J7 Z Axis, X7 RStickX",
+				"Value": "J7 Z Axis, X7 RightThumbX Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			},
 			"P7 Right Stick Y": {
-				"Value": "J7 RotationZ Axis, X7 RStickY",
+				"Value": "J7 S Axis, X7 RightThumbY Axis",
 				"Mult": 1.0,
 				"Deadzone": 0.1
 			}
