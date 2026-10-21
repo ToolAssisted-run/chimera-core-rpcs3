@@ -1,0 +1,21 @@
+diff --git a/rpcs3/Emu/Cell/PPUThread.cpp b/rpcs3/Emu/Cell/PPUThread.cpp
+--- a/rpcs3/Emu/Cell/PPUThread.cpp
++++ b/rpcs3/Emu/Cell/PPUThread.cpp
+@@ -2580,6 +2580,17 @@
+ 		}
+ 		case ppu_cmd::entry_call:
+ 		{
++#ifdef CHIMERA_CORE
++			// Chimera: a thread that was just started gives way once before
++			// its first instruction. On a PS3 a new thread takes microseconds
++			// to start, and the thread that started it goes on meanwhile; a
++			// game may finish what the new thread uses only after starting it
++			// (Oblivion's task manager, chimera#332). Here a turn could end
++			// just after the start and give the new thread the machine first.
++			// Giving way puts every thread that can run, the starter among
++			// them, ahead of it.
++			vsched_yield(0);
++#endif
+ 			cmd_pop(), fast_call(entry_func.addr, entry_func.rtoc, true);
+ 			break;
+ 		}

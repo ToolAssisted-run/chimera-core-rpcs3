@@ -3320,3 +3320,37 @@ Test: the frontend gate's precompile:frontend leg no longer names the
 decoder. Its warm run takes the package's default and must fetch every object
 the precompile sessions stored; with the interpreter as the default it fetches
 none and fails.
+
+
+## 2026-10-21: a thread that was just started gives way once (chimera#332)
+
+Oblivion went black on its first boot on the LLVM recompiler, the default
+since 2026-10-19: one of its threads called `abort()` and the game ended
+itself. The game's main thread builds a task manager whose constructor
+starts the manager's thread and then goes on filling in the object. On a PS3
+a new thread takes microseconds to start, so the object is always finished
+first. Here one thread runs at a time and a turn ends after a fixed amount of
+work. The main thread's turn happened to end about 4,000 instructions after
+the start, the turn went round to the threads made after it, and the new
+thread ran first, found the object half built and aborted. On the
+interpreter the turns end at other places, and the game boots. The memory
+messages in the log ("Cannot allocate 0x10000 bytes") were a red herring: the
+game takes all the memory there is at boot, and they appear on every boot.
+
+Patch 0059 makes a thread that was just started give way once before its
+first instruction (`vsched_yield(0)` in `ppu_cmd::entry_call`, charging
+nothing). Every thread that can run then has a turn first, its starter among
+them, since the starter comes before it in the order of turns. A thread
+starting a little later is what a PS3 does anyway.
+
+Test: `sandbox:thread-start`. `tests/asm/threadstart.s` starts 984 threads in
+batches of 41; after each start the main thread works on for about 3,000
+instructions and then marks the thread as made, and a thread that finds no
+mark at its first instruction counts itself early. Without the patch 7 of
+the 984 were early on each decoder; with it, none.
+
+Measured on the GeForce GTX 1060 (chimera-run, the reporter's disc and
+firmware, LLVM, GL renderer, retail memory): Oblivion now reaches its
+autosave notice by frame 1800 and shows it at 3600, as it does on the
+interpreter; before the patch it aborted on the same frames and the picture
+stayed black.

@@ -13,6 +13,9 @@
 #   sandbox:reservation-held  rsrvtest.elf: a 0xAAAAAAAA store meeting a line
 #                          another CPU locked and then gave way inside waits
 #                          by giving way too, and the program runs to its end
+#   sandbox:thread-start   threadstart.elf: a thread that was just started
+#                          does not run before its starter has gone on, on
+#                          either PPU decoder (chimera#332)
 #   rsx:frame-limit        with a game in tests/roms-local/frame-limit: at
 #                          frameLimit 60 the flip is held, not slept, and a
 #                          game streaming at its memory ceiling does not run out
@@ -356,6 +359,36 @@ if [ "$have_wbx" = 1 ]; then
 			pass "sandbox:reservation-held - a store that renews a reservation waits for the line's holder by giving way: 60 frames of 200 stwcx. each (it stops before the first frame without)"
 		else
 			failed "sandbox:reservation-held - rsrvtest stopped at '${rlast:-no TTY at all}': a CPU waiting for a held reservation line is not giving the machine to its holder ($(tail -1 "$work/rsrv.err"))"
+		fi
+	fi
+
+	# ---- sandbox:thread-start -------------------------------------------
+	# threadstart.elf (chimera#332): a thread that was just started does not
+	# run before the thread that started it has gone on. On a PS3 a new thread
+	# takes microseconds to start; Oblivion finishes its task manager after
+	# starting the manager's thread, and the thread aborted when it ran first.
+	# 984 threads are started, each marked as made about 3000 instructions
+	# after its start, and each counts itself early when it finds no mark. On
+	# both PPU decoders none may be early.
+	#
+	# NEGATIVE CONTROL, measured 2026-10-21: without the give-way at a new
+	# thread's first instruction (patch 0059), 7 of the 984 were early on the
+	# interpreter and 7 on LLVM. Run by hand when this changes:
+	#   run-wbx <core.wbx without 0059> --settings '{"ppu_decoder":"llvm"}' --frames 120 threadstart.elf
+	tstart="$work/threadstart.elf"
+	if ! python3 "$root/tests/asm/ppc.py" "$root/tests/asm/threadstart.s" "$tstart" >/dev/null; then
+		failed "sandbox:thread-start - threadstart.elf does not assemble"
+	else
+		tsbad=""
+		for dec in interpreter llvm; do
+			timeout 300 "$wbx" "$core" --settings "{\"ppu_decoder\":\"$dec\"}" --frames 120 --report 60 --tty-out "$work/tty-threadstart-$dec.txt" "$tstart" > "$work/threadstart-$dec.txt" 2>"$work/threadstart-$dec.err"
+			tsline="$(head -1 "$work/tty-threadstart-$dec.txt" 2>/dev/null)"
+			[ "$tsline" = "threadstart: started 00984 early 00000000" ] || tsbad="$tsbad $dec: '${tsline:-no TTY at all}'"
+		done
+		if [ -z "$tsbad" ]; then
+			pass "sandbox:thread-start - 984 threads started on each PPU decoder, none ran before its starter had gone on (7 did without the give-way)"
+		else
+			failed "sandbox:thread-start - a thread ran before the thread that started it had gone on:$tsbad"
 		fi
 	fi
 fi

@@ -280,6 +280,9 @@ Legs that need no content, and so run in CI:
 - `sandbox:reservation-held` - `rsrvtest.elf`, assembled by the gate, runs to
   its end: a CPU waiting for a locked reservation line gives way to the
   holder.
+- `sandbox:thread-start` - `threadstart.elf`, assembled by the gate, starts
+  984 threads on each PPU decoder, and none runs before the thread that
+  started it has gone on (chimera#332).
 - `vsched:aside` - the scheduler by itself (`tests/vsched/aside-test.cpp`,
   built with `g++` by the script): work set aside from the machine, which is
   what a renderer does after a savestate is loaded, leaves the console's
