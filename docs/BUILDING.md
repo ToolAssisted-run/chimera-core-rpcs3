@@ -314,6 +314,11 @@ the user's own and all under the gitignored `tests/roms-local/`:
   `libvulkan1 mesa-vulkan-drivers`). They run `tests/roms/flip.elf`: 200
   frames on a Vulkan device, frame 150 against OpenGL's, and a state saved
   and loaded around every frame against a run without one.
+- `vk:dma-windows`, `vk:dialog` - a decrypted `.iso` in
+  `tests/roms-local/vk-dma/` (Oblivion reproduces both), run like the `vk:*`
+  legs: 1900 frames on Vulkan with write color buffers on. The game's threads
+  must still be running, and its autosave notice, a system dialog, must be
+  drawn at frame 1850.
 - `vk:names` needs nothing but a built core: it holds the commands RPCS3 asks
   a Vulkan device for by name (`VKProcTable.h`) against the names the bridge
   answers and the extensions it offers (`waterbox/generated-vk`, written by

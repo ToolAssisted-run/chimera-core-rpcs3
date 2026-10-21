@@ -1,0 +1,56 @@
+diff --git a/rpcs3/Emu/RSX/VK/VKDMA.h b/rpcs3/Emu/RSX/VK/VKDMA.h
+--- a/rpcs3/Emu/RSX/VK/VKDMA.h
++++ b/rpcs3/Emu/RSX/VK/VKDMA.h
+@@ -12,6 +12,12 @@
+ 
+ 	void clear_dma_resources();
+ 
++#ifdef CHIMERA_CORE
++	// whether a thread is copying between guest memory and the DMA blocks
++	// right now (g_dma_mutex is held)
++	bool chimera_dma_busy();
++#endif
++
+ 	class dma_block
+ 	{
+ 	protected:
+diff --git a/rpcs3/Emu/RSX/VK/VKDMA.cpp b/rpcs3/Emu/RSX/VK/VKDMA.cpp
+--- a/rpcs3/Emu/RSX/VK/VKDMA.cpp
++++ b/rpcs3/Emu/RSX/VK/VKDMA.cpp
+@@ -339,6 +339,13 @@
+ 		block->init(*g_render_device, base_address, expected_length);
+ 	}
+ 
++#ifdef CHIMERA_CORE
++	bool chimera_dma_busy()
++	{
++		return !g_dma_mutex.is_free();
++	}
++#endif
++
+ 	dma_mapping_handle map_dma(u32 local_address, u32 length)
+ 	{
+ 		// Not much contention expected here, avoid searching twice
+diff --git a/rpcs3/Emu/RSX/VK/VKGSRender.h b/rpcs3/Emu/RSX/VK/VKGSRender.h
+--- a/rpcs3/Emu/RSX/VK/VKGSRender.h
++++ b/rpcs3/Emu/RSX/VK/VKGSRender.h
+@@ -327,11 +327,14 @@
+ public:
+ 	// called between frames, before a savestate is taken
+ 	void chimera_shadow_surfaces();
+-	// whether the RSX thread is inside its texture cache right now: a fault it
+-	// takes there, on a page the emulator itself locked, is served by opening
+-	// the page and not by this renderer's handler, which would wait for a
+-	// lock the thread already holds (chimera_rpcs3_on_fault in the driver)
+-	bool chimera_texture_cache_busy() const override { return m_texture_cache.chimera_busy(); }
++	// whether the RSX thread is inside its texture cache right now, or copying
++	// between guest memory and a DMA block: a fault it takes there, on a page
++	// the emulator itself locked, is served by opening the page and not by
++	// this renderer's handler, which would wait for a lock the thread already
++	// holds (chimera_rpcs3_on_fault in the driver). Upstream copies through
++	// vm::get_super_ptr, which no page lock reaches; in the box that is the
++	// same mapping (chimera#332, Oblivion's first flips)
++	bool chimera_texture_cache_busy() const override { return m_texture_cache.chimera_busy() || vk::chimera_dma_busy(); }
+ protected:
+ #endif
+ 	void flip(const rsx::display_flip_info_t& info) override;

@@ -26,6 +26,12 @@
 #                          RSX starts on commands soon after a CPU gives them,
 #                          so its menu text is not drawn from memory the game
 #                          has already reused - a white smear (chimera#294)
+#   vk:dma-windows         with a game in tests/roms-local/vk-dma, on Vulkan
+#                          with write color buffers on: a copy the RSX makes
+#                          onto a page it locked is served by a window, and
+#                          the game's threads keep running (chimera#332)
+#   vk:dialog              the same run: a system dialog (Oblivion's autosave
+#                          notice) is drawn on Vulkan, not left black
 #   firmware:lle           with Sony's PUP (tests/roms-local, never committed):
 #                          the firmware installs in the box, liblv2 is LLE, and
 #                          native == sandbox still holds
@@ -1457,6 +1463,85 @@ else
 			failed "vk:rerecord - the renderer was made again $made times in the run with the loads and $made_straight in the one without, where 190 or more and 0 are expected: the loads did not happen, or the log changed (see $vk/rr.log)"
 		else
 			pass "vk:rerecord - 200 frames with a state saved and loaded around every one leave the memory and the picture of a run without one; the renderer was made again $made times"
+		fi
+	fi
+fi
+
+# ---- vk:dma-windows (chimera issue 332) ----------------------------------
+# The Vulkan renderer copies between guest memory and its DMA blocks while it
+# holds the blocks' lock (vk::sync_dma). Upstream copies through
+# vm::get_super_ptr, which no page lock reaches; in the box that is the guest's
+# own mapping, so a copy onto a page the texture cache had locked faulted on
+# the RSX thread, and the renderer's fault handler wanted the same lock: the
+# RSX waited on itself, and every thread of the game after it (Oblivion with
+# Write color buffers on, from its first flips). Patch 0060 counts the DMA
+# lock as the renderer being busy, so the fault opens a window onto the page
+# as one inside the texture cache does (rsx:windows).
+#
+# The subject is whatever decrypted .iso the user put in
+# tests/roms-local/vk-dma/ (Oblivion is the reproducer), on the Vulkan
+# renderer with write color buffers on and the PPU interpreter (nothing to
+# compile), through chimera-run on whatever Vulkan driver is here. The game's
+# threads must still be running after 1200 frames: rpcs3's count of
+# sys_timer_usleep calls at the end of the run is 10000 or more.
+#
+# NEGATIVE CONTROL, measured 2026-10-21 on lavapipe with Oblivion: 36101 with
+# patch 0060, 292 without it.
+#
+# vk:dialog, from the same run: the console's own dialogs are drawn by the
+# renderer's overlay pass, whose vertex and uniform heaps are made with the
+# first dialog. Every heap here keeps a shadow that is copied to the card
+# before a submit, and the renderer's list of heaps to copy was made when it
+# started, so the dialogs were drawn from empty memory: nothing (patch 0061).
+# Oblivion shows its autosave notice, a system dialog on a black screen, from
+# frame 1600 or so; at frame 1850 the picture must have 2000 lit pixels or
+# more. NEGATIVE CONTROL, measured 2026-10-21 on lavapipe: 11979 with patch
+# 0061, 0 without it.
+vkdmaiso=""
+for f in "$root"/tests/roms-local/vk-dma/*.iso; do
+	[ -f "$f" ] && { vkdmaiso="$f"; break; }
+done
+if [ -z "$vkdmaiso" ]; then
+	skip "vk:dma-windows - no .iso in tests/roms-local/vk-dma/ (would prove: on the Vulkan renderer, a copy the RSX makes onto a page it locked is served by a window, and the game does not stop)"
+	skip "vk:dialog - the same game (would prove: a system dialog is drawn on Vulkan)"
+elif [ -z "$crunroot" ]; then
+	skip "vk:dma-windows - needs chimera-run and an installed rpcs3.chimeraCore (set CHIMERA_ROOT)"
+	skip "vk:dialog - the same"
+else
+	vd="$work/vk-dma"
+	mkdir -p "$vd"
+	printf '[Input]\nLogKey:#\n' > "$vd/none.txt"
+	printf 'sys_tty' > "$vd/logtrace.txt"
+	env -u DISPLAY timeout 2400 "$crunroot/build/meson-linux/chimera-run" "$crunroot/build/Cores/rpcs3.chimeraCore" "$vkdmaiso" "$vd/none.txt" --gpu \
+		--settings '{"renderer":"vulkan-hw","ppu_decoder":"interpreter","writeColorBuffers":true}' \
+		--firmware "PS3UPDAT.PUP=$pup" --firmware "logtrace=$vd/logtrace.txt" --record "$vd/rec.txt" --frames 1900 \
+		--screenshot "1850=$vd/dialog.tga" > "$vd/run.log" 2>&1 || true
+	sleeps="$(sed -n 's/.*sys_timer_usleep \[\([0-9]*\)\].*/\1/p' "$vd/run.log" | tail -1)"
+	# lit pixels of an uncompressed TGA, without Pillow
+	lit="$(python3 - "$vd/dialog.tga" <<'LITPY' 2>/dev/null
+import sys
+d = open(sys.argv[1], "rb").read()
+w, h, px = d[12] | d[13] << 8, d[14] | d[15] << 8, d[16] // 8
+off = 18 + d[0]
+print(sum(1 for i in range(off, off + w * h * px, px) if d[i] or d[i + 1] or d[i + 2]))
+LITPY
+)"
+	if grep -q "handed the core no Vulkan device" "$vd/run.log"; then
+		skip "vk:dma-windows - this chimera-run handed the core no Vulkan device (no Vulkan driver here)"
+		skip "vk:dialog - the same"
+	elif ! grep -q '^frames=1900' "$vd/run.log"; then
+		failed "vk:dma-windows - the run did not reach frame 1900 (see $vd/run.log)"
+		failed "vk:dialog - the same run"
+	else
+		if [ "${sleeps:-0}" -lt 10000 ]; then
+			failed "vk:dma-windows - $(basename "$vkdmaiso"): ${sleeps:-no} sleeps in 1900 frames, fewer than 10000: the game's threads stopped, the RSX waiting on a lock it holds (see $vd/run.log)"
+		else
+			pass "vk:dma-windows - $(basename "$vkdmaiso") on Vulkan with write color buffers on: $sleeps sleeps in 1900 frames, the game's threads still running (292 in 1200 without patch 0060)"
+		fi
+		if [ "${lit:-0}" -lt 2000 ]; then
+			failed "vk:dialog - the picture at frame 1850 has ${lit:-no} lit pixels, fewer than 2000: the autosave notice was not drawn (see $vd/dialog.tga)"
+		else
+			pass "vk:dialog - the autosave notice is drawn on Vulkan: $lit lit pixels at frame 1850 (0 without patch 0061)"
 		fi
 	fi
 fi

@@ -3354,3 +3354,57 @@ firmware, LLVM, GL renderer, retail memory): Oblivion now reaches its
 autosave notice by frame 1800 and shows it at 3600, as it does on the
 interpreter; before the patch it aborted on the same frames and the picture
 stayed black.
+
+
+## 2026-10-21: the RSX copies DMA through the pages it locked (chimera#332)
+
+On the Vulkan renderer Oblivion stopped within its first flips: every thread
+of the game waiting, the frames still coming, the picture black. It is the
+class of bug patch 0029 fixed for OpenGL. Upstream's RSX reads and writes
+guest memory through `vm::get_super_ptr`, a second mapping no page lock
+reaches; in the box there is one mapping (patch 0007), so the RSX faults on
+pages its own caches locked, and the renderer's fault handler waits for a
+lock the RSX already holds. The driver serves such a fault with a window
+onto the page when the renderer says it is busy (`chimera_texture_cache_busy`).
+
+The Vulkan renderer said so only inside its texture cache. Its DMA blocks
+are copied to and from guest memory under their own lock (`vk::sync_dma`
+takes `g_dma_mutex` as a reader), and with write color buffers on such a copy
+landed on a locked page. The handler went on to flush the cache section,
+which maps a DMA block and wants `g_dma_mutex` for itself: the RSX waited on
+itself, and a game thread faulting on the same pages waited behind it.
+Found with a temporary record in `vsched.cpp` of where each thread began its
+wait (`_Unwind_Backtrace`), printed six seconds in and read with `addr2line`.
+
+Patch 0060: `vk::chimera_dma_busy()` (`g_dma_mutex` is held), and the Vulkan
+renderer is busy when its texture cache is or a DMA copy is under way.
+
+Test: `vk:dma-windows`, with a decrypted `.iso` in `tests/roms-local/vk-dma/`.
+On lavapipe, Oblivion with write color buffers on and the PPU interpreter
+made 292 `sys_timer_usleep` calls in 1200 frames without the patch (the game
+stopped at its first flips) and 36101 with it, the same as with write color
+buffers off.
+
+
+## 2026-10-21: every Vulkan heap reaches the card (chimera#332)
+
+With the stall gone, Oblivion on Vulkan still showed a black screen where
+OpenGL shows its autosave notice; the game itself ran on, and after Cross was
+pressed its title screen was the same picture on both renderers. The notice
+is a system dialog, which RPCS3 draws with its own overlay pass, and on
+Vulkan no system dialog was drawn at all.
+
+Patch 0051 gives every Vulkan heap a shadow: the emulator writes to the
+shadow, and the written ranges are copied to the card before a submit
+(`data_heap::sync`). The renderer syncs the heaps in
+`m_flushable_data_heaps`, a list it makes once, when it starts. The overlay
+pass makes its vertex and uniform heaps later, with the first dialog, so they
+were never synced and the card drew the dialogs from empty memory.
+
+Patch 0061 keeps a list of every heap that has a shadow, whenever it was
+made (`vk::chimera_shadowed_heaps`, added in `data_heap::create`, removed in
+`destroy`), and the renderer syncs the dirty ones from it.
+
+Test: `vk:dialog`, from the `vk:dma-windows` run. On lavapipe the picture at
+frame 1850 had 0 lit pixels without the patch and 11979 with it, the notice
+as OpenGL draws it.

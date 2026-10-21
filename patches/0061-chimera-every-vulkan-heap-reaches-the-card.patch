@@ -1,0 +1,88 @@
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/data_heap.h b/rpcs3/Emu/RSX/VK/vkutils/data_heap.h
+--- a/rpcs3/Emu/RSX/VK/vkutils/data_heap.h
++++ b/rpcs3/Emu/RSX/VK/vkutils/data_heap.h
+@@ -110,4 +110,9 @@
+ 	};
+ 
+ 	extern data_heap* get_upload_heap();
++
++#if defined(CHIMERA_CORE)
++	// chimera: every heap that has a shadow, whenever it was made (data_heap.cpp)
++	const std::vector<data_heap*>& chimera_shadowed_heaps();
++#endif
+ }
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/data_heap.cpp b/rpcs3/Emu/RSX/VK/vkutils/data_heap.cpp
+--- a/rpcs3/Emu/RSX/VK/vkutils/data_heap.cpp
++++ b/rpcs3/Emu/RSX/VK/vkutils/data_heap.cpp
+@@ -13,6 +13,22 @@
+ {
+ 	data_heap g_upload_heap;
+ 
++#if defined(CHIMERA_CORE)
++	// chimera: every heap keeps a shadow here (create, below), and what is
++	// written to it reaches the card when the renderer syncs the heap before
++	// a submit. The renderer made its list of heaps to sync once, when it
++	// started; heaps made later - the overlays' vertices and uniforms, made
++	// with the first system dialog - were never synced, and the card drew the
++	// dialogs from empty memory: nothing (chimera#332). This list has every
++	// heap with a shadow, whenever it was made.
++	static std::vector<data_heap*> s_chimera_shadowed;
++
++	const std::vector<data_heap*>& chimera_shadowed_heaps()
++	{
++		return s_chimera_shadowed;
++	}
++#endif
++
+ 	void data_heap::create(VkBufferUsageFlags usage, usz size, rsx::flags32_t flags, const char* name, usz guard, VkBool32 notify)
+ 	{
+ 		rsx::data_heap::init(size, name, guard);
+@@ -67,6 +83,12 @@
+ 			memory_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+ 			memory_index = memory_map.device_local;
+ 			m_prefer_writethrough = false;
++#if defined(CHIMERA_CORE)
++			if (std::find(s_chimera_shadowed.begin(), s_chimera_shadowed.end(), this) == s_chimera_shadowed.end())
++			{
++				s_chimera_shadowed.push_back(this);
++			}
++#endif
+ 		}
+ 
+ 		VkFlags create_flags = 0;
+@@ -103,6 +125,9 @@
+ 
+ 		heap.reset();
+ 		shadow.reset();
++#if defined(CHIMERA_CORE)
++		std::erase(s_chimera_shadowed, this);
++#endif
+ 	}
+ 
+ 	bool data_heap::grow(usz size)
+diff --git a/rpcs3/Emu/RSX/VK/VKGSRender.cpp b/rpcs3/Emu/RSX/VK/VKGSRender.cpp
+--- a/rpcs3/Emu/RSX/VK/VKGSRender.cpp
++++ b/rpcs3/Emu/RSX/VK/VKGSRender.cpp
+@@ -2966,8 +2966,22 @@
+ 
+ 	if (vk::test_status_interrupt(vk::heap_dirty))
+ 	{
++#if defined(CHIMERA_CORE)
++		// chimera: every heap with a shadow, the ones made after the renderer
++		// started among them (vkutils/data_heap.cpp)
++		rsx::simple_array<vk::data_heap*> dirty_list;
++		for (vk::data_heap* heap : vk::chimera_shadowed_heaps())
++		{
++			if (heap->is_dirty())
++			{
++				dirty_list.push_back(heap);
++			}
++		}
++		if (!dirty_list.empty())
++#else
+ 		if (const auto dirty_list = m_flushable_data_heaps.filter(FN(x->is_dirty()));
+ 			!dirty_list.empty())
++#endif
+ 		{
+ 			auto secondary_command_buffer = m_secondary_cb_list.next();
+ 			secondary_command_buffer->begin();
