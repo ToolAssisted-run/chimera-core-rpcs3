@@ -3408,3 +3408,13 @@ made (`vk::chimera_shadowed_heaps`, added in `data_heap::create`, removed in
 Test: `vk:dialog`, from the `vk:dma-windows` run. On lavapipe the picture at
 frame 1850 had 0 lit pixels without the patch and 11979 with it, the notice
 as OpenGL draws it.
+
+## A crash report keeps the lines that say what happened (chimera#361, 2026-10-24)
+
+A crash report keeps the last 16 KiB of what the core wrote. In a report of
+Oblivion crashing, nearly all of it was one line, "Failed to open
+/proc/self/status": RPCS3 asks whether a debugger is attached every time a
+thread is named, by reading /proc/self/status, and the sandbox has no /proc.
+Patch 0062 answers "no debugger" in the sandbox without looking. Nothing
+else changes: the answer was already "no". Gate 45 passed, 0 failed, 2
+skipped; none of the gate's 263 logs has the line.

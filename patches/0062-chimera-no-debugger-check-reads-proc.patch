@@ -1,0 +1,19 @@
+diff --git a/Utilities/Thread.cpp b/Utilities/Thread.cpp
+--- a/Utilities/Thread.cpp
++++ b/Utilities/Thread.cpp
+@@ -147,7 +147,14 @@
+ #ifndef _WIN32
+ bool IsDebuggerPresent()
+ {
+-#if defined(__APPLE__) || defined(__DragonFly__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
++#ifdef CHIMERA_CORE
++	// Chimera: the sandbox has no /proc and no debugger attaches to a guest.
++	// Reading /proc/self/status failed with a line on stderr every time a
++	// thread was named, and those lines filled the last 16 KiB of output a
++	// crash report keeps, pushing out the lines that say what happened
++	// (chimera#361).
++	return false;
++#elif defined(__APPLE__) || defined(__DragonFly__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+ 	int mib[] = {
+ 		CTL_KERN,
+ 		KERN_PROC,
