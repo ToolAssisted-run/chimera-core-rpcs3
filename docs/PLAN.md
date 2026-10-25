@@ -3431,3 +3431,49 @@ delete one it had just made (Dolphin's vertex arrays drew a grey screen
 black). Nothing in this core's own code changed: its build generates the
 wrappers from miniBox, so this note is the commit that rebuilds it. A test
 runner's host half answers the new opcode with nothing (miniBox b7bc1a2).
+
+## Vanquish on Vulkan gets past its first logos (chimera#363, 2026-10-24)
+
+With the Vulkan renderer Vanquish stopped after the PlatinumGames logo, around
+frame 750. Two waits never ended.
+
+First, Chimera itself froze. A game thread that touched memory the renderer
+watches asked the renderer thread to finish its work (VKGSRenderTypes.hpp,
+flush_request_task) and waited for it with `utils::spin_wait`, which watches
+the memory word without ever giving the machine away. The threads here take
+turns on one host thread, so the renderer never ran and the game thread
+waited for good. The OpenGL renderer's twin of that wait already gave way.
+Patch 0063 makes `spin_wait` give way on every pass under CHIMERA_CORE,
+which covers every wait built on it.
+
+Then the machine ran, but the picture stayed black and the game went no
+further. With Vulkan the game thread whose access faulted copies the texture
+back to memory itself, inside the renderer's fault handler and under the
+texture cache's writer lock. The copy reads pages the cache locked: upstream
+through `vm::get_super_ptr`, a second mapping no lock reaches; here through
+the guest's own mapping (patch 0007). It faulted again inside the handler,
+and the inner handler waited for the lock the thread already held. The
+driver opens a window onto such a page when the RSX faults inside its own
+cache (2026-09-18); it now does the same for any thread inside the
+renderer's fault handler (`t_in_renderer_handler`).
+
+Found with step logs around `flush_set` (the thread entered `copy_texture`
+and never left it) and the sandbox's thread log, with each parked thread's
+stack read deeper than its usual 64 words and named from the debug core's
+symbols.
+
+Measured with the reporter's project (Vulkan, default settings otherwise,
+no input). On lavapipe the picture at frame 760 had 0 lit pixels with patch
+0063 alone and 100918 with the driver's change (Vanquish's CRIWARE logo),
+and the run reaches the title screen at frame 1743, as OpenGL does. On the
+GTX 1060 (Windows, Vulkan) the same run shows the same four pictures, with
+the same counts of lit pixels at frames 760, 1200, 1600 and 1743. On Windows
+the first freeze also ran past the frame time limit, because the wait was
+inside the fault handler, where miniBox could not stop a thread; miniBox
+7216594 fixes that.
+
+Test: `vk:fault-flush`, with a decrypted disc in `tests/roms-local/vk-flush/`
+(Vanquish, never committed), run as a project that presses Cross where the
+reporter's movie does (without it the game waits at its "install game data"
+notice). On lavapipe the picture at frame 1200 has 36513 lit pixels (the
+Havok logo) with the driver's change and 0 without it.

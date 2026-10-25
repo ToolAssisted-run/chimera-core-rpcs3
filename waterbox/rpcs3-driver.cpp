@@ -2548,6 +2548,13 @@ extern "C" int chimera_rpcs3_gpu_active(void)
 // the RSX giving the machine away (vsched's leave hook). Nothing else can
 // touch the page in between, and the cache's belief is never wrong. (Sooner
 // when the list of open pages is full: see open_window.)
+// The same holds for any thread already inside the renderer's own fault
+// handler: with Vulkan the thread whose access faulted copies the texture
+// back to memory itself (VKGSRender::on_access_violation), under the cache's
+// writer lock, and the copy reads pages the cache locked. Vanquish's first
+// such copy, after the PlatinumGames logo, faulted again in there and waited
+// on that lock for good: the game stopped and the picture stayed black
+// (chimera#363).
 namespace
 {
   // what the emulator last asked for each page of the guest's 4 GiB view:
@@ -2835,6 +2842,8 @@ extern "C" uint64_t chimera_rpcs3_memfs_stat(int which)
 // SIGSEGV handler calls it; in the sandbox miniBox does (GuestFaultHandler).
 // Mirrors the renderer part of RPCS3's own handle_access_violation.
 static uint64_t g_faults_served;
+// how many of the renderer's fault handlers this thread is inside (above)
+static thread_local int t_in_renderer_handler = 0;
 
 extern "C" uint64_t chimera_rpcs3_fault_count(void)
 {
@@ -2886,10 +2895,11 @@ extern "C" int chimera_rpcs3_on_fault(uint64_t addr, int is_write)
     return decline("the renderer has installed no handler");
   if (!vm::check_addr(vaddr))
     return decline("the machine says that address is not mapped");
-  if (const auto rsx = rsx::get_current_renderer(); rsx && rsx->is_current_thread() && rsx->chimera_texture_cache_busy() && believed(vaddr / 4096) != utils::protection::rw)
+  if (const auto rsx = rsx::get_current_renderer(); rsx && (rsx->is_current_thread() || t_in_renderer_handler > 0) && rsx->chimera_texture_cache_busy() && believed(vaddr / 4096) != utils::protection::rw)
   {
-    // the RSX inside its own cache, on a page the emulator itself locked:
-    // the super pointer's access, see above
+    // the RSX inside its own cache, or a thread inside the renderer's
+    // handler, on a page the emulator itself locked: the super pointer's
+    // access, see above
     open_window(vaddr / 4096);
     return 1;
   }
@@ -2897,7 +2907,9 @@ extern "C" int chimera_rpcs3_on_fault(uint64_t addr, int is_write)
   bool state_changed = false;
   if (cpu)
     state_changed = vm::temporary_unlock(*cpu);
+  t_in_renderer_handler++;
   const bool handled = rsx::g_access_violation_handler(vaddr, is_write != 0);
+  t_in_renderer_handler--;
   if (state_changed && (cpu->state += cpu_flag::temp, cpu->test_stopped()))
   {
     // the thread was asked to stop while it was away; nothing more to do here

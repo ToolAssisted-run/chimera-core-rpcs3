@@ -1,0 +1,23 @@
+diff --git a/rpcs3/util/asm.hpp b/rpcs3/util/asm.hpp
+--- a/rpcs3/util/asm.hpp
++++ b/rpcs3/util/asm.hpp
+@@ -346,6 +346,19 @@
+ #endif
+ 	inline void spin_wait(const atomic_t<T, Align>& var, Pred predicate)
+ 	{
++#ifdef CHIMERA_CORE
++		// Chimera: the machine's threads take turns on one host thread, so the
++		// thread that changes `var` runs only when this one gives way. A
++		// monitored wait (umwait, mwaitx) or a pause here waited for it forever:
++		// Vanquish with the Vulkan renderer froze at the PlatinumGames logo, a
++		// flush request (VKGSRenderTypes.hpp) waiting on the RSX thread
++		// (chimera#363). The GL renderer's wait already gave way (GLGSRender.h).
++		while (!predicate(var.load()))
++		{
++			CHIMERA_YIELD();
++		}
++		return;
++#endif
+ #ifdef ARCH_X64
+ 		static const bool use_umwait = has_waitpkg();
+ 		static const bool use_waitx = has_waitx();

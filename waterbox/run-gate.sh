@@ -32,6 +32,10 @@
 #                          the game's threads keep running (chimera#332)
 #   vk:dialog              the same run: a system dialog (Oblivion's autosave
 #                          notice) is drawn on Vulkan, not left black
+#   vk:fault-flush         with a game in tests/roms-local/vk-flush, on Vulkan:
+#                          a texture copied back to memory inside the fault
+#                          handler reads the pages the cache locked through a
+#                          window, and the game goes on (chimera#363)
 #   firmware:lle           with Sony's PUP (tests/roms-local, never committed):
 #                          the firmware installs in the box, liblv2 is LLE, and
 #                          native == sandbox still holds
@@ -1543,6 +1547,85 @@ LITPY
 		else
 			pass "vk:dialog - the autosave notice is drawn on Vulkan: $lit lit pixels at frame 1850 (0 without patch 0061)"
 		fi
+	fi
+fi
+
+# ---- vk:fault-flush (chimera issue 363) ------------------------------------
+# On the Vulkan renderer a game thread whose access faults on memory the
+# texture cache watches copies that texture back to memory itself, inside the
+# renderer's fault handler and under the cache's writer lock
+# (VKGSRender::on_access_violation). The copy reads pages the cache locked:
+# upstream through vm::get_super_ptr, here through the guest's own mapping
+# (patch 0007), so it faulted again in there, and the handler waited for the
+# lock the thread already held. The driver now opens a window onto such a
+# page for any thread inside the renderer's handler, as it does for the RSX
+# inside its cache (rsx:windows). Vanquish's first such copy comes after the
+# PlatinumGames logo: the game stopped there and the picture stayed black.
+#
+# The subject is whatever decrypted disc (an .iso, or a disc folder in a
+# .zip) the user put in tests/roms-local/vk-flush/ (Vanquish is the
+# reproducer), as a project on the Vulkan renderer with every other setting
+# at its default, through chimera-run on whatever Vulkan driver is here. The
+# project presses Cross where the reporter's did (frames 63-69 and 125-128):
+# without it Vanquish waits at its "install game data" notice. The game's
+# code is compiled once into work/vk-flush-cache, which is kept between runs.
+# The picture at frame 1200 (Vanquish's Havok logo) must have 2000 lit
+# pixels or more.
+#
+# NEGATIVE CONTROL, measured 2026-10-25 on lavapipe with Vanquish: 36513 lit
+# pixels with the driver's change, 0 without it (the core with
+# patch 0063).
+vkflushgame=""
+for f in "$root"/tests/roms-local/vk-flush/*.iso "$root"/tests/roms-local/vk-flush/*.zip; do
+	[ -f "$f" ] && { vkflushgame="$f"; break; }
+done
+if [ -z "$vkflushgame" ]; then
+	skip "vk:fault-flush - no .iso or .zip in tests/roms-local/vk-flush/ (would prove: on the Vulkan renderer, a texture copied back inside the fault handler reads the pages it locked, and the game goes on)"
+elif [ -z "$crunroot" ] || [ ! -f "$pup" ]; then
+	skip "vk:fault-flush - needs the firmware in tests/roms-local, plus chimera-run and an installed rpcs3.chimeraCore (set CHIMERA_ROOT)"
+else
+	vf="$work/vk-flush"
+	mkdir -p "$vf" "$here/work/vk-flush-cache"
+	python3 - "$vkflushgame" "$pup" "$vf/vanquish.chimeraProject" <<'EOF'
+import hashlib, json, os, sys
+game, pup, out = sys.argv[1:4]
+def sha1(path):
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest().upper()
+idle = "||    0,    0,    0,    0,.................|"
+cross = "||    0,    0,    0,    0,..........X......|"
+lines = [cross if 63 <= i <= 69 or 125 <= i <= 128 else idle for i in range(1300)]
+project = {"title": "vk:fault-flush", "description": "",
+           "core": {"name": "RPCS3", "version": "gate", "sha1": "0" * 40}, "rerecords": 0,
+           "files": [{"name": os.path.basename(game), "sha1": sha1(game), "slot": "game"}],
+           "settings": {"renderer": "vulkan-hw"},
+           "firmware": [{"id": "PS3UPDAT.PUP", "sha1": sha1(pup)}],
+           "input": "\n".join(lines) + "\n"}
+json.dump(project, open(out, "w"), indent=1)
+EOF
+	env -u DISPLAY timeout 3600 "$crunroot/build/meson-linux/chimera-run" --project "$vf/vanquish.chimeraProject" \
+		"$crunroot/build/Cores/rpcs3.chimeraCore" --files "$(dirname "$vkflushgame")" --allow-core-mismatch \
+		--firmware "PS3UPDAT.PUP=$pup" --gpu --cache-dir "$here/work/vk-flush-cache" \
+		--frames 1201 --screenshot "1200=$vf/havok.tga" > "$vf/run.log" 2>&1 || true
+	lit="$(python3 - "$vf/havok.tga" <<'LITPY' 2>/dev/null
+import sys
+d = open(sys.argv[1], "rb").read()
+w, h, px = d[12] | d[13] << 8, d[14] | d[15] << 8, d[16] // 8
+off = 18 + d[0]
+print(sum(1 for i in range(off, off + w * h * px, px) if d[i] or d[i + 1] or d[i + 2]))
+LITPY
+)"
+	if grep -q "handed the core no Vulkan device" "$vf/run.log"; then
+		skip "vk:fault-flush - this chimera-run handed the core no Vulkan device (no Vulkan driver here)"
+	elif ! grep -q '^frames=1201' "$vf/run.log"; then
+		failed "vk:fault-flush - the run did not reach frame 1201 (see $vf/run.log)"
+	elif [ "${lit:-0}" -lt 2000 ]; then
+		failed "vk:fault-flush - $(basename "$vkflushgame"): the picture at frame 1200 has ${lit:-no} lit pixels, fewer than 2000: the game stopped in its fault handler (see $vf/havok.tga)"
+	else
+		pass "vk:fault-flush - $(basename "$vkflushgame") on Vulkan: $lit lit pixels at frame 1200, the game went on past its first texture copied back in the fault handler (0 without the change)"
 	fi
 fi
 
