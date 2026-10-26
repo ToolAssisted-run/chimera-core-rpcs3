@@ -99,9 +99,11 @@ run_frontend() {
 	} > "$job"
 	rm -f "$work/$tag.ram.bin" "$work/$tag.meta.txt"
 	[ -n "$shot" ] && rm -f "$shot"
+	local project
+	project="$(game_project "$tag" "$cfg" "$package" "$romarg")" || { cp "$work/projects/$tag.make.log" "$work/$tag.log"; return 1; }
 	( cd "$chimera_root" && MINIHAWK_JOB="$job" timeout 900 mono "$emu_exe" --headless \
 		"--config=$cfg" "--core=$package" \
-		"--lua=$here/frontend-ram.lua" "$romarg" ) > "$work/$tag.log" 2>&1
+		"--lua=$here/frontend-ram.lua" "--project=$project" ) > "$work/$tag.log" 2>&1
 	[ -f "$work/$tag.meta.txt" ] && grep -q "^status=OK" "$work/$tag.meta.txt"
 }
 
@@ -116,7 +118,25 @@ reference_ram() {
 	head -c "$SLICE" "$work/ref.$tag.ram.full" > "$work/ref.$tag.ram.bin"
 }
 
-settings_config() { python3 "$here/settings-config.py" "$config" "$1" "$2" "${3:-{\}}"; }
+# A game runs only in a project (Chimera, 2026-10-26): each run opens one made
+# of its game with chimera-run --new-project, holding the settings (and the firmware)
+# settings_config was given for the config it runs with.
+declare -A settings_of firmware_of
+settings_config() { python3 "$here/settings-config.py" "$config" "$1" "$2" "${3:-{\}}"; settings_of["$1"]="$2"; firmware_of["$1"]="${3:-}"; }
+crun="$chimera_root/build/dll/chimera-run"
+game_project() { # tag, config, package, game: prints the project's path
+	local dir="$work/projects" settings="${settings_of[$2]:-}" firmware="${firmware_of[$2]:-}"
+	local pkg="$3" game="$4"
+	local fw=()
+	[ -n "$firmware" ] && mapfile -t fw < <(python3 -c 'import json,sys
+for k, v in json.loads(sys.argv[1]).items(): print("--firmware"); print(k + "=" + v)' "$firmware")
+	# one copy of each game, every run's project beside it
+	local copy="$dir/$(basename "$game")"
+	mkdir -p "$dir"
+	[ -f "$copy" ] && [ "$(stat -c %s "$copy")" = "$(stat -c %s "$game")" ] || cp "$game" "$copy"
+	"$crun" --new-project "$dir/$1.chimeraProject" "$pkg" "$copy" \
+		--settings "${settings:-"{}"}" "${fw[@]}" > "$dir/$1.make.log" 2>&1 && echo "$dir/$1.chimeraProject"
+}
 
 # --- 1. lv2test through the frontend: RAM == the sandbox reference ---------
 # The renderer is named in every run here. The package's default is Vulkan,
@@ -206,16 +226,21 @@ else
 	gz="$work/glzero"
 	rm -rf "$gz"; mkdir -p "$gz"
 	printf '[Input]\nLogKey:#\n' > "$gz/none.txt"
-	# a movie of its own: --rewind-loop needs frames to rewind through
-	( cd "$chimera_root" && env -u LD_LIBRARY_PATH timeout 900 "$crun" "$package" "$flipelf" "$gz/none.txt" \
-		--settings '{"renderer":"opengl-hw"}' --frames 40 --record "$gz/movie.txt" \
-		--firmware "PS3UPDAT.PUP=$pup" ) > "$gz/record.log" 2>&1
+	# a movie of its own: --rewind-loop needs frames to rewind through. A game
+	# runs only in a project (Chimera, 2026-10-26): one of the program with no
+	# input to record in, then one of the movie recorded
+	( cd "$chimera_root" && env -u LD_LIBRARY_PATH "$crun" --new-project "$gz/none.chimeraProject" "$package" "$flipelf" \
+		"$gz/none.txt" --settings '{"renderer":"opengl-hw"}' --firmware "PS3UPDAT.PUP=$pup" \
+		&& env -u LD_LIBRARY_PATH timeout 900 "$crun" --project "$gz/none.chimeraProject" "$package" --files "$(dirname "$flipelf")" \
+			--frames 40 --record "$gz/movie.txt" --firmware "PS3UPDAT.PUP=$pup" ) > "$gz/record.log" 2>&1
+	( cd "$chimera_root" && env -u LD_LIBRARY_PATH "$crun" --new-project "$gz/movie.chimeraProject" "$package" "$flipelf" \
+		"$gz/movie.txt" --settings '{"renderer":"opengl-hw"}' --firmware "PS3UPDAT.PUP=$pup" ) > "$gz/movie.make.log" 2>&1
 	# the bridge crossings in the frame that follows a restore to $1, with the
 	# rebuild left alone ($2 empty) or turned off ($2 = the keep-objects switch)
 	restore_calls() {
 		( cd "$chimera_root" && env -u LD_LIBRARY_PATH $2 CHIMERA_GL_TRACE=1 CHIMERA_GL_STATEAUDIT=1 \
-			timeout 900 "$crun" "$package" "$flipelf" "$gz/movie.txt" \
-			--settings '{"renderer":"opengl-hw"}' --frames 40 --firmware "PS3UPDAT.PUP=$pup" \
+			timeout 900 "$crun" --project "$gz/movie.chimeraProject" "$package" --files "$(dirname "$flipelf")" \
+			--frames 40 --firmware "PS3UPDAT.PUP=$pup" \
 			--gpu --greenzone 4096 --rewind-loop "$1",1 ) > "$gz/rewind.$1.$3.log" 2>&1
 		awk '/ce-gl-audit\] restore/ { seen = 1; next }
 		     seen && /^\[ce-gl\] frame/ { print $4; exit }' "$gz/rewind.$1.$3.log"
@@ -394,7 +419,7 @@ json.dump({
 PYEOF
 	# the project resolves its disc beside itself; a fresh config remembers no firmware
 	ln -sf "$disc" "$work/$(basename "$disc")"
-	python3 -c "import json,sys; c=json.load(open(sys.argv[1])); c.pop('CoreFirmware', None); c.setdefault('DefaultCores', {})['PS3'] = 'RPCS3'; json.dump(c, open(sys.argv[2], 'w'), indent=2)" "$config" "$work/config.project.ini"
+	python3 -c "import json,sys; c=json.load(open(sys.argv[1])); c.pop('CoreFirmware', None); json.dump(c, open(sys.argv[2], 'w'), indent=2)" "$config" "$work/config.project.ini"
 	job="$work/job.project.txt"
 	printf 'frames=%s\nout=%s/project.ram.bin\nmeta=%s/project.meta.txt\nshot=%s/project.png\nbytes=%s\n' "$pframes" "$work" "$work" "$work" "$SLICE" > "$job"
 	rm -f "$work/project.ram.bin" "$work/project.meta.txt" "$work/project.png"
