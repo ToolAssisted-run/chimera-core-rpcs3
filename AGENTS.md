@@ -35,8 +35,9 @@ on Linux and on Windows. Detail for every step below is in `docs/BUILDING.md`.
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y --no-install-recommends meson ninja-build build-essential cmake pkg-config python3 mono-complete libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev g++-13
-# the contract tests need the .NET SDK 8.0; the frontend gate also needs xvfb
+sudo apt-get install -y --no-install-recommends meson ninja-build build-essential cmake pkg-config python3 libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev g++-13
+# the contract tests and the frontend gate need Chimera built with its window
+# (Qt 6.12): Chimera's tools/ci-chimera.sh installs Qt and builds it
 
 # in this repository: RECURSIVE, LLVM is a submodule of the submodule
 git submodule update --init --recursive
@@ -85,9 +86,9 @@ make -C waterbox -f native.mk -j"$(nproc)" CXX=g++-13 MB="$mb"
 
 `build-package.sh -r <chimera>` writes `<chimera>/build/Cores/rpcs3.chimeraCore`:
 the cores folder of a Chimera source checkout, so nothing else is needed. For
-a release bundle, copy the file into the `Cores` folder beside `Chimera.exe`
-(or the folder chosen in File > Core Manager > Change folder...). Chimera
-downloads nothing; File > Core Manager lists the folder, Refresh List rescans.
+a release bundle, copy the file into the `cores` folder beside Chimera's program
+(or the folder chosen in Tools > Core Manager... > Change folder...). Chimera
+downloads nothing; Tools > Core Manager... lists the folder, Refresh List rescans.
 A hand build stamps `<commit>+local` (usually `-dirty` too): testing only.
 
 ## Test before you commit
@@ -106,9 +107,7 @@ machine the other legs run too; say in the commit what the gate printed.
 The package through Chimera (Chimera built first, see `docs/BUILDING.md`):
 
 ```sh
-(cd ~/chimera && CHIMERA_CORES_DIR="$PWD/build/Cores" dotnet test \
-  source/gui/Chimera.Tests.Client.Common/Chimera.Tests.Client.Common.csproj -c Release --nologo \
-  --filter "FullyQualifiedName~InstalledCorePackagesTests|FullyQualifiedName~MnemonicUniquenessTests")
+(cd ~/chimera && CHIMERA_CORES_DIR="$PWD/build/Cores" build/meson-linux/source/ui/test-packages)
 ./waterbox/tests/run-frontend.sh --chimera-root ~/chimera
 ```
 

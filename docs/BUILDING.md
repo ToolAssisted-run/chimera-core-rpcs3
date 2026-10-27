@@ -23,11 +23,11 @@ System packages, as the `core-gate` job installs them:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y --no-install-recommends meson ninja-build build-essential cmake pkg-config python3 mono-complete libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev g++-13
+sudo apt-get install -y --no-install-recommends meson ninja-build build-essential cmake pkg-config python3 libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev g++-13
 ```
 
 The `frontend-gate` job installs the same list without `g++-13` and with
-`unzip` and `xvfb` added. You need those two only to run the frontend gate.
+`unzip` added. You need it only to run the frontend gate.
 
 Compiler: GCC 13, pinned.
 
@@ -39,11 +39,10 @@ Compiler: GCC 13, pinned.
 - The other steps use the default `gcc` and `g++`. The workflow relies on the
   runner's default being GCC 13.
 
-.NET: the workflow uses `actions/setup-dotnet@v4` with `dotnet-version: '8.0'`.
-By hand, install the .NET SDK 8.0. Chimera's README gives the command it
-expects: `curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0`.
-.NET and `mono-complete` are needed for Chimera's contract tests and for the
-frontend gate, not for building the package.
+Chimera's contract tests and the frontend gate need Chimera built with its
+window, which needs Qt 6.12; neither is needed for building the package.
+Chimera's `tools/ci-chimera.sh` installs Qt (from Qt's own archives, with aqt)
+and builds Chimera; the workflow keeps Qt in `~/qt` between runs.
 
 Built from source by the scripts, never taken from the system:
 
@@ -192,8 +191,8 @@ The result is `waterbox/obj-native/run-native`. Keep `-C waterbox` before
 - The `frontend-gate` job compiles no RPCS3, no LLVM, no FFmpeg, no native
   reference and no C++ guest toolchain. It downloads the package and `run-wbx`
   that `core-gate` produced, unzips `core.wbx` out of the package, and builds
-  only Chimera (its natives and its solution) and the miniBox host library.
-- The `core-gate` job builds Chimera's natives but not the Chimera solution.
+  only Chimera (its engine and its window) and the miniBox host library.
+- The `core-gate` job builds Chimera the same way, for the contract tests.
 - The PS3 test programs are not rebuilt. The ones the legs boot are committed
   under `tests/roms/` or assembled by the gate from `tests/asm` with
   `tests/asm/ppc.py`. `tests/ps3/build.sh` rebuilds `flip.elf`, `tone.elf` and
@@ -236,10 +235,9 @@ gets into Chimera because somebody puts the file in its `Cores` folder.
 
 - In a Chimera source checkout the cores folder is `<chimera>/build/Cores/`,
   and `build-package.sh -r <chimera>` has already written the package there.
-- In a release bundle, copy `rpcs3.chimeraCore` into the `Cores` folder beside
-  `Chimera.exe`, or into the folder chosen in File > Core Manager >
+- In a release bundle, copy `rpcs3.chimeraCore` into the `Cores` folder beside Chimera's program, or into the folder chosen in Tools > Core Manager... >
   Change folder... The same file works on Linux and on Windows.
-- File > Core Manager lists what is in the folder. Refresh List rescans it.
+- Tools > Core Manager... lists what is in the folder. Refresh List rescans it.
 
 Published builds are on this repository's Releases page: a rolling `dev`
 release on every green push to `main`, and a dated `nightly-YYYY-MM-DD` release
@@ -330,17 +328,13 @@ and when.
 
 ### The contract tests
 
-Chimera's own tests, run against the package just built. They need Chimera's
-natives, because they open the package through the engine:
+Chimera's own tests, run against the package just built. They need Chimera
+built, because they open the package through the engine:
 
 ```sh
 cd <chimera>
-meson setup build/meson-linux --prefix "$PWD/build" --libdir dll
-meson compile -C build/meson-linux
-meson install -C build/meson-linux
-CHIMERA_CORES_DIR="$PWD/build/Cores" dotnet test source/gui/Chimera.Tests.Client.Common/Chimera.Tests.Client.Common.csproj \
-  -c Release --nologo \
-  --filter "FullyQualifiedName~InstalledCorePackagesTests|FullyQualifiedName~MnemonicUniquenessTests"
+tools/ci-chimera.sh
+CHIMERA_CORES_DIR="$PWD/build/Cores" build/meson-linux/source/ui/test-packages
 ```
 
 They prove the package is readable, is built for an ABI this frontend runs,
@@ -349,18 +343,18 @@ stamps a version. No game and no firmware are involved.
 
 ### The frontend gate
 
-Runs the package inside Chimera, headless under Mono on a private Xvfb
-display. It needs the Chimera solution as well as the natives:
+Runs the package inside Chimera's window, run headless: it needs no
+display. It needs Chimera built with its window:
 
 ```sh
 cd <chimera>
-dotnet build source/gui/Chimera.sln -c Release /nodeReuse:false -p:UseSharedCompilation=false
+tools/ci-chimera.sh
 cd <core>
 ./waterbox/tests/run-frontend.sh --chimera-root <chimera>
 ```
 
 It also accepts `--frames N` (default 200). It needs
-`<chimera>/build/Chimera.exe`, the installed package and an executable
+`<chimera>/build/meson-linux/source/ui/chimera`, the installed package and an executable
 `waterbox/bin/run-wbx`. It ends with `N ok, M failed, K skipped`.
 
 Two legs need no content and run in CI:
@@ -368,7 +362,8 @@ Two legs need no content and run in CI:
 - `game:frontend` - `tests/roms/lv2test.elf` booted from the package in
   Chimera; the first 1 MiB of main memory after the run must equal the sandbox
   reference's (`run-wbx`), byte for byte.
-- `keybinds` - the package's default bindings became the frontend's.
+- `keybinds` - the bindings the machine has, with no key changed, are the
+  package's default ones.
 
 The other legs need the firmware, and most a disc, and SKIP without them.
 
@@ -432,7 +427,5 @@ Project files, declared in `waterbox/file_slots.json`:
   `libminiboxhost.so` only through the path it was linked against, and the
   gate runs it with `LD_LIBRARY_PATH` unset. Check with
   `ldd waterbox/bin/run-wbx`.
-- The contract tests fail to load a native library: build and install
-  Chimera's natives first (see "The contract tests").
-- `Xvfb not found`: install `xvfb`. The frontend gate starts its own display
-  when `DISPLAY` is not set.
+- The contract tests fail to load a native library: build
+  Chimera first (see "The contract tests").

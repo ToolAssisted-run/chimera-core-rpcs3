@@ -23,9 +23,8 @@ the repository; nothing under `tests/roms-local/` (gitignored) is ever committed
 Chimera ships no cores and downloads none. Download `rpcs3-<version>.chimeraCore`
 from this repository's
 [Releases](https://github.com/ToolAssisted-run/chimera-core-rpcs3/releases) page,
-or build it, and put it in Chimera's `Cores` folder: the one beside
-`Chimera.exe`, or the folder chosen in File > Core Manager > Change folder...
-File > Core Manager lists it. The same file works on Linux and on Windows.
+or build it, and put it in Chimera's `Cores` folder: the one beside Chimera's program, or the folder chosen in Tools > Core Manager... > Change folder...
+Tools > Core Manager... lists it. The same file works on Linux and on Windows.
 
 `waterbox/build-package.sh -r <chimera checkout>` builds the package and writes
 it to `<chimera checkout>/build/Cores/rpcs3.chimeraCore`. The full instructions

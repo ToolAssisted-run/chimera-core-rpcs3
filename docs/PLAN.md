@@ -1449,7 +1449,7 @@ optimisation. No user interface, no networking, no real audio or input devices.
 
   (A) FIXED, and it is the core's. `Emulator::Load` creates every g_fxo object BEFORE it decrypts the NPDRM executable; a Load that returns `decryption_error` destroys none of them, and `Emulator::Kill` returns at once on a machine that never ran, so the objects live until process exit where `manual_typemap::~manual_typemap()` ensure()s they are gone and aborts. The native reference died with SIGABRT (exit 134) AFTER printing the licence sentence - proven by name: `run-native --precompile 0/1 echochrome.pkg` (no rap) exits 134 on the pre-fix build, exit 1 (clean refusal) after; with the rap it precompiles either way. The sandbox never showed it on Linux (the box is dropped without running guest static dtors). Fix: `chimera_rpcs3_init` takes a refused machine down (`discard_refused_machine`: `Emu.Kill` + pump-to-stopped + `Emu.CleanUp`, the last of which is `g_fxo->clear()` and nulls the typemap) on every refusal AFTER `Emu.BootGame` was asked. No effect on the success path (with-rap still 152/155, exit 0). The `pkg:licence` gate leg is tightened to match (gates.md mode B - it had passed on the sentence alone): it now requires the refusal to RETURN 1, in both flavours and once more as a `--precompile` session (the shape the report came in), and it goes red on the pre-fix build (`exited 134 instead of 1`) and green after.
 
-  (B) STILL OPEN, and it is not the core's g_fxo. The Windows SANDBOX still writes that ntdll teardown fault with the FIXED core.wbx (stock engine, GTX 1060 box), so it is not (A); it also fires for a CONTENT pkg refused before `Emu.Load` ever runs (no g_fxo at all); and withholding the GL bridge does not remove it (not the bridge). It does NOT reproduce on Linux - the Linux frontend and run-wbx exit 64/1 cleanly on the same refused pkg with the same core, broken or fixed - and the Windows SUCCESS path (Super Stardust, no licence) tears down clean (exit 1, no diag), matching the reporter (demos compile, licensed crash). So (B) is a Windows-only host-side heap corruption planted on the refused-init path and surfacing when ntdll walks the heap at process exit; the stuck 1-thread Chimera.exe it leaves cannot be taskkill'd. Not localized: Linux ASan on `chimera-run` OOMs the box under the mandated 16-18G cap (SKIP, cap not raised), the fault is Windows-only so Linux gdb/valgrind cannot see it, and Windows PageHeap/gflags via an IFEO key was refused as persistence. Next step for whoever has the box: Application Verifier or PageHeap on Chimera.exe, then the abort/free is in `ce_session_free`/`wbx_destroy_host` of a session whose Init returned 0 (created + mounted + Init'd, never sealed).
+  (B) STILL OPEN, and it is not the core's g_fxo. The Windows SANDBOX still writes that ntdll teardown fault with the FIXED core.wbx (stock engine, GTX 1060 box), so it is not (A); it also fires for a CONTENT pkg refused before `Emu.Load` ever runs (no g_fxo at all); and withholding the GL bridge does not remove it (not the bridge). It does NOT reproduce on Linux - the Linux frontend and run-wbx exit 64/1 cleanly on the same refused pkg with the same core, broken or fixed - and the Windows SUCCESS path (Super Stardust, no licence) tears down clean (exit 1, no diag), matching the reporter (demos compile, licensed crash). So (B) is a Windows-only host-side heap corruption planted on the refused-init path and surfacing when ntdll walks the heap at process exit; the stuck 1-thread Chimera process it leaves cannot be taskkill'd. Not localized: Linux ASan on `chimera-run` OOMs the box under the mandated 16-18G cap (SKIP, cap not raised), the fault is Windows-only so Linux gdb/valgrind cannot see it, and Windows PageHeap/gflags via an IFEO key was refused as persistence. Next step for whoever has the box: Application Verifier or PageHeap on Chimera's process, then the abort/free is in `ce_session_free`/`wbx_destroy_host` of a session whose Init returned 0 (created + mounted + Init'd, never sealed).
 
 - **Still open after M5**: the lazy 20 GiB block on Windows under memory
   pressure, LLVM recompilers, and the recompilers' half of RawSPU - the
@@ -1656,10 +1656,10 @@ runner, so these are that job's own step timings (run 35511256013,
 | --- | --- | --- |
 | checkout, no submodules | ~5 s | `core-gate` pays 2 min 48 s for the recursive init; nothing here compiles rpcs3 |
 | check out Chimera + its `extern` | 45 s | |
-| apt (adds `mono-complete`, `xvfb`) | 45 s | |
-| set up .NET | 6 s | |
+| apt (adds the old C# window's packages) | 45 s | |
+| set up the old C# window's toolchain | 6 s | |
 | **Chimera's natives (meson)** | **7 min 9 s** | the bulk, and not cached - see below |
-| `dotnet build Chimera.sln` | 47 s | |
+| build the old C# window | 47 s | |
 | miniBox host library only | under 1 min 30 s | flycast's figure builds the C++ guest toolchain too, which this job does not |
 | download the package + `run-wbx`, unzip `core.wbx` | ~30 s | about 47 MB |
 | **`run-frontend.sh`** | **under 2 min** | 30 s wall / 32 CPU s here, single-threaded, so a 4-vCPU runner is about the same |
@@ -1673,8 +1673,8 @@ Three things were considered and rejected, so the next person does not
 rediscover them:
 
 - **Folding the legs into `core-gate` instead** would cost about three
-  minutes rather than twelve - that job already builds Chimera's natives, sets
-  up .NET and installs `mono-complete` for the contract tests. It was not done
+  minutes rather than twelve - that job already builds Chimera's natives and sets
+  up the old C# window's toolchain for the contract tests. It was not done
   because `core-gate` is the job that sits against GitHub's six-hour cap (see
   above), and because a frontend failure should be attributable and re-runnable
   without repeating a multi-hour build.
@@ -3069,7 +3069,7 @@ gives it ("Number1", "Enter", "Backtick", "KeypadAdd") or else its DistinctKey
 name ("Up"); and unless told otherwise it reads the left and right Shift, Ctrl
 and Alt as one key each, "Shift", "Ctrl" and "Alt" (Input.cs,
 Config.MergeLAndRModifierKeys). A default binding to another name never fired,
-so those controls shipped unbound on the keyboard. Checked on Xvfb: with 1,
+so those controls shipped unbound on the keyboard. Checked on a virtual X display: with 1,
 Return, left Shift and Up held, Chimera reports Number1, Enter, Shift and Up.
 Left and right names stay beside the merged one, for a setup with the merging
 off.
