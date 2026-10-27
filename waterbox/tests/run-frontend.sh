@@ -1,6 +1,6 @@
 #!/bin/bash
-# The frontend half of the gate: load the RPCS3 package in Chimera (under
-# Mono, on a private Xvfb display), boot lv2test.elf for a fixed number of frames
+# The frontend half of the gate: load the RPCS3 package in Chimera's window
+# (run headless: no display is needed), boot lv2test.elf for a fixed number of frames
 # with nothing pressed, and require the machine's memory to be byte-identical
 # to the sandbox reference (which the core gate already holds equal to the
 # native build). Then the same over a commercial disc, a machine-shaping
@@ -33,14 +33,14 @@ fi
 	echo "chimera checkout not found; pass --chimera-root <path>" >&2; exit 1; }
 chimera_root="$(cd "$chimera_root" && pwd)"
 
-emu_exe="$chimera_root/build/Chimera.exe"
+chimera_exe="$chimera_root/build/meson-linux/source/ui/chimera"
 package="$chimera_root/build/Cores/rpcs3.chimeraCore"
 runwbx="$wb/bin/run-wbx"
 wbx="$wb/bin/core.wbx"
 sys="$root/extern/rpcs3"
 game="$root/tests/roms/lv2test.elf"
 disc=""
-[ -f "$emu_exe" ] || { echo "Chimera not built: $emu_exe" >&2; exit 1; }
+[ -x "$chimera_exe" ] || { echo "Chimera not built: $chimera_exe" >&2; exit 1; }
 [ -f "$package" ] || { echo "package not installed: $package (run ../build-package.sh)" >&2; exit 1; }
 [ -x "$runwbx" ] || { echo "run-wbx not built (../build-core.sh)" >&2; exit 1; }
 
@@ -61,29 +61,12 @@ printf "%-28s %-9s %s\n" "-----" "------" "------"
 work="$here/work"
 mkdir -p "$work"
 
-export LD_LIBRARY_PATH="$chimera_root/build/dll:$chimera_root/build:/usr/lib/x86_64-linux-gnu"
-export MONO_CRASH_NOFILE=1 MONO_WINFORMS_XIM_STYLE=disabled ALSOFT_DRIVERS=null
-xvfb_pid=""
-cleanup() { [ -n "$xvfb_pid" ] && kill "$xvfb_pid" 2>/dev/null; }
-trap cleanup EXIT
-if [ -z "${DISPLAY:-}" ]; then
-	command -v Xvfb >/dev/null || { echo "Xvfb not found (apt install xvfb)" >&2; exit 1; }
-	for n in 90 91 92 93 94 95 96; do
-		if [ ! -e "/tmp/.X11-unix/X$n" ]; then
-			Xvfb ":$n" -screen 0 640x480x24 -nolisten tcp & xvfb_pid=$!
-			export DISPLAY=":$n"; break
-		fi
-	done
-	sleep 1
-fi
-
-config="$work/config.ini"
-if [ ! -f "$config" ]; then
-	( cd "$chimera_root" && timeout 120 mono "$emu_exe" --headless "--config=$config" \
-		"--lua=$here/exit.lua" ) > "$work/bootstrap.log" 2>&1
-	[ -f "$config" ] || { echo "config bootstrap failed (see $work/bootstrap.log)" >&2; exit 1; }
-fi
-sed -i 's/"DispMethod": [0-9]/"DispMethod": 1/' "$config"
+# Chimera's window, run headless: the cores installed in the checkout, its
+# settings, cache and recovery files the run's own, and nothing carried over
+# from a Chimera installed on this machine
+export ALSOFT_DRIVERS=null CHIMERA_CORES_DIR="$chimera_root/build/Cores" CHIMERA_QT_CACHE="$work/qt-cache" CHIMERA_QT_RECOVERY="$work/qt-recovery" \
+	CHIMERA_QT_HASHES="$work/qt-file-hashes.txt" CHIMERA_QT_CHIMERA_SETTINGS="$work/no-chimera-config.ini" \
+	CHIMERA_QT_COMPILE_CACHE="$work/compile-cache"
 
 SLICE=1048576
 
@@ -101,7 +84,7 @@ run_frontend() {
 	[ -n "$shot" ] && rm -f "$shot"
 	local project
 	project="$(game_project "$tag" "$cfg" "$package" "$romarg")" || { cp "$work/projects/$tag.make.log" "$work/$tag.log"; return 1; }
-	( cd "$chimera_root" && MINIHAWK_JOB="$job" timeout 900 mono "$emu_exe" --headless \
+	( cd "$chimera_root" && MINIHAWK_JOB="$job" timeout 900 "$chimera_exe" --headless \
 		"--config=$cfg" "--core=$package" \
 		"--lua=$here/frontend-ram.lua" "--project=$project" ) > "$work/$tag.log" 2>&1
 	[ -f "$work/$tag.meta.txt" ] && grep -q "^status=OK" "$work/$tag.meta.txt"
@@ -122,7 +105,7 @@ reference_ram() {
 # of its game with chimera-run --new-project, holding the settings (and the firmware)
 # settings_config was given for the config it runs with.
 declare -A settings_of firmware_of
-settings_config() { python3 "$here/settings-config.py" "$config" "$1" "$2" "${3:-{\}}"; settings_of["$1"]="$2"; firmware_of["$1"]="${3:-}"; }
+settings_config() { python3 "$here/settings-config.py" "$1" "$2" ${3:+"$3"}; settings_of["$1"]="$2"; firmware_of["$1"]="${3:-}"; }
 crun="$chimera_root/build/dll/chimera-run"
 game_project() { # tag, config, package, game: prints the project's path
 	local dir="$work/projects" settings="${settings_of[$2]:-}" firmware="${firmware_of[$2]:-}"
@@ -149,10 +132,10 @@ for k, v in json.loads(sys.argv[1]).items(): print("--firmware"); print(k + "=" 
 # interpreter. The legs below run the package's default against the same
 # reference and their slices of memory agree; precompile:frontend holds that
 # the default is LLVM.
-settings_config "$work/config.base.ini" '{"renderer": "opengl-hw", "ppu_decoder": "interpreter"}'
+settings_config "$work/settings.base.json" '{"renderer": "opengl-hw", "ppu_decoder": "interpreter"}'
 if ! reference_ram "base" "$game"; then
 	report "game:frontend" FAIL "reference runner error (see tests/work/ref.base.log)"
-elif ! run_frontend "base" "$work/config.base.ini" "$frames" "$work/base.png" "$game"; then
+elif ! run_frontend "base" "$work/settings.base.json" "$frames" "$work/base.png" "$game"; then
 	report "game:frontend" FAIL "no OK meta (see tests/work/base.log)"
 elif ! cmp -s "$work/ref.base.ram.bin" "$work/base.ram.bin"; then
 	report "game:frontend" FAIL "main memory differs from the sandbox reference"
@@ -275,14 +258,14 @@ if [ -z "$disc" ] || [ ! -f "$pup" ]; then
 	report "disc:frontend" SKIP "needs a decrypted .iso and PS3UPDAT.PUP in tests/roms-local"
 else
 	firmware_json="$(python3 -c "import json,sys; print(json.dumps({'PS3UPDAT.PUP': sys.argv[1]}))" "$pup")"
-	settings_config "$work/config.disc.ini" '{"renderer": "opengl-hw"}' "$firmware_json"
+	settings_config "$work/settings.disc.json" '{"renderer": "opengl-hw"}' "$firmware_json"
 	if ! env -u LD_LIBRARY_PATH timeout 900 "$runwbx" "$wbx" --firmware "$pup" \
 		--frames "$dframes" --report "$dframes" --ram-out "$work/ref.disc.ram.full" \
 		"$disc" > "$work/ref.disc.log" 2>&1; then
 		report "disc:frontend" FAIL "reference runner error (see tests/work/ref.disc.log)"
 	elif ! head -c "$SLICE" "$work/ref.disc.ram.full" > "$work/ref.disc.ram.bin"; then
 		report "disc:frontend" FAIL "no reference memory"
-	elif ! run_frontend "disc" "$work/config.disc.ini" "$dframes" "$work/disc.png" "$disc"; then
+	elif ! run_frontend "disc" "$work/settings.disc.json" "$dframes" "$work/disc.png" "$disc"; then
 		report "disc:frontend" FAIL "no OK meta (see tests/work/disc.log)"
 	elif ! cmp -s "$work/ref.disc.ram.bin" "$work/disc.ram.bin"; then
 		report "disc:frontend" FAIL "main memory differs from the sandbox reference"
@@ -299,12 +282,12 @@ fi
 if [ -z "$disc" ] || [ ! -f "$pup" ]; then
 	report "gpu:frontend" SKIP "needs the disc and the firmware"
 else
-	settings_config "$work/config.gpu.ini" '{"renderer": "opengl-hw"}' "$firmware_json"
+	settings_config "$work/settings.gpu.json" '{"renderer": "opengl-hw"}' "$firmware_json"
 	# Far enough in that the game has drawn: this disc's first picture is at
 	# frame 200 and nothing before it is anything but black, so a shorter run
 	# proves only that a file was written.
 	gframes=300
-	if ! run_frontend "gpu" "$work/config.gpu.ini" "$gframes" "$work/gpu.png" "$disc"; then
+	if ! run_frontend "gpu" "$work/settings.gpu.json" "$gframes" "$work/gpu.png" "$disc"; then
 		report "gpu:frontend" FAIL "no OK meta (see tests/work/gpu.log)"
 	elif ! env -u LD_LIBRARY_PATH timeout 900 "$runwbx" "$wbx" --firmware "$pup" \
 		--frames "$gframes" --report "$gframes" --ram-out "$work/ref.gpu.ram.full" \
@@ -326,35 +309,39 @@ else
 fi
 
 # --- 3b. precompile sessions through the frontend ---------------------------
-# The frontend runs itself twice as precompile sessions (what its orchestrator
-# does before a first boot), each compiling its share into the compile cache
-# under the Compile Cache path; a run on the LLVM recompiler afterwards
+# Two compile sessions (chimera-run's --precompile: what the window's New
+# Project runs before a first boot), each compiling its share of the game's
+# code into the game's compile cache; a run on the LLVM recompiler afterwards
 # fetches every object and compiles none.
 #
-# The cache is under Chimera's data directory, and the leg has one of its own:
-# the user's is neither emptied by a test nor what makes this one pass, as it
-# did not when the leg still looked where the cache used to be and found the
-# sessions storing nothing, the user's cache being warm already.
-data_home="$work/data-home"
-cache_root="$data_home/Cache/PrecompiledCode"
+# The cache is the test's own folder, not the user's: the user's is neither
+# emptied by a test nor what makes this one pass (it did once, being warm
+# already, when the sessions stored nothing).
+# The window keeps a game's compile cache in a folder named by the hash of the
+# game file, under the compile cache folder (CHIMERA_QT_COMPILE_CACHE, set at
+# the top); the compile sessions are given that same folder, which is where
+# the warm run looks.
+cache_root="$work/compile-cache"
+cache_dir="$cache_root/$(sha1sum "$game" | cut -d' ' -f1 | tr 'a-f' 'A-F')"
 if [ ! -f "$pup" ]; then
 	report "precompile:frontend" SKIP "needs the firmware"
 else
 	# no ppu_decoder: the warm run takes the package's default, which is the
 	# LLVM recompiler (user-decided, 2026-10-19, chimera#316). Were it the
 	# interpreter, the warm run would fetch nothing and this leg would fail.
-	settings_config "$work/config.llvm.ini" '{"renderer": "opengl-hw"}' "$firmware_json"
-	rm -rf "$data_home"
-	( cd "$chimera_root" && CHIMERA_DATA_HOME="$data_home" timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=0/2/game" "$game" ) > "$work/precompile-0.log" 2>&1 &
+	settings_config "$work/settings.llvm.json" '{"renderer": "opengl-hw"}' "$firmware_json"
+	rm -rf "$cache_root"
+	pre_project="$(game_project "precompile" "$work/settings.llvm.json" "$package" "$game")" || cp "$work/projects/precompile.make.log" "$work/precompile-0.log"
+	# the sessions are chimera-run's: the compile sessions the window's New
+	# Project runs, with the cache folder the warm run below will use
+	( cd "$chimera_root" && timeout 900 "$crun" --project "$pre_project" "$package" --precompile "0/2/game" --cache-dir "$cache_dir" ) > "$work/precompile-0.log" 2>&1 &
 	pre0=$!
-	( cd "$chimera_root" && CHIMERA_DATA_HOME="$data_home" timeout 900 mono "$emu_exe" --headless "--config=$work/config.llvm.ini" "--core=$package" "--precompile=1/2/game" "$game" ) > "$work/precompile-1.log" 2>&1 &
+	( cd "$chimera_root" && timeout 900 "$crun" --project "$pre_project" "$package" --precompile "1/2/game" --cache-dir "$cache_dir" ) > "$work/precompile-1.log" 2>&1 &
 	pre1=$!
-	# by pid, not a bare "wait": this script may be running an Xvfb of its own
-	# in the background, and a bare wait never returns while it lives
 	wait "$pre0" "$pre1"
 	stored="$(sed -n 's/^precompile session [0-9]* of [0-9]*: \([0-9]*\) objects stored.*/\1/p' "$work/precompile-0.log" "$work/precompile-1.log" | awk '{s+=$1} END {print s+0}')"
-	nfiles="$(find "$cache_root" -name '*.obj.gz' 2>/dev/null | wc -l)"
-	if ! CHIMERA_DATA_HOME="$data_home" run_frontend "warm" "$work/config.llvm.ini" 100 "" "$game"; then
+	nfiles="$(find "$cache_dir" -name '*.obj.gz' 2>/dev/null | wc -l)"
+	if ! run_frontend "warm" "$work/settings.llvm.json" 100 "" "$game"; then
 		report "precompile:frontend" FAIL "the warm run gave no OK meta (see tests/work/warm.log)"
 	else
 		fetched="$(sed -n 's/^chimera cache: \([0-9]*\) stored, \([0-9]*\) fetched.*/\2/p' "$work/warm.log" | tail -1)"
@@ -394,8 +381,6 @@ if [ -z "$disc" ] || [ ! -f "$pup" ]; then
 	report "project:frontend" SKIP "needs the disc and the firmware"
 else
 	pframes=120
-	mkdir -p "$chimera_root/build/Firmware"
-	cp -n "$pup" "$chimera_root/build/Firmware/PS3UPDAT.PUP" 2>/dev/null
 	python3 - "$package" "$disc" "$pup" "$work/gate.chimeraProject" <<'PYEOF'
 import hashlib, json, sys, zipfile
 def sha1(path, limit=None):
@@ -417,14 +402,17 @@ json.dump({
     'headers': {'MovieVersion': 'Chimera Tasproj v1.1', 'Platform': 'PS3'},
 }, open(out, 'w'), indent=1)
 PYEOF
-	# the project resolves its disc beside itself; a fresh config remembers no firmware
+	# the project resolves its disc beside itself; fresh settings remember no
+	# firmware: it is found in the Firmware folder, which holds only the firmware
 	ln -sf "$disc" "$work/$(basename "$disc")"
-	python3 -c "import json,sys; c=json.load(open(sys.argv[1])); c.pop('CoreFirmware', None); json.dump(c, open(sys.argv[2], 'w'), indent=2)" "$config" "$work/config.project.ini"
+	mkdir -p "$work/firmware"
+	cp -n "$pup" "$work/firmware/PS3UPDAT.PUP" 2>/dev/null
+	echo '{}' > "$work/settings.project.json"
 	job="$work/job.project.txt"
 	printf 'frames=%s\nout=%s/project.ram.bin\nmeta=%s/project.meta.txt\nshot=%s/project.png\nbytes=%s\n' "$pframes" "$work" "$work" "$work" "$SLICE" > "$job"
 	rm -f "$work/project.ram.bin" "$work/project.meta.txt" "$work/project.png"
-	( cd "$chimera_root" && MINIHAWK_JOB="$job" timeout 900 mono "$emu_exe" \
-		"--config=$work/config.project.ini" "--project=$work/gate.chimeraProject" \
+	( cd "$chimera_root" && MINIHAWK_JOB="$job" CHIMERA_FIRMWARE_DIR="$work/firmware" timeout 900 "$chimera_exe" --headless \
+		"--config=$work/settings.project.json" "--project=$work/gate.chimeraProject" \
 		"--lua=$here/tastudio-run.lua" ) > "$work/project.log" 2>&1 &
 	gui=$!
 	# a paused GUI and a dead machine both sit still; a modal dialog sits
@@ -432,7 +420,7 @@ PYEOF
 	last=0; quiet=0
 	while kill -0 $gui 2>/dev/null; do
 		sleep 5
-		pid=$(pgrep -f "^mono $emu_exe --config=$work/config.project.ini" | head -1)
+		pid=$(pgrep -f "^$chimera_exe --headless --config=$work/settings.project.json" | head -1)
 		[ -z "$pid" ] && continue
 		now=$(awk '{print $14 + $15}' "/proc/$pid/stat" 2>/dev/null || echo 0)
 		if [ "$((now - last))" -ge 10 ]; then last=$now; quiet=0; else quiet=$((quiet + 5)); fi
@@ -450,10 +438,17 @@ PYEOF
 	fi
 fi
 
-# --- 4. the package's bindings became the frontend's defaults ---------------
-# (read from the settings file the first run used and wrote back, not the
-# one it was copied from)
-if out="$(python3 "$here/check-keybinds.py" "$work/config.base.ini" "$wb/default_keybinds.json" "PlayStation 3 Controller" 2>&1)"; then
+# --- 4. the bindings the package ships are the machine's when nobody changed them
+# (the window keeps only the keys a person changed; fresh settings have none).
+# The first run's project is the machine to ask.
+printf 'out=%s/keys.controls.json\nmeta=%s/keys.meta.txt\n' "$work" "$work" > "$work/job.keys.txt"
+rm -f "$work/keys.controls.json" "$work/keys.meta.txt"
+( cd "$chimera_root" && MINIHAWK_JOB="$work/job.keys.txt" timeout 900 "$chimera_exe" --headless \
+	"--config=$work/settings.base.json" "--project=$work/projects/base.chimeraProject" \
+	"--lua=$here/dump-controls.lua" ) > "$work/keys.log" 2>&1
+if [ ! -f "$work/keys.meta.txt" ] || ! grep -q "^status=OK" "$work/keys.meta.txt"; then
+	report "keybinds" FAIL "the bindings were not written (see tests/work/keys.log)"
+elif out="$(python3 "$here/check-keybinds.py" "$work/keys.controls.json" "$wb/default_keybinds.json" "PlayStation 3 Controller" 2>&1)"; then
 	report "keybinds" PASS "$out"
 else
 	report "keybinds" FAIL "$out"

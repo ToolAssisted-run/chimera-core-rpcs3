@@ -84,26 +84,22 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends meson ninja-build build-essential cmake pkg-config python3 mono-complete libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev g++-13
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0'
+          sudo apt-get install -y --no-install-recommends meson ninja-build build-essential cmake pkg-config python3 libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev g++-13
 
       - name: Check out what Chimera is built from
         working-directory: chimera-checkout
         run: git submodule update --init --recursive extern
 
-      - name: Build Chimera's natives
-        # The contract tests below open a package through the ENGINE, which is
-        # libchimera - so they dlopen a native library and fail without one.
-        # (Found by moving build/dll aside and watching them go red.)
-        working-directory: chimera-checkout
-        run: |
-          meson setup build/meson-linux --prefix "$PWD/build" --libdir dll
-          meson compile -C build/meson-linux
-          meson install -C build/meson-linux
+      - name: Cache Qt
+        uses: actions/cache@v4
+        with:
+          path: ~/qt
+          key: qt-6.12.0-linux-aqt-3.3.0
+
+      - name: Build Chimera (the engine, chimera-run and the window)
+        # The contract tests and run-frontend.sh need the engine, chimera-run and the
+        # window; tools/ci-chimera.sh installs Qt, meson and the compilers too.
+        run: chimera-checkout/tools/ci-chimera.sh "$HOME/qt"
 
       - name: Cache the guest toolchain
         uses: actions/cache@v4
@@ -230,13 +226,9 @@ jobs:
         # factory, bind only buttons its controller declares, and stamp a
         # version. No rom, no firmware, no emulation - which is exactly why it
         # is the frontend check a core like this one can make.
-        working-directory: chimera-checkout
         env:
           CHIMERA_CORES_DIR: ${{ github.workspace }}/chimera-checkout/build/Cores
-        run: |
-          dotnet test source/gui/Chimera.Tests.Client.Common/Chimera.Tests.Client.Common.csproj \
-            -c Release --nologo \
-            --filter "FullyQualifiedName~InstalledCorePackagesTests|FullyQualifiedName~MnemonicUniquenessTests"
+        run: chimera-checkout/build/meson-linux/source/ui/test-packages
 
       - name: Publish the core package
         uses: actions/upload-artifact@v7
@@ -280,13 +272,13 @@ jobs:
     # waterbox/tests/run-frontend.sh, which until today was run by nobody.
     #
     # Two of its six legs need no content. `game:frontend` boots lv2test.elf
-    # out of the PACKAGE in Chimera headless - Mono, a private Xvfb, the real
+    # out of the PACKAGE in Chimera's window, run headless, through the real
     # generic waterbox adapter - and requires the machine's main memory after
     # 200 frames to equal run-wbx's byte for byte. It is the only leg anywhere
     # in this project that holds the thing users DOWNLOAD to the sandbox
     # reference; everything in the other job proves things about a build tree.
-    # `keybinds` requires the package's default bindings to have become the
-    # frontend's. The other four want Sony's firmware and a commercial disc,
+    # `keybinds` requires the package's default bindings to be the
+    # machine's. The other four want Sony's firmware and a commercial disc,
     # so they SKIP - by name, one line each, counted in the script's summary.
     #
     # This job COMPILES NO RPCS3. The package and run-wbx are core-gate's
@@ -294,8 +286,8 @@ jobs:
     # the binary compared here is literally the binary that ships rather than
     # a second build that happens to agree. Nor does it want the native
     # reference: "native == sandbox" is core-gate's claim, and this job's
-    # reference is the sandbox. What it does pay for is Chimera - the natives
-    # and the solution - which is about eight runner-minutes and is measured
+    # reference is the sandbox. What it does pay for is Chimera - the engine
+    # and the window - which is about eight runner-minutes and is measured
     # in docs/PLAN.md under "What CI runs".
     name: "frontend gate (the package, through Chimera)"
     needs: [ core-gate ]
@@ -318,39 +310,26 @@ jobs:
           submodules: false
 
       - name: Install build dependencies
-        # No g++-13 and no cmake beyond what Chimera's own natives want: the
+        # No g++-13 and no cmake beyond what Chimera's own build wants: the
         # LLVM and the rpcs3 emulator library are the other job's problem.
-        # xvfb and mono-complete are what make this job different from it.
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends meson ninja-build build-essential cmake pkg-config python3 unzip mono-complete xvfb libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0'
+          sudo apt-get install -y --no-install-recommends meson ninja-build build-essential cmake pkg-config python3 unzip libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev
 
       - name: Check out what Chimera is built from
         working-directory: chimera-checkout
         run: git submodule update --init --recursive extern
 
-      - name: Build Chimera's natives
-        # libchimera and friends, into build/dll where the frontend dlopens
-        # them. This is the expensive half of the job (about seven minutes on
-        # a runner) and it is not cached: a meson tree restored beside a fresh
-        # checkout has older timestamps than its sources, so ninja rebuilds it
-        # anyway and the cache buys a download instead of a build.
-        working-directory: chimera-checkout
-        run: |
-          meson setup build/meson-linux --prefix "$PWD/build" --libdir dll
-          meson compile -C build/meson-linux
-          meson install -C build/meson-linux
+      - name: Cache Qt
+        uses: actions/cache@v4
+        with:
+          path: ~/qt
+          key: qt-6.12.0-linux-aqt-3.3.0
 
-      - name: Build the Chimera solution
-        # run-frontend.sh runs build/Chimera.exe under Mono; there is no
-        # frontend to gate without this step.
-        working-directory: chimera-checkout
-        run: dotnet build source/gui/Chimera.sln -c Release /nodeReuse:false -p:UseSharedCompilation=false
+      - name: Build Chimera (the engine, chimera-run and the window)
+        # The contract tests and run-frontend.sh need the engine, chimera-run and the
+        # window; tools/ci-chimera.sh installs Qt, meson and the compilers too.
+        run: chimera-checkout/tools/ci-chimera.sh "$HOME/qt"
 
       - name: Build the miniBox host library run-wbx is linked against
         # Only the host flavor: the C++ GUEST toolchain is what takes minutes,
