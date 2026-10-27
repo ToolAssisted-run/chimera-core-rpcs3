@@ -1656,10 +1656,9 @@ runner, so these are that job's own step timings (run 35511256013,
 | --- | --- | --- |
 | checkout, no submodules | ~5 s | `core-gate` pays 2 min 48 s for the recursive init; nothing here compiles rpcs3 |
 | check out Chimera + its `extern` | 45 s | |
-| apt (adds the old C# window's packages) | 45 s | |
-| set up the old C# window's toolchain | 6 s | |
+| apt (adds the window's packages) | 45 s | |
 | **Chimera's natives (meson)** | **7 min 9 s** | the bulk, and not cached - see below |
-| build the old C# window | 47 s | |
+| build the window | 47 s | |
 | miniBox host library only | under 1 min 30 s | flycast's figure builds the C++ guest toolchain too, which this job does not |
 | download the package + `run-wbx`, unzip `core.wbx` | ~30 s | about 47 MB |
 | **`run-frontend.sh`** | **under 2 min** | 30 s wall / 32 CPU s here, single-threaded, so a 4-vCPU runner is about the same |
@@ -1673,8 +1672,8 @@ Three things were considered and rejected, so the next person does not
 rediscover them:
 
 - **Folding the legs into `core-gate` instead** would cost about three
-  minutes rather than twelve - that job already builds Chimera's natives and sets
-  up the old C# window's toolchain for the contract tests. It was not done
+  minutes rather than twelve - that job already builds Chimera's natives for
+  the contract tests. It was not done
   because `core-gate` is the job that sits against GitHub's six-hour cap (see
   above), and because a frontend failure should be attributable and re-runnable
   without repeating a multi-hour build.
@@ -3064,11 +3063,8 @@ listened to. The OpenGL renderer was not tried with this game.
 
 The d-pad was on UpArrow, DownArrow, LeftArrow and RightArrow, L2 and R2 on 1
 and 3; they are on Up, Down, Left, Right, Number1 and Number3. Chimera hands a
-key to the bindings under one name: the name its DistinctKeyNameOverrides
-gives it ("Number1", "Enter", "Backtick", "KeypadAdd") or else its DistinctKey
-name ("Up"); and unless told otherwise it reads the left and right Shift, Ctrl
-and Alt as one key each, "Shift", "Ctrl" and "Alt" (Input.cs,
-Config.MergeLAndRModifierKeys). A default binding to another name never fired,
+key to the bindings under one name: the name Chimera gives it ("Number1", "Enter", "Backtick", "KeypadAdd") or else its own name ("Up"); and unless told otherwise it reads the left and right Shift, Ctrl
+and Alt as one key each, "Shift", "Ctrl" and "Alt". A default binding to another name never fired,
 so those controls shipped unbound on the keyboard. Checked on a virtual X display: with 1,
 Return, left Shift and Up held, Chimera reports Number1, Enter, Shift and Up.
 Left and right names stay beside the merged one, for a setup with the merging
