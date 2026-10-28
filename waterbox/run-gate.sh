@@ -1603,7 +1603,7 @@ project = {"title": "vk:fault-flush", "description": "",
            "files": [{"name": os.path.basename(game), "sha1": sha1(game), "slot": "game"}],
            "settings": {"renderer": "vulkan-hw"},
            "firmware": [{"id": "PS3UPDAT.PUP", "sha1": sha1(pup)}],
-           "input": "\n".join(lines) + "\n"}
+           "inputs": {"entries": lines}}
 json.dump(project, open(out, "w"), indent=1)
 EOF
 	env -u DISPLAY timeout 3600 "$crunroot/build/meson-linux/chimera-run" --project "$vf/vanquish.chimeraProject" \
@@ -1685,7 +1685,7 @@ project = {"title": "rsx:queue-start", "description": "",
            "core": {"name": "RPCS3", "version": "gate", "sha1": "0" * 40}, "rerecords": 0,
            "files": files, "settings": {"renderer": "opengl-hw"},
            "firmware": [{"id": "PS3UPDAT.PUP", "sha1": sha1(pup)}],
-           "input": "\n".join(lines) + "\n"}
+           "inputs": {"entries": lines}}
 json.dump(project, open(out, "w"), indent=1)
 EOF
 	qshots=""

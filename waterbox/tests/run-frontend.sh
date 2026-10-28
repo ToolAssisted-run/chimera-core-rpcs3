@@ -398,7 +398,7 @@ json.dump({
     'rerecords': 0,
     'files': [{'name': os.path.basename(disc), 'sha1': sha1(disc), 'slot': 'game'}],
     'settings': {}, 'firmware': [{'id': 'PS3UPDAT.PUP', 'sha1': sha1(pup)}],
-    'input': '', 'markers': [], 'branches': [],
+    'markers': [], 'branches': [],
     'headers': {'MovieVersion': 'Chimera Tasproj v1.1', 'Platform': 'PS3'},
 }, open(out, 'w'), indent=1)
 PYEOF
