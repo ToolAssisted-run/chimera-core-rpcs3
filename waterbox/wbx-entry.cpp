@@ -169,7 +169,7 @@ ECL_EXPORT int Init(void)
   // instead, now that LLVM is the default (chimera#316).
   if (strcmp(ppuDecoder, "llvm") == 0 && !__builtin_cpu_supports("x86-64-v3"))
   {
-    snprintf(g_loadError, sizeof g_loadError, "the PPU Decoder setting is 'llvm', whose compiled code needs a processor with AVX2 (x86-64-v3), and this one has none: choose 'interpreter' for this project");
+    snprintf(g_loadError, sizeof g_loadError, "error.no_avx2");
     return 0;
   }
   chimera_rpcs3_set_ppu_decoder(ppuDecoder);
@@ -210,7 +210,7 @@ ECL_EXPORT int Init(void)
     if (n >= 4 && (strcmp(romName + n - 4, ".iso") == 0 || strcmp(romName + n - 4, ".ISO") == 0))
     {
       snprintf(g_loadError, sizeof g_loadError,
-               "a PS3 disc needs the system software (PS3UPDAT.PUP), and none was provided");
+               "error.needs_firmware");
       return 0;
     }
   }

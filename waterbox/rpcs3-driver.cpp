@@ -72,6 +72,7 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 #include "util/video_source.h"
 #include "util/logs.hpp"
 
+#include <algorithm>
 #include <deque>
 #include <string>
 
@@ -89,6 +90,15 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 #include "chimera-assets.h"
 #include "cache-bridge.h"
 #include "vsched.h"
+
+/* A text a person reads is a key of languages/en.json, each of its
+ * arguments after a TEXT_ARG; a reason put inside another text separates its
+ * own with TEXT_INNER, and a text of several puts a TEXT_LINE before each
+ * (chimera docs/translations.md). Each is a string of its own so the byte
+ * after it is never read as more of its hex. */
+#define TEXT_ARG "\x1f"
+#define TEXT_INNER "\x1e"
+#define TEXT_LINE "\x1d"
 
 // the directory roots the emulator library reads (patch 0003 routes
 // fs::get_config_dir/get_cache_dir to these, the Android way)
@@ -496,7 +506,7 @@ namespace
       readers.emplace_back(paths[i]);
       if (!readers.back().is_valid())
       {
-        g_install_error = "the file is not a PS3 package: " + names[i];
+        g_install_error = std::string("error.not_package" TEXT_ARG) + names[i];
         return false;
       }
       // A package the reader reads out of the memory filesystem (the project's
@@ -522,15 +532,14 @@ namespace
     if (r.error != package_install_result::error_type::no_error)
     {
       g_install_error = r.error == package_install_result::error_type::app_version
-                            ? fmt::format("a package wants the game at version %s (it is %s): it is a patch for another version", r.version.expected, r.version.installed)
-                            : "a package could not be installed (the log says which file)";
+                            ? std::string("error.package_version" TEXT_INNER) + r.version.expected + TEXT_INNER + r.version.installed : std::string("error.package_not_installed");
       return false;
     }
     for (package_reader& reader : readers)
     {
       if (reader.get_result() != package_reader::result::success)
       {
-        g_install_error = "a package could not be installed (the log says which file)";
+        g_install_error = "error.package_not_installed";
         return false;
       }
     }
@@ -639,7 +648,7 @@ namespace
     cb.on_resume = []() {};
     cb.on_stop = []() {};
     cb.on_ready = []() {};
-    cb.on_missing_fw = []() { fail("the PS3 firmware is missing and the game needs it"); };
+    cb.on_missing_fw = []() { fail("error.no_firmware"); };
     cb.on_emulation_stop_no_response = [](std::shared_ptr<atomic_t<bool>> closed, int seconds)
     {
       if (!closed || !*closed)
@@ -707,40 +716,35 @@ namespace
   {
     const chimera_wiki_entry* w = chimera_wiki_find(tid.c_str());
     std::string line;
+    // a text each, a line each: keys of languages/en.json; the wiki's own
+    // words (its status, the settings it names) are its, and go as they are
     if (tid.empty() && !why_none.empty())
-      line = "RPCS3 compatibility: " + why_none;
+      line = std::string("suggest.why_none" TEXT_ARG) + why_none;
     else if (tid.empty())
-      line = "RPCS3 compatibility: this game carries no title id, so it cannot be looked up.";
+      line = "suggest.no_title_id";
     else if (!w)
-      line = fmt::format("RPCS3 compatibility: %s is not in the RPCS3 compatibility list or wiki "
-                         "(https://wiki.rpcs3.net/, snapshot %s); no status or settings are recorded for it.",
-                         tid, chimera_wiki_compat_snapshot);
+      line = std::string("suggest.not_listed" TEXT_ARG) + tid + TEXT_ARG + chimera_wiki_compat_snapshot;
     else
     {
       // the STATUS is the compatibility list's; the SETTINGS are the wiki's
-      line = fmt::format("RPCS3 compatibility list (%s): %s [%s] is %s.",
-                         chimera_wiki_compat_snapshot, w->title, tid, w->status);
+      line = std::string("suggest.status" TEXT_ARG) + chimera_wiki_compat_snapshot + TEXT_ARG + w->title + TEXT_ARG + tid +
+             TEXT_ARG + w->status;
       if (w->kind == 'p')
-        line += " The RPCS3 wiki has no page for it.";
+        line += TEXT_LINE "suggest.no_page";
       else if (w->kind == 'u')
-        line += fmt::format(" The RPCS3 wiki has a page for it, but this snapshot (%s) did not read it: %s",
-                            chimera_wiki_snapshot, w->page);
+        line += std::string(TEXT_LINE "suggest.page_unread" TEXT_ARG) + chimera_wiki_snapshot + TEXT_ARG + w->page;
       else
       {
-        line += fmt::format(" RPCS3 wiki (%s):", chimera_wiki_snapshot);
         if (w->kind == 'n')
-          line += " no settings are recommended.";
+          line += std::string(TEXT_LINE "suggest.wiki_none" TEXT_ARG) + chimera_wiki_snapshot;
+        else if (*w->apply && *w->unsupported)
+          line += std::string(TEXT_LINE "suggest.wiki_both" TEXT_ARG) + chimera_wiki_snapshot + TEXT_ARG + w->apply + TEXT_ARG +
+                  w->unsupported;
+        else if (*w->apply)
+          line += std::string(TEXT_LINE "suggest.wiki_apply" TEXT_ARG) + chimera_wiki_snapshot + TEXT_ARG + w->apply;
         else
-        {
-          if (*w->apply && *w->unsupported)
-            line += fmt::format(" recommends %s. Also recommended, but not available in this core: %s.",
-                                w->apply, w->unsupported);
-          else if (*w->apply)
-            line += fmt::format(" recommends %s.", w->apply);
-          else
-            line += fmt::format(" recommends only settings this core does not have: %s.", w->unsupported);
-        }
-        line += fmt::format(" Source: %s (CC BY-SA 4.0)", w->page);
+          line += std::string(TEXT_LINE "suggest.wiki_unsupported" TEXT_ARG) + chimera_wiki_snapshot + TEXT_ARG + w->unsupported;
+        line += std::string(TEXT_LINE "suggest.source" TEXT_ARG) + w->page;
       }
     }
     return line;
@@ -851,13 +855,13 @@ namespace
         auto index = std::make_shared<chimera::zip_index>();
         if (!chimera::zip_open(path, *index, err))
         {
-          why_none = "the archive cannot be read (" + err + "), so it was not looked up.";
+          why_none = std::string("suggest.archive_unreadable" TEXT_INNER) + err;
           return {};
         }
         const size_t i = pick(index->entries);
         if (i == SIZE_MAX)
         {
-          why_none = "the archive holds no PS3_GAME/PARAM.SFO, so it is not a disc this core boots and was not looked up.";
+          why_none = "suggest.no_param_sfo";
           return {};
         }
         chimera::zip_stream in(index, i);
@@ -869,20 +873,19 @@ namespace
         auto index = std::make_shared<chimera::sz_index>();
         if (!chimera::sz_open(path, *index, err))
         {
-          why_none = "the archive cannot be read (" + err + "), so it was not looked up.";
+          why_none = std::string("suggest.archive_unreadable" TEXT_INNER) + err;
           return {};
         }
         if (index->solid)
         {
           // refused at boot too, and slow to reach into
-          why_none = "this .7z is solid, which the core cannot boot, so it was not looked up. "
-                     "Repack it with `7z a -ms=off` or as a .zip.";
+          why_none = "suggest.solid";
           return {};
         }
         const size_t i = pick(index->entries);
         if (i == SIZE_MAX)
         {
-          why_none = "the archive holds no PS3_GAME/PARAM.SFO, so it is not a disc this core boots and was not looked up.";
+          why_none = "suggest.no_param_sfo";
           return {};
         }
         chimera::sz_stream in(index, i);
@@ -1028,7 +1031,7 @@ namespace
       }
       if (!ok)
       {
-        fail("setting " + name + " cannot be \"" + value + "\"");
+        fail(std::string("error.bad_setting" TEXT_ARG) + name + TEXT_ARG + value);
         return false;
       }
       chimera_log.notice("setting %s = %s", name, value);
@@ -1164,19 +1167,19 @@ namespace
     fs::file pup_f(pup_path);
     if (!pup_f)
     {
-      fail("cannot open the firmware file " + pup_path);
+      fail(std::string("error.firmware_not_opened" TEXT_ARG) + pup_path);
       return {};
     }
     pup_object pup(std::move(pup_f));
     if (pup.operator pup_error() != pup_error::ok)
     {
-      fail("the firmware file is not a valid PUP: " + pup.get_formatted_error());
+      fail(std::string("error.firmware_not_pup" TEXT_ARG) + pup.get_formatted_error());
       return {};
     }
     fs::file update_files_f = pup.get_file(0x300);
     if (!update_files_f || !update_files_f.size())
     {
-      fail("the firmware file has no installation packages");
+      fail("error.firmware_no_packages");
       return {};
     }
     std::string version;
@@ -1191,7 +1194,7 @@ namespace
     std::erase_if(names, [](const std::string& n) { return n.find("dev_flash_") == umax; });
     if (names.empty())
     {
-      fail("the firmware file has no dev_flash packages");
+      fail("error.firmware_no_dev_flash");
       return {};
     }
     // tar_object::extract writes through the VFS: /dev_flash must point at ours
@@ -1201,7 +1204,7 @@ namespace
       auto stream = update_files.get_file(name);
       if (!stream)
       {
-        fail("firmware package missing: " + name);
+        fail(std::string("error.firmware_package_missing" TEXT_ARG) + name);
         return {};
       }
       if (stream->m_file_handler)
@@ -1216,13 +1219,13 @@ namespace
       auto dev_flash_tar_f = self_dec.MakeFile();
       if (dev_flash_tar_f.size() < 3)
       {
-        fail("firmware package could not be decrypted: " + name);
+        fail(std::string("error.firmware_package_encrypted" TEXT_ARG) + name);
         return {};
       }
       tar_object dev_flash_tar(dev_flash_tar_f[2]);
       if (!dev_flash_tar.extract())
       {
-        fail("firmware package could not be extracted: " + name);
+        fail(std::string("error.firmware_package_not_extracted" TEXT_ARG) + name);
         return {};
       }
     }
@@ -1279,7 +1282,7 @@ namespace
     std::string error;
     if (!chimera::zip_open(g_savedata_zip, *index, error))
     {
-      g_error = "the save data could not be read as a zip: " + error;
+      g_error = std::string("error.save_not_zip" TEXT_ARG) + error;
       return false;
     }
     size_t files = 0;
@@ -1290,14 +1293,14 @@ namespace
         continue; // a directory entry: the files under it make it
       if (e.path.compare(0, k_savedata_prefix.size(), k_savedata_prefix) != 0 || e.path.find("..") != std::string::npos)
       {
-        g_error = "the save data holds '" + e.path + "', which is not PS3 save data (every entry is savedata/<save>/<file>, as Export Save Data writes them)";
+        g_error = std::string("error.save_not_ps3" TEXT_ARG) + e.path;
         return false;
       }
       std::vector<u8> bytes(e.size);
       chimera::zip_stream stream(index, i);
       if (stream.read_at(0, bytes.data(), e.size) != e.size)
       {
-        g_error = "the save data's '" + e.path + "' could not be unpacked";
+        g_error = std::string("error.save_not_unpacked" TEXT_ARG) + e.path;
         return false;
       }
       chimera::memfs_put(k_user_home + e.path, bytes.data(), bytes.size());
@@ -1305,7 +1308,7 @@ namespace
     }
     if (files == 0)
     {
-      g_error = "the save data zip holds no files";
+      g_error = "error.save_empty";
       return false;
     }
     return true;
@@ -1349,7 +1352,7 @@ namespace
       const std::string rel = "packages/" + std::string(base ? base + 1 : name.c_str());
       if (!chimera::memfs_graft(rel, name))
       {
-        g_error = "cannot open the package " + name;
+        g_error = std::string("error.package_not_opened" TEXT_ARG) + name;
         return false;
       }
       paths.push_back(root + rel);
@@ -1416,7 +1419,7 @@ namespace
       const std::string name = slash ? slash + 1 : path;
       if (!chimera::memfs_graft(k_user_home + "exdata/" + name, path))
       {
-        g_error = "cannot open the licence " + path;
+        g_error = std::string("error.licence_not_opened" TEXT_ARG) + path;
         return false;
       }
       chimera_log.notice("licence %s is in the console's exdata", name);
@@ -1455,15 +1458,12 @@ namespace
     const bool is_patch = package_is_patch(pkg_path, requires_license, valid);
     if (!valid)
     {
-      g_error = "that file is not a PS3 package: " + display;
+      g_error = std::string("error.not_a_package" TEXT_ARG) + display;
       return false;
     }
     if (is_patch)
     {
-      g_error = "that .pkg is an UPDATE, not a game: its header carries the PATCH flag, so what it holds is "
-                "the files that CHANGE in a version of a game, not the game. Installed on its own it leaves a "
-                "console with part of a title on it. Put the full package in the Game slot and this one in "
-                "the Packages slot, and the machine boots the updated game.";
+      g_error = "error.pkg_update";
       return false;
     }
     g_game_pkg_unlicensed = requires_license && g_raps.empty();
@@ -1484,10 +1484,7 @@ namespace
       }
     if (boot.empty())
     {
-      g_error = "that .pkg is not a game: installing it produced no USRDIR/EBOOT.BIN, so what it carries is "
-                "content FOR a game - downloadable content, a licence, a theme - and there is nothing in it to "
-                "boot. Put it in the Packages slot beside the game it belongs to, and put the game itself in "
-                "the Game slot.";
+      g_error = "error.pkg_content";
       return false;
     }
     // the PARAM.SFO the package installed sits beside the USRDIR it created
@@ -1499,11 +1496,7 @@ namespace
     chimera_log.notice("game package: title id %s, category %s, installed at %s", title_id, category, dir);
     if (category == "GD")
     {
-      g_error = "that .pkg is a PATCH for a disc game (its PARAM.SFO says CATEGORY=GD" +
-                (title_id.empty() ? std::string() : ", title " + title_id) +
-                "), not a game of its own: it replaces part of a game whose disc has to be in the drive. Put "
-                "the disc image in the Game slot and this package in the Packages slot, and the machine boots "
-                "the patched game.";
+      g_error = std::string("error.pkg_disc_patch" TEXT_ARG) + (title_id.empty() ? std::string("error.no_title") : title_id);
       return false;
     }
     g_game_pkg_boot = boot;
@@ -1614,10 +1607,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
 
     if (ends_with_ci(base, ".rar"))
     {
-      fail("a .rar archive cannot be read by this core. Reading one means carrying a RAR decoder, "
-           "and the obvious one - unRAR - has a licence that does not sit with this core's terms, "
-           "so no build of it can ship one. Repack the disc folder as a .zip or a .7z and it will "
-           "be read without unpacking.");
+      fail("error.rar");
       return 0;
     }
 
@@ -1638,7 +1628,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
       {
         if (!chimera::zip_open(game_path, *zindex, err))
         {
-          fail("cannot read the archive: " + err);
+          fail(std::string("error.archive_unreadable" TEXT_ARG) + err);
           return 0;
         }
         for (const auto& e : zindex->entries)
@@ -1648,7 +1638,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
       {
         if (!chimera::sz_open(game_path, *sindex, err))
         {
-          fail("cannot read the archive: " + err);
+          fail(std::string("error.archive_unreadable" TEXT_ARG) + err);
           return 0;
         }
         for (const auto& e : sindex->entries)
@@ -1663,12 +1653,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
           // first 64 kilobytes, and every seek backwards pays it again. That is
           // a boot measured in hours, and it would look like a hang rather than
           // a wait, so it is refused here instead.
-          fail("that .7z is SOLID, which 7-Zip does by default, and a solid archive cannot be "
-               "read at any useful speed: the files share one compressed stream, so reaching one "
-               "means decoding everything packed before it. On a real disc dump that is minutes "
-               "for the first file the emulator asks for and minutes again for each one it asks "
-               "for out of order. Repack it with `7z a -ms=off <name>.7z <disc folder>` - one "
-               "block per file, seekable - or as a .zip, and the core reads it where it lies.");
+          fail("error.7z_solid");
           return 0;
         }
       }
@@ -1695,9 +1680,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
       }
       if (!found)
       {
-        fail("that archive holds no PlayStation 3 disc: nothing in it is named PS3_DISC.SFB. "
-             "A disc dumped as a folder has PS3_DISC.SFB beside a PS3_GAME directory, and the "
-             "archive should hold that folder or its contents.");
+        fail("error.no_disc_in_archive");
         return 0;
       }
 
@@ -1711,8 +1694,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
         }
       if (!has_eboot)
       {
-        fail("that archive has a PS3_DISC.SFB but no PS3_GAME/USRDIR/EBOOT.BIN beside it, so "
-             "there is no game in it to boot.");
+        fail("error.no_eboot");
         return 0;
       }
 
@@ -1736,7 +1718,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     {
       if (!chimera::memfs_graft(std::string("game/") + base, game_path))
       {
-        fail(std::string("cannot open the game: ") + game_path);
+        fail(std::string("error.game_not_opened" TEXT_ARG) + game_path);
         return 0;
       }
       game = root + "game/" + base;
@@ -1753,7 +1735,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
         stem.resize(dot);
       if (!chimera::memfs_graft("game/" + stem + ".dkey", dkey_path))
       {
-        fail(std::string("cannot open the disc key: ") + dkey_path);
+        fail(std::string("error.dkey_not_opened" TEXT_ARG) + dkey_path);
         return 0;
       }
     }
@@ -1867,7 +1849,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     const std::string pup_rel = "firmware/" + std::string(strrchr(firmware_path, '/') ? strrchr(firmware_path, '/') + 1 : firmware_path);
     if (!chimera::memfs_graft(pup_rel, firmware_path))
     {
-      fail(std::string("cannot open the firmware: ") + firmware_path);
+      fail(std::string("error.firmware_unopenable" TEXT_ARG) + firmware_path);
       return 0;
     }
     g_firmware_version = install_firmware(root + pup_rel);
@@ -1952,29 +1934,19 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
     if (g_game_pkg_unlicensed)
       // decrypt_error, usually, and "Failed to decrypt content" on its own
       // names neither the cause nor the cure
-      fail("that game's package is licensed content and the project carries no licence for it. Its header "
-           "says REQUIRE_LICENSE: the executable inside is NPDRM-encrypted and the key is the account's own "
-           ".rap file, named after the content (UP9000-NPUA80134_00-ECHOCHROME000000.rap and the like). Put "
-           "that .rap in the Licence slot beside the package and the machine decrypts and boots it.");
+      fail("error.needs_rap");
     else if (r == game_boot_result::install_failed && !g_install_error.empty())
-      fail("the content this disc installs onto the console could not be installed: " + g_install_error);
+      fail(std::string("error.disc_content" TEXT_ARG) + g_install_error);
     else if (game_is_iso && iso_data_is_locked(game))
-      fail(dkey_path && *dkey_path
-               ? "this disc image is still encrypted with the disc key given: the image's data does not decrypt "
-                 "with it, so the key belongs to another disc. A Redump image's key is the .dkey distributed "
-                 "beside that exact image."
-               : "this disc image is a Redump image: its filesystem is in the clear but the disc's DATA is "
-                 "encrypted, and the game's executable reads as noise without the key. Give the image's disc "
-                 "key - the .dkey (or .key) file distributed beside it - in the Disc key slot, or use an "
-                 "already decrypted image.");
+      fail(dkey_path && *dkey_path ? "error.wrong_dkey" : "error.needs_dkey");
     else
-      fail(fmt::format("boot failed: %s", r));
+      fail(std::string("error.boot_failed" TEXT_ARG) + fmt::format("%s", r));
     discard_refused_machine();
     return 0;
   }
   if (!Emu.IsReady())
   {
-    fail(fmt::format("boot did not reach the ready state (state %d)", static_cast<int>(Emu.GetStatus(false))));
+    fail(std::string("error.not_ready" TEXT_ARG) + std::to_string(static_cast<int>(Emu.GetStatus(false))));
     discard_refused_machine();
     return 0;
   }
@@ -2005,11 +1977,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
       c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     if (base == "EBOOT.BIN")
     {
-      fail("EBOOT.BIN, and no disc. This executable is one file of a PlayStation 3 disc, and "
-           "its data, its libraries and its modules are the rest of that disc; alone it boots "
-           "and then waits forever. Give the core the whole disc instead: either a single "
-           ".iso image, or the dumped folder packed into one .zip or .7z, which is read "
-           "without being unpacked.");
+      fail("error.eboot_alone");
       discard_refused_machine();
       return 0;
     }
@@ -2060,7 +2028,9 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   // project's own setting names so the reader can set them, but the project's
   // settings are what this machine runs on.
   {
-    const std::string line = wiki_note(Emu.GetTitleID());
+    // for the log, the note's keys and arguments as they are, separated
+    std::string line = wiki_note(Emu.GetTitleID());
+    std::replace_if(line.begin(), line.end(), [](char c) { return c == '\x1f' || c == '\x1d'; }, '|');
     chimera_log.notice("%s", line);
     fprintf(stderr, "%s\n", line.c_str());
     fflush(stderr);
@@ -2467,9 +2437,7 @@ extern "C" void chimera_rpcs3_set_renderer(const char* name)
 extern "C" const char* chimera_rpcs3_renderer_refusal(void)
 {
   if (s_renderer_vulkan && !(chimera_rpcs3_vulkan_bridge_present && chimera_rpcs3_vulkan_bridge_present()))
-    return "The Renderer setting is 'vulkan-hw', and this Chimera handed the core no Vulkan device. "
-           "It needs a graphics driver with Vulkan and Chimera's Development build 4ca6e302 or later. "
-           "Set Renderer to 'opengl-hw' to run without it.";
+    return "error.no_vulkan";  // a key of languages/en.json
   return nullptr;
 }
 

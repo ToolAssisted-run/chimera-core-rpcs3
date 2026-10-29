@@ -11,6 +11,12 @@ extern "C"
 #include "7zCrc.h"
 #include "Lzma2Dec.h"
 #include "LzmaDec.h"
+
+/* Why a thing failed is a key of languages/en.json, put inside the caller's
+ * text, each of its arguments after a TEXT_INNER (chimera
+ * docs/translations.md). TEXT_INNER is a string of its own so the byte after
+ * it is never read as more of its hex. */
+#define TEXT_INNER "\x1e"
 }
 
 namespace chimera
@@ -128,7 +134,7 @@ namespace chimera
     std::FILE* f = std::fopen(host_path.c_str(), "rb");
     if (!f)
     {
-      error = "cannot open " + host_path;
+      error = std::string("error.archive_not_opened" TEXT_INNER) + host_path;
       return false;
     }
 
@@ -146,7 +152,7 @@ namespace chimera
     if (!look.buf)
     {
       std::fclose(f);
-      error = "out of memory reading the archive header";
+      error = "error.7z_no_memory";
       return false;
     }
     look.bufSize = kLookBuf;
@@ -158,11 +164,7 @@ namespace chimera
     const SRes res = SzArEx_Open(&db, &look.vt, &g_alloc, &g_alloc);
     if (res != SZ_OK)
     {
-      error = res == SZ_ERROR_NO_ARCHIVE  ? "this is not a .7z archive"
-              : res == SZ_ERROR_UNSUPPORTED ? "this .7z uses something this core cannot read (encryption, most likely)"
-              : res == SZ_ERROR_MEM         ? "out of memory reading the archive header"
-              : res == SZ_ERROR_CRC         ? "the archive header is corrupt"
-                                            : "the archive header could not be read";
+      error = res == SZ_ERROR_NO_ARCHIVE ? "error.7z_not_7z" : res == SZ_ERROR_UNSUPPORTED ? "error.7z_unsupported" : res == SZ_ERROR_MEM ? "error.7z_no_memory" : res == SZ_ERROR_CRC ? "error.7z_header_corrupt" : "error.7z_header_unreadable";
     }
     else
     {
@@ -184,7 +186,7 @@ namespace chimera
         sd.Size = db.db.FoCodersOffsets[fi + 1] - db.db.FoCodersOffsets[fi];
         if (SzGetNextFolderItem(&folder, &sd) != SZ_OK)
         {
-          error = "the archive header is corrupt";
+          error = "error.7z_header_corrupt";
           ok = false;
           break;
         }
@@ -192,10 +194,7 @@ namespace chimera
         if (folder.NumCoders != 1)
         {
           error =
-            "this .7z was packed with a chain of coders (a filter such as BCJ2 in front of the "
-            "compressor). Decoding one needs several streams advanced in lockstep, with the "
-            "intermediates held somewhere, and the sandbox has nowhere to hold them. Repack with "
-            "`7z a -m0=lzma2 -mf=off`, or as a .zip, and it will be read where it lies.";
+            "error.7z_coders";
           ok = false;
           break;
         }
@@ -205,8 +204,7 @@ namespace chimera
         dst.method = static_cast<u32>(coder.MethodID);
         if (dst.method != kCopy && dst.method != kLzma && dst.method != kLzma2)
         {
-          error = "this .7z uses compression method " + method_name(dst.method) +
-                  ", which this core cannot decode. Repack with `7z a -m0=lzma2`, or as a .zip.";
+          error = std::string("error.7z_method" TEXT_INNER) + method_name(dst.method);
           ok = false;
           break;
         }

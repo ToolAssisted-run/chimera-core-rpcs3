@@ -776,7 +776,7 @@ while IFS= read -r f; do
 	rm -rf "$work/pkgscan"
 	# shellcheck disable=SC2086
 	"$native" --work "$work/pkgscan" --firmware "$pup" $raparg --frames 120 --report 20 --tty-out "$work/tty-pkgscan.txt" "$f" 2>"$work/pkgscan.err" | grep '^frame\|^booted' > "$work/pkgscan.txt"
-	if grep -q 'is not a game: installing it produced no USRDIR\|is a PATCH for a disc game\|is an UPDATE, not a game' "$work/pkgscan.err"; then
+	if grep -q 'error.pkg_content\|error.pkg_disc_patch\|error.pkg_update' "$work/pkgscan.err"; then
 		if [ -z "$pkgcontent" ]; then
 			pkgcontent="$f"
 			cp "$work/pkgscan.err" "$work/pkgcontent.err"
@@ -894,7 +894,7 @@ fi
 refused_cleanly() {
 	# $1 name, $2 expected exit code, $3 what ran
 	rc="$(cat "$work/$1.rc")"
-	if ! grep -q 'licensed content and the project carries no licence' "$work/$1.err"; then
+	if ! grep -q 'error.needs_rap' "$work/$1.err"; then
 		if grep -q '^booted' "$work/$1-out.txt"; then
 			failed "pkg:licence - $3 says REQUIRE_LICENSE but booted with no licence at all"
 		else
@@ -1415,6 +1415,27 @@ for c in "${CHIMERA_ROOT:-}" "$root/../chimera" "$HOME/chimera"; do
 		break
 	fi
 done
+# A game runs only in a project (Chimera, 2026-10-26): crun_game <game>
+# <movie> [chimera-run's options] makes one of the game and the movie, with
+# any --settings and --firmware given, and runs it with the rest (under
+# CRUN_TIMEOUT seconds, and with no X display).
+crun_game() {
+	cg_game="$1" cg_movie="$2" cg_made=""
+	shift 2
+	cg_n=$#
+	while [ "$cg_n" -gt 0 ]; do
+		case "$1" in
+			--settings) cg_made="$cg_made --settings $(printf '%q' "$2")"; shift 2; cg_n=$((cg_n - 2)); continue ;;
+			--firmware) cg_made="$cg_made --firmware $(printf '%q' "$2")"; set -- "$@" "$1" "$2"; shift 2; cg_n=$((cg_n - 2)); continue ;;
+		esac
+		set -- "$@" "$1"; shift; cg_n=$((cg_n - 1))
+	done
+	cg_dir="$(mktemp -d "$work/project.XXXXXX")"
+	eval "\"\$crunroot/build/meson-linux/chimera-run\" --new-project \"\$cg_dir/game.chimeraProject\" \"\$crunroot/build/Cores/rpcs3.chimeraCore\" \"\$cg_game\" \"\$cg_movie\" $cg_made" \
+		> "$cg_dir/make.log" 2>&1 || { echo "chimera-run: no project made: $(tail -1 "$cg_dir/make.log")"; return 2; }
+	env -u DISPLAY timeout "${CRUN_TIMEOUT:-0}" "$crunroot/build/meson-linux/chimera-run" --project "$cg_dir/game.chimeraProject" \
+		"$crunroot/build/Cores/rpcs3.chimeraCore" --files "$(dirname "$cg_game")" "$@"
+}
 if [ -z "$crunroot" ] || [ ! -f "$pup" ]; then
 	for leg in $vk_legs; do
 		skip "$leg - needs the firmware in tests/roms-local, plus chimera-run and an installed rpcs3.chimeraCore (set CHIMERA_ROOT)"
@@ -1426,8 +1447,7 @@ else
 	printf '[Input]\nLogKey:#\n' > "$vk/none.txt"
 	vkrun() { # <name> <renderer> <movie> <extra args...>: the log in $vk/<name>.log
 		vkname="$1"; vkrenderer="$2"; vkmovie="$3"; shift 3
-		env -u DISPLAY CHIMERA_PICTURE_TRACE=1 timeout 2400 "$crunroot/build/meson-linux/chimera-run" \
-			"$crunroot/build/Cores/rpcs3.chimeraCore" "$root/tests/roms/flip.elf" "$vkmovie" --gpu \
+		CHIMERA_PICTURE_TRACE=1 CRUN_TIMEOUT=2400 crun_game "$root/tests/roms/flip.elf" "$vkmovie" --gpu \
 			--settings "{\"renderer\":\"$vkrenderer\"}" --firmware "PS3UPDAT.PUP=$pup" "$@" > "$vk/$vkname.log" 2>&1 || true
 	}
 	# the picture comparer answers 0 for "the same", 1 for "different" and 2
@@ -1516,7 +1536,7 @@ else
 	mkdir -p "$vd"
 	printf '[Input]\nLogKey:#\n' > "$vd/none.txt"
 	printf 'sys_tty' > "$vd/logtrace.txt"
-	env -u DISPLAY timeout 2400 "$crunroot/build/meson-linux/chimera-run" "$crunroot/build/Cores/rpcs3.chimeraCore" "$vkdmaiso" "$vd/none.txt" --gpu \
+	CRUN_TIMEOUT=2400 crun_game "$vkdmaiso" "$vd/none.txt" --gpu \
 		--settings '{"renderer":"vulkan-hw","ppu_decoder":"interpreter","writeColorBuffers":true}' \
 		--firmware "PS3UPDAT.PUP=$pup" --firmware "logtrace=$vd/logtrace.txt" --record "$vd/rec.txt" --frames 1900 \
 		--screenshot "1850=$vd/dialog.tga" > "$vd/run.log" 2>&1 || true

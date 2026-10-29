@@ -8,6 +8,12 @@
 
 #include <zlib.h>
 
+/* Why a thing failed is a key of languages/en.json, put inside the caller's
+ * text, each of its arguments after a TEXT_INNER (chimera
+ * docs/translations.md). TEXT_INNER is a string of its own so the byte after
+ * it is never read as more of its hex. */
+#define TEXT_INNER "\x1e"
+
 namespace chimera
 {
   namespace
@@ -57,7 +63,7 @@ namespace chimera
     std::FILE* f = std::fopen(host_path.c_str(), "rb");
     if (!f)
     {
-      error = "cannot open " + host_path;
+      error = std::string("error.archive_not_opened" TEXT_INNER) + host_path;
       return false;
     }
     std::fseek(f, 0, SEEK_END);
@@ -65,7 +71,7 @@ namespace chimera
     if (file_size_l <= 0)
     {
       std::fclose(f);
-      error = "the archive is empty";
+      error = "error.archive_empty";
       return false;
     }
     const u64 file_size = static_cast<u64>(file_size_l);
@@ -77,7 +83,7 @@ namespace chimera
     if (!read_exact(f, file_size - tail_len, tail.data(), tail.size()))
     {
       std::fclose(f);
-      error = "cannot read the end of the archive";
+      error = "error.archive_no_end";
       return false;
     }
     size_t eocd = tail.size();
@@ -94,7 +100,7 @@ namespace chimera
     if (eocd == tail.size())
     {
       std::fclose(f);
-      error = "not a zip archive (no end-of-central-directory record)";
+      error = "error.archive_not_zip";
       return false;
     }
 
@@ -119,14 +125,14 @@ namespace chimera
     if (cd_size == 0 || cd_offset + cd_size > file_size)
     {
       std::fclose(f);
-      error = "the archive's central directory is out of range";
+      error = "error.archive_directory_range";
       return false;
     }
     std::vector<u8> cd(static_cast<size_t>(cd_size));
     if (!read_exact(f, cd_offset, cd.data(), cd.size()))
     {
       std::fclose(f);
-      error = "cannot read the archive's central directory";
+      error = "error.archive_directory";
       return false;
     }
     std::fclose(f);
@@ -163,7 +169,7 @@ namespace chimera
         continue;
       if (e.method != 0 && e.method != 8)
       {
-        error = "the archive uses a compression method this core cannot read (entry " + e.path + ")";
+        error = std::string("error.archive_method" TEXT_INNER) + e.path;
         return false;
       }
       out.entries.push_back(std::move(e));
@@ -171,7 +177,7 @@ namespace chimera
 
     if (out.entries.empty())
     {
-      error = "the archive holds no files";
+      error = "error.archive_no_files";
       return false;
     }
     return true;

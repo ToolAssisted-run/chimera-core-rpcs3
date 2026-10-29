@@ -3,7 +3,7 @@
   "slots": [
     {
       "id": "game",
-      "title": "Game",
+      "title": "slot.game",
       "min": 1,
       "max": 1,
       "formats": [
@@ -15,18 +15,18 @@
         "7z",
         "pkg"
       ],
-      "help": "The game. It is one of four things. (1) A PS3 executable (.elf, .self), started directly as a modified console would start it. (2) A disc image (.iso). This is either a decrypted image, or a Redump image with its disc key given under Disc key. (3) A disc copied as a FOLDER and packed into a single .zip or .7z. The archive is read in place and never unpacked, so it may be as large as the disc. Store the files in it without compression, so that the game's big files can be read at any position. A disc game's EBOOT.BIN alone is not enough, because the game's data is in the rest of the disc. A .7z works the same way, but it must be packed NON-SOLID: `7z a -ms=off`. By default 7-Zip packs all files into one shared stream, which has to be decoded from its start to reach anything in it. Reading the first 64 KB of one disc's EBOOT.BIN took 190 seconds that way. A solid archive is therefore refused, so that it cannot look as if the program has stopped responding. (4) The .pkg of a title sold only as a download and never on a disc. It is installed on the console's hard disk before the machine starts, exactly as the console's own menu (XMB) installs it, and the machine starts what the installation produced. No disc and no disc key are involved. A package that is content FOR a game (downloadable content, a licence, a patch for a disc game) is refused here by name. It belongs under Packages."
+      "help": "slot.game.help"
     },
     {
       "id": "dkey",
-      "title": "Disc key",
+      "title": "slot.dkey",
       "min": 0,
       "max": 1,
       "formats": [
         "dkey",
         "key"
       ],
-      "help": "The 32-character disc key that decrypts a Redump PS3 image (the .dkey file distributed with it). It is not needed for a decrypted image or a homebrew executable. A package game does not need one either, because a .pkg contains no encrypted disc.",
+      "help": "slot.dkey.help",
       "exposedWhen": {
         "not": {
           "slot": "game",
@@ -36,35 +36,35 @@
     },
     {
       "id": "pkg",
-      "title": "Packages",
+      "title": "slot.pkg",
       "min": 0,
       "max": -1,
       "formats": [
         "pkg"
       ],
-      "help": "PS3 package files (.pkg) that are installed on the console's hard disk before the machine starts, the way the console's own menu (XMB) installs them: downloadable content, game patches and unlock packages. Any number can be given, and they are installed in the order listed. Encrypted content (EDAT) also needs its licence. A .rap licence comes as a package of its own, and a package that was repacked to need no licence installs and works alone. The project and the movie record exactly which packages they were, so a movie that plays a game with its downloadable content can be played back by anyone who has the same files. A file that is not a PS3 package, or a patch for another version of the game, is refused, so that content is never silently missing."
+      "help": "slot.pkg.help"
     },
     {
       "id": "rap",
-      "title": "Licences",
+      "title": "slot.rap",
       "min": 0,
       "max": -1,
       "formats": [
         "rap"
       ],
       "namePattern": "^[A-Za-z0-9_\\-]{1,48}\\.rap$",
-      "nameHelp": "A .rap file is named after the content it unlocks, and the console finds it by that name, for example UP9000-NPUA80134_00-ECHOCHROME000000.rap. If it is renamed the console cannot find it, so give it exactly as you got it.",
-      "help": "The account licence (.rap) for a PlayStation Store title that was paid for. A purchased package is protected (NPDRM): its executable and its data are encrypted, and the key is this 16-byte file. The console keeps it in the user's exdata folder and looks it up BY NAME, so the file's name is the content id and must not be changed. Give one for each package that needs it, and the machine decrypts and starts what it unlocks. Without it a licensed game stops at 'failed to decrypt content'. A free package (a demo, or a repack that needs no licence) needs none. The project and the movie record exactly which file it was, as they do for every other file the machine starts with."
+      "nameHelp": "slot.rap.name_help",
+      "help": "slot.rap.help"
     },
     {
       "id": "savedata",
-      "title": "Save data",
+      "title": "slot.savedata",
       "min": 0,
       "max": 1,
       "formats": [
         "zip"
       ],
-      "help": "The saved games the console starts with. This is the zip that Emulator > Export Save Data... writes, given back unchanged. It holds the user's savedata folder, with one directory per save (BLUS30007-SAVE-..., with PARAM.SFO, icons and the game's own files). It is unpacked onto the console's hard disk before the machine starts, so a run can continue where another stopped. The file is never changed. The project and the movie record exactly which file it was, so a movie that starts from a saved game can be played back by anyone who has the same file. Leave it empty and the console has no saves. A zip that holds anything else is refused."
+      "help": "slot.savedata.help"
     }
   ]
 }
