@@ -40,7 +40,7 @@
 		"error.no_eboot": "Arkivet har en PS3_DISC.SFB men ingen PS3_GAME/USRDIR/EBOOT.BIN bredvid den, så det finns inget spel i det att starta.",
 		"error.no_firmware": "PS3-firmwaren saknas, och spelet behöver den.",
 		"error.no_title": "ingen",
-		"error.no_vulkan": "Inställningen Renderer är 'vulkan-hw', och den här Chimera gav kärnan ingen Vulkan-enhet. Den behöver en grafikdrivrutin med Vulkan och Chimeras Development build 4ca6e302 eller senare. Ställ in Renderer på 'opengl-hw' för att köra utan den.",
+		"error.no_vulkan": "Inställningen Renderer är 'vulkan-hw', och den här Chimera gav kärnan ingen Vulkan-enhet. Den behöver en grafikdrivrutin med Vulkan och Development build 4ca6e302 av Chimera eller senare. Ställ in Renderer på 'opengl-hw' för att köra utan den.",
 		"error.not_a_package": "Den filen är inte ett PS3-paket: %1",
 		"error.not_package": "Filen är inte ett PS3-paket: %1",
 		"error.not_ready": "Starten nådde inte läget klar (läge %1).",
