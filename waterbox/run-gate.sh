@@ -1618,13 +1618,16 @@ def sha1(path):
 idle = "||    0,    0,    0,    0,.................|"
 cross = "||    0,    0,    0,    0,..........X......|"
 lines = [cross if 63 <= i <= 69 or 125 <= i <= 128 else idle for i in range(1300)]
-project = {"title": "vk:fault-flush", "description": "",
+project = {"title": "vk:fault-flush",
            "core": {"name": "RPCS3", "version": "gate", "sha1": "0" * 40}, "rerecords": 0,
            "files": [{"name": os.path.basename(game), "sha1": sha1(game), "slot": "game"}],
            "settings": {"renderer": "vulkan-hw"},
-           "firmware": [{"id": "PS3UPDAT.PUP", "sha1": sha1(pup)}],
-           "inputs": {"entries": lines}}
-json.dump(project, open(out, "w"), indent=1)
+           "firmware": [{"id": "PS3UPDAT.PUP", "sha1": sha1(pup)}]}
+# a project is a zip (Chimera's since 2026-11-02): project.json and the input's lines
+import zipfile
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    z.writestr("project.json", json.dumps(project, indent=1))
+    z.writestr("input.input", "".join(l + "\n" for l in lines))
 EOF
 	env -u DISPLAY timeout 3600 "$crunroot/build/meson-linux/chimera-run" --project "$vf/vanquish.chimeraProject" \
 		"$crunroot/build/Cores/rpcs3.chimeraCore" --files "$(dirname "$vkflushgame")" --allow-core-mismatch \
@@ -1701,12 +1704,15 @@ for name in sorted(os.listdir(folder)):
 idle = "||    0,    0,    0,    0,.................|"
 start = "||    0,    0,    0,    0,.....S...........|"
 lines = [start if any(f <= i < f + 6 for f in (1700, 1900, 2100)) else idle for i in range(2700)]
-project = {"title": "rsx:queue-start", "description": "",
+project = {"title": "rsx:queue-start",
            "core": {"name": "RPCS3", "version": "gate", "sha1": "0" * 40}, "rerecords": 0,
            "files": files, "settings": {"renderer": "opengl-hw"},
-           "firmware": [{"id": "PS3UPDAT.PUP", "sha1": sha1(pup)}],
-           "inputs": {"entries": lines}}
-json.dump(project, open(out, "w"), indent=1)
+           "firmware": [{"id": "PS3UPDAT.PUP", "sha1": sha1(pup)}]}
+# a project is a zip (Chimera's since 2026-11-02): project.json and the input's lines
+import zipfile
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    z.writestr("project.json", json.dumps(project, indent=1))
+    z.writestr("input.input", "".join(l + "\n" for l in lines))
 EOF
 	qshots=""
 	for f in $(seq 1720 20 2600); do qshots="$qshots --screenshot $f=$qs/f$f.tga"; done

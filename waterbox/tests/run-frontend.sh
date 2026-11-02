@@ -392,15 +392,19 @@ def sha1(path, limit=None):
 package, disc, pup, out = sys.argv[1:5]
 version = json.loads(zipfile.ZipFile(package).read('build.json'))['version']
 import os
-json.dump({
-    'title': 'gate', 'description': '',
+project = {
+    'title': 'gate',
     'core': {'name': 'RPCS3', 'version': version, 'sha1': sha1(package)},
     'rerecords': 0,
     'files': [{'name': os.path.basename(disc), 'sha1': sha1(disc), 'slot': 'game'}],
     'settings': {}, 'firmware': [{'id': 'PS3UPDAT.PUP', 'sha1': sha1(pup)}],
     'markers': [], 'branches': [],
     'headers': {'MovieVersion': 'Chimera Tasproj v1.1', 'Platform': 'PS3'},
-}, open(out, 'w'), indent=1)
+}
+# a project is a zip (Chimera's since 2026-11-02): project.json and its (here empty) input
+with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+    z.writestr('project.json', json.dumps(project, indent=1))
+    z.writestr('input.input', '')
 PYEOF
 	# the project resolves its disc beside itself; fresh settings remember no
 	# firmware: it is found in the Firmware folder, which holds only the firmware
