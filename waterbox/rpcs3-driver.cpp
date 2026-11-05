@@ -2433,9 +2433,13 @@ extern "C" void chimera_rpcs3_set_renderer(const char* name)
 
 // Whether the renderer the project asked for can run at all. 'vulkan-hw' has
 // nothing to fall back on: without a Vulkan device the project does not
-// start, and this is why (wbx-entry.cpp puts it in front of the user).
+// start, and this is why (wbx-entry.cpp puts it in front of the user). A
+// precompile session draws nothing and the frontend starts it with no GPU,
+// so it is never refused: it runs on the null renderer (chimera#513).
 extern "C" const char* chimera_rpcs3_renderer_refusal(void)
 {
+  if (s_precompile_count > 0)
+    return nullptr;
   if (s_renderer_vulkan && !(chimera_rpcs3_vulkan_bridge_present && chimera_rpcs3_vulkan_bridge_present()))
     return "error.no_vulkan";  // a key of languages/en.json
   return nullptr;

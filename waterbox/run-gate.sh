@@ -451,7 +451,7 @@ if [ ! -f "$pup" ]; then
 	for leg in input:press input:port2 input:lag video:flip audio:tone \
 		disc:boot disc:install disc:install:encrypted disc:install:state \
 		pkg:boot pkg:content pkg:licence ppu:llvm \
-		cache:objects cache:warm cache:precompile \
+		cache:objects cache:warm cache:precompile cache:precompile-vulkan \
 		spu:interpreter spu:asmjit spu:agree rsx:drain spu:barrier \
 		gpu:flip gpu:disc gpu:page-watch gpu:rewind gpu:context; do
 		skip "$leg - the same firmware"
@@ -988,6 +988,25 @@ if [ "$have_wbx" = 1 ]; then
 		pass "cache:precompile - two sessions stored $stored0 + $stored1 objects of the boot set, all byte-identical to native's, and a run fetched all $npre"
 	else
 		failed "cache:precompile - stored $stored0 + $stored1 (want $npre, both >= 1), $missing not native's, run fetched ${fetched:-0} ($(grep -a 'fatal\|vsched\|unhandled' "$work/pre-0.txt" "$work/pre-1.txt" | head -1 | cut -c1-120))"
+	fi
+fi
+
+# ---- cache:precompile-vulkan ---------------------------------------------
+# A project whose Renderer is "vulkan-hw" is compiled the same way: the
+# frontend's compile sessions get no Vulkan device (they draw nothing), and
+# one was refused with error.no_vulkan, so such a project could not be
+# compiled (chimera#513). This core's own runner hands over no Vulkan either:
+# a precompile session with vulkan-hw stores every object of the boot set,
+# and a run with vulkan-hw is still refused, with the reason.
+if [ "$have_wbx" = 1 ] && [ "${npre:-0}" -ge 1 ]; then
+	rm -rf "$work/cache-pre-vk"
+	"$wbx" "$core" --firmware "$pup" --settings '{"ppu_decoder":"llvm","renderer":"vulkan-hw"}' --cache "$work/cache-pre-vk" --precompile 0/1/game "$rom" > "$work/pre-vk.txt" 2>&1
+	storedvk="$(sed -n 's/^compile cache: \([0-9]*\) stored.*/\1/p' "$work/pre-vk.txt")"
+	"$wbx" "$core" --firmware "$pup" --settings '{"renderer":"vulkan-hw"}' --frames 5 "$rom" > "$work/run-vk.txt" 2>&1
+	if [ "${storedvk:-0}" = "$npre" ] && ! grep -q 'error.no_vulkan' "$work/pre-vk.txt" && grep -q 'error.no_vulkan' "$work/run-vk.txt"; then
+		pass "cache:precompile-vulkan - a precompile session with Renderer vulkan-hw and no Vulkan device stored all $npre objects; a run with it is still refused (error.no_vulkan)"
+	else
+		failed "cache:precompile-vulkan - stored ${storedvk:-0} (want $npre), refused: $(grep -c 'error.no_vulkan' "$work/pre-vk.txt") (want 0); run refused: $(grep -c 'error.no_vulkan' "$work/run-vk.txt") (want 1)"
 	fi
 fi
 
