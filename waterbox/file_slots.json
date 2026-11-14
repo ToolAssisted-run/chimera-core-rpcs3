@@ -50,9 +50,10 @@
       "min": 0,
       "max": -1,
       "formats": [
-        "rap"
+        "rap",
+        "edat"
       ],
-      "namePattern": "^[A-Za-z0-9_\\-]{1,48}\\.rap$",
+      "namePattern": "^[A-Za-z0-9_\\-]{1,48}\\.(rap|edat)$",
       "nameHelp": "slot.rap.name_help",
       "help": "slot.rap.help"
     },

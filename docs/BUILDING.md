@@ -385,8 +385,9 @@ Project files, declared in `waterbox/file_slots.json`:
 - Disc key (optional): the `.dkey` or `.key` that decrypts an encrypted disc
   image. Not needed for a decrypted image.
 - Packages (any number): `.pkg` files installed before the machine starts.
-- Licences (any number): `.rap` files. A `.rap` must keep the name it came
-  with.
+- Licences (any number): `.rap` and `.edat` files, put in the console's
+  exdata folder as RPCS3's File > Install Packages/Raps/Edats does. Each must
+  keep the name it came with.
 - Save data (optional): the `.zip` that Emulator > Export Save Data... writes.
 
 ## Troubleshooting

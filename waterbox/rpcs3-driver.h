@@ -152,6 +152,11 @@ uint64_t chimera_rpcs3_memfs_stat(int which);
 // has been through a savestate and another process is asked. Diagnostic;
 // returns the bytes copied or a negative number. No normal run calls it.
 int64_t chimera_rpcs3_disc_copy_probe(const char* disc_rel, int flags);
+// A file on the console's disk read back through the machine's own file system
+// (a console path such as /dev_hdd0/home/00000001/exdata/NAME.edat): its size,
+// or -1 when there is no such file, and a 64-bit FNV-1a hash of its bytes in
+// *hash. Diagnostic; no normal run calls it.
+int64_t chimera_rpcs3_hdd_file_probe(const char* console_path, uint64_t* hash);
 // the compile cache bridge (cache-bridge.h): the host's dispatcher, before init
 void chimera_rpcs3_install_cache_bridge(uint64_t addr);
 uint64_t chimera_rpcs3_cache_fetched(void);

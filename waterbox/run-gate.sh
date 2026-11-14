@@ -94,6 +94,12 @@
 #   pkg:licence            a purchased title (REQUIRE_LICENSE) boots with its
 #                          .rap in the Licence slot, and without it says which
 #                          licence is missing
+#   licence:exdata         made-up .rap and .edat licences in the Licences
+#                          slot each land in the console's exdata under their
+#                          own name (extension in lower case) and read back
+#                          through the machine's own file system (chimera#583)
+#   licence:project        the same through a real project and chimera-run: it
+#                          opens and runs, and a .txt in the slot is refused
 #   pkg:references         an installed package's files are references to the
 #                          package, not copies in memory, and the machine is
 #                          the same as with copies (chimera#300)
@@ -439,6 +445,163 @@ if g++ -O1 -pthread -I"$here" -o "$work/rsx-idle-test" "$root/tests/vsched/rsx-i
 	fi
 else
 	failed "vsched:rsx-idle - tests/vsched/rsx-idle-test.cpp does not build (see $work/rsx-idle-test.err)"
+fi
+
+# ---- licence:exdata and licence:project ------------------------------------
+# The Licences slot takes .rap and .edat files (chimera#583, user-decided
+# 2026-11-14) and puts each in the console's exdata folder under its own name,
+# with the extension in lower case, which is where upstream's File > Install
+# Packages/Raps/Edats puts them (main_window::InstallFileInExData). These two
+# tests need no firmware and no game, so CI runs them.
+#
+# The files are made up here, at test time, from random bytes under plausible
+# content-id names: a real licence is a secret and is never committed. The
+# tests print sizes and hashes, never the bytes.
+#
+#   licence:exdata   lv2test.elf with an .edat, an .EDAT and a .rap in the
+#                    slot: each is read back out of
+#                    /dev_hdd0/home/00000001/exdata through the machine's own
+#                    file system (--hdd-probe) with its size and hash, the
+#                    .EDAT under a lower-case .edat, and a file that was not
+#                    handed over is reported missing (so the probe can say no)
+#   licence:project  the same files in a real project through chimera-run: the
+#                    project opens and runs; a .txt in the Licences slot is
+#                    refused; and the slot's name rule takes the content-id
+#                    names and refuses a renamed one
+#
+# NEGATIVE CONTROL, done once by hand (2026-11-14): with the .edat left out of
+# the Licences slot's formats, licence:project failed on the project with the
+# .edat; with install_licences() skipping .edat files, licence:exdata failed
+# with the .edat reported missing (-1 bytes).
+lic="$work/licence"
+rm -rf "$lic"
+mkdir -p "$lic/files"
+cp "$rom" "$lic/files/lv2test.elf"
+exdata=/dev_hdd0/home/00000001/exdata
+# made-up licences: name, size; and what each should read back as
+python3 - "$lic/files" > "$lic/expect.txt" <<'EOF'
+import os, sys
+folder = sys.argv[1]
+def fnv(b):
+    h = 0xcbf29ce484222325
+    for c in b:
+        h = ((h ^ c) * 0x100000001b3) & 0xffffffffffffffff
+    return h
+for name, size in (("UP0000-CHIM00001_00-EDATLICENCETEST1.edat", 2416),
+                   ("UP0000-CHIM00002_00-EDATLICENCETEST2.EDAT", 1040),
+                   ("UP0000-CHIM00003_00-RAPLICENCETEST03.rap", 16)):
+    data = os.urandom(size)
+    with open(os.path.join(folder, name), "wb") as f:
+        f.write(data)
+    stem, ext = name.rsplit(".", 1)
+    print("%s\t%s.%s\t%d\t%016x" % (name, stem, ext.lower(), size, fnv(data)))
+EOF
+licargs=""
+probeargs=""
+while IFS="$(printf '\t')" read -r given placed size hash; do
+	licargs="$licargs --rap $lic/files/$given"
+	probeargs="$probeargs --hdd-probe $exdata/$placed"
+done < "$lic/expect.txt"
+# the controls: the upper-case name was not kept, and a file nobody gave is not there
+probeargs="$probeargs --hdd-probe $exdata/UP0000-CHIM00002_00-EDATLICENCETEST2.EDAT --hdd-probe $exdata/UP0000-CHIM00009_00-NEVERHANDEDOVER0.edat"
+# licence_said FLAVOUR: what is wrong with that flavour's read-back, or nothing
+licence_said() {
+	out="$lic/$1-out.txt"
+	if ! grep -q '^frame' "$out"; then
+		echo "the $1 run produced no frame ($(tail -1 "$lic/$1.err"))"
+		return
+	fi
+	while IFS="$(printf '\t')" read -r given placed size hash; do
+		got="$(grep -F "hdd file $exdata/$placed:" "$out" | sed 's/.*: //')"
+		if [ "$got" != "$size bytes, fnv $hash" ]; then
+			echo "$given read back from exdata as '${got:-nothing}' in the $1 run, not as $size bytes with its hash"
+			return
+		fi
+	done < "$lic/expect.txt"
+	for absent in UP0000-CHIM00002_00-EDATLICENCETEST2.EDAT UP0000-CHIM00009_00-NEVERHANDEDOVER0.edat; do
+		got="$(grep -F "hdd file $exdata/$absent:" "$out" | sed 's/.*: //')"
+		case "$got" in
+			"-1 bytes"*) ;;
+			*) echo "$absent should not be in exdata but read back as '${got:-nothing}' in the $1 run"; return ;;
+		esac
+	done
+}
+# shellcheck disable=SC2086 # the argument lists are split on purpose
+"$native" --work "$lic/native" --frames 30 --report 10 $licargs $probeargs "$lic/files/lv2test.elf" > "$lic/native-out.txt" 2>"$lic/native.err"
+said="$(licence_said native)"
+if [ -z "$said" ] && [ "$have_wbx" = 1 ]; then
+	# shellcheck disable=SC2086
+	"$wbx" "$core" --frames 30 --report 10 $licargs $probeargs "$lic/files/lv2test.elf" > "$lic/wbx-out.txt" 2>"$lic/wbx.err"
+	said="$(licence_said wbx)"
+fi
+if [ -n "$said" ]; then
+	failed "licence:exdata - $said"
+else
+	pass "licence:exdata - an .edat (2416 bytes), an .EDAT (1040) and a .rap (16) read back out of the console's exdata through its own file system, byte for byte by hash, the .EDAT as .edat, and a file never handed over is missing, $(vs_sandbox | sed 's/native == sandbox/in both flavours/')"
+fi
+
+licroot=""
+for c in "${CHIMERA_ROOT:-}" "$root/../chimera" "$HOME/chimera"; do
+	if [ -n "$c" ] && [ -x "$c/build/meson-linux/chimera-run" ] && [ -f "$c/build/Cores/rpcs3.chimeraCore" ]; then
+		licroot="$c"
+		break
+	fi
+done
+if [ -z "$licroot" ]; then
+	skip "licence:project - needs chimera-run and an installed rpcs3.chimeraCore (set CHIMERA_ROOT) (would prove: a project with an .edat and a .rap in the Licences slot opens and runs, and a .txt there is refused)"
+else
+	printf 'not a licence\n' > "$lic/files/UP0000-CHIM00004_00-NOTALICENCEFILE0.txt"
+	# lic_project OUT FILE...: a project of lv2test.elf with these files in the
+	# Licences slot, by their SHA-1, and 30 frames of an idle pad, on OpenGL
+	# (the renderer must be a real one; lv2test draws nothing, any GL will do)
+	lic_project() {
+		python3 - "$lic/files" "$@" <<'EOF'
+import hashlib, json, os, sys, zipfile
+folder, out, names = sys.argv[1], sys.argv[2], sys.argv[3:]
+def sha1(name):
+    with open(os.path.join(folder, name), "rb") as f:
+        return hashlib.sha1(f.read()).hexdigest().upper()
+files = [{"name": "lv2test.elf", "sha1": sha1("lv2test.elf"), "slot": "game"}]
+files += [{"name": n, "sha1": sha1(n), "slot": "rap"} for n in names]
+project = {"title": "licence:project", "core": {"name": "RPCS3", "version": "gate", "sha1": "0" * 40},
+           "rerecords": 0, "files": files, "settings": {"renderer": "opengl-hw"}}
+idle = "||    0,    0,    0,    0,.................|"
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    z.writestr("project.json", json.dumps(project, indent=1))
+    z.writestr("input.input", "".join(idle + "\n" for _ in range(40)))
+EOF
+	}
+	lic_run() { # OUT.log PROJECT
+		env -u DISPLAY timeout 600 "$licroot/build/meson-linux/chimera-run" --project "$2" \
+			"$licroot/build/Cores/rpcs3.chimeraCore" --files "$lic/files" --allow-core-mismatch --gpu --frames 30 > "$1" 2>&1
+	}
+	lic_project "$lic/good.chimeraProject" $(cut -f1 "$lic/expect.txt")
+	lic_project "$lic/bad.chimeraProject" UP0000-CHIM00004_00-NOTALICENCEFILE0.txt
+	goodrc=0; lic_run "$lic/good.log" "$lic/good.chimeraProject" || goodrc=$?
+	badrc=0; lic_run "$lic/bad.log" "$lic/bad.chimeraProject" || badrc=$?
+	# the name rule the New Project window applies (namePattern), on names
+	names="$(python3 - "$here/file_slots.json" <<'EOF'
+import json, re, sys
+slot = [s for s in json.load(open(sys.argv[1]))["slots"] if s["id"] == "rap"][0]
+pattern = re.compile(slot["namePattern"])
+take = ["UP9000-NPUA80134_00-ECHOCHROME000000.rap", "UP9000-NPUA80134_00-ECHOCHROME000000.edat"]
+refuse = ["echochrome licence.edat", "UP9000-NPUA80134_00-ECHOCHROME000000.edat.bak", "UP9000-NPUA80134_00-ECHOCHROME000000.txt"]
+wrong = [n for n in take if not pattern.fullmatch(n)] + [n for n in refuse if pattern.fullmatch(n)]
+formats = slot["formats"]
+if "edat" not in formats or "rap" not in formats:
+    wrong.append("formats " + ",".join(formats))
+print(";".join(wrong))
+EOF
+)"
+	if [ "$goodrc" != 0 ] || ! grep -q '^frames=30' "$lic/good.log"; then
+		failed "licence:project - the project with an .edat, an .EDAT and a .rap in the Licences slot did not run 30 frames (exit $goodrc: $(grep -v '^frames=' "$lic/good.log" | tail -1))"
+	elif [ "$badrc" = 0 ] || grep -q '^frames=' "$lic/bad.log"; then
+		failed "licence:project - a .txt in the Licences slot was not refused (exit $badrc)"
+	elif [ -n "$names" ]; then
+		failed "licence:project - the slot's name rule is wrong for: $names"
+	else
+		pass "licence:project - a project with an .edat, an .EDAT and a .rap in the Licences slot opens and runs 30 frames; a .txt there is refused (exit $badrc: $(tail -1 "$lic/bad.log" | cut -c1-120)); the name rule takes .rap and .edat content-id names and refuses renamed ones"
+	fi
 fi
 
 # ---- everything below needs the user's PS3UPDAT.PUP ---------------------
