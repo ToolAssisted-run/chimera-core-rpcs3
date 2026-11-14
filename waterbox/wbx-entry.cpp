@@ -309,6 +309,39 @@ ECL_EXPORT int64_t DiscCopyProbe(void)
   return chimera_rpcs3_disc_copy_probe(spec, flags);
 }
 
+// A file on the console's disk read back through the machine's own file
+// system (rpcs3-driver.h): diagnostic. The console paths arrive as a mounted
+// file called "hddprobe", one a line, because a sandboxed guest is handed no
+// arguments; `index` picks the line. Returns the size (-1: no such file,
+// -100: no list, -101: no such line) and keeps the bytes' hash for
+// HddFileProbeHash. Nothing but a test mounts it.
+static uint64_t g_hdd_probe_hash = 0;
+ECL_EXPORT int64_t HddFileProbe(int32_t index)
+{
+  g_hdd_probe_hash = 0;
+  FILE* f = fopen("hddprobe", "rb");
+  if (!f)
+    return -100;
+  char line[512];
+  int32_t at = 0;
+  int64_t result = -101;
+  while (fgets(line, sizeof line, f))
+  {
+    if (at++ != index)
+      continue;
+    line[strcspn(line, "\r\n")] = '\0';
+    result = chimera_rpcs3_hdd_file_probe(line, &g_hdd_probe_hash);
+    break;
+  }
+  fclose(f);
+  return result;
+}
+
+ECL_EXPORT uint64_t HddFileProbeHash(void)
+{
+  return g_hdd_probe_hash;
+}
+
 // Diagnosis, never machine state: every CPU thread, where it is and what it
 // last called, to the host's stderr. For a machine that has gone quiet - a
 // PPU parked in an lv2 wait names the HLE function it is parked in.

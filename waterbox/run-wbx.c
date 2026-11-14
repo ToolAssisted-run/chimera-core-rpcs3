@@ -3,7 +3,7 @@
  * digests in run-native's exact format, so the sandboxed build can be
  * diffed against the native reference.
  *
- * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--video-out F]
+ * usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap|.edat]... [--hdd-probe /dev_hdd0/PATH]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--video-out F]
  *        [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]] [--window-probe PAGES]
  *        [--log-trace CHANS] [--debug-at N]
  *        [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>
@@ -162,6 +162,11 @@ int main(int argc, char **argv)
 	/* --window-probe N: lock N pages of guest memory and read each through a
 	 * window, the way the RSX reads what it locked (chimera#213); diagnostic */
 	long windowProbe = 0;
+	/* --hdd-probe PATH (any number): read a file on the console's disk back
+	 * through the machine's own file system once it is up, and print its
+	 * size and a hash of its bytes, never the bytes (HddFileProbe) */
+	const char *hddProbes[32];
+	int nhddProbes = 0;
 	struct { long first, count; int index; } press[32];
 	int presses = 0;
 	/* the pkg and rap slots: any number of each, reaching the guest through the
@@ -181,6 +186,10 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--disc-copy-raw")) discCopyFlags |= 1;
 		else if (!strcmp(argv[i], "--disc-verify")) discCopyFlags |= 2;
 		else if (!strcmp(argv[i], "--window-probe") && i + 1 < argc) windowProbe = atol(argv[++i]);
+		else if (!strcmp(argv[i], "--hdd-probe") && i + 1 < argc) {
+			if (nhddProbes == 32) { fprintf(stderr, "too many --hdd-probe\n"); return 2; }
+			hddProbes[nhddProbes++] = argv[++i];
+		}
 		else if (!strcmp(argv[i], "--pkg") && i + 1 < argc) {
 			if (npkgs == 32) { fprintf(stderr, "too many --pkg\n"); return 2; }
 			pkgs[npkgs++] = argv[++i];
@@ -225,7 +234,7 @@ int main(int argc, char **argv)
 		else game = argv[i];
 	}
 	if (!core || !game) {
-		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--video-out F] [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>\n");
+		fprintf(stderr, "usage: run-wbx <core.wbx> [--firmware PS3UPDAT.PUP] [--pkg file.pkg]... [--rap licence.rap|.edat]... [--hdd-probe /dev_hdd0/PATH]... [--settings JSON | --ports 1100000] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--frames N] [--report N] [--tty-out F] [--video-out F] [--rewind] [--rerecord] [--save-state F] [--state F] <game.elf>\n");
 		return 2;
 	}
 
@@ -300,6 +309,17 @@ int main(int argc, char **argv)
 		memreader dr = { (const uint8_t *)spec, strlen(spec), 0 };
 		wbx_mount_file(h, "disccopy", mem_reader, (uintptr_t)&dr, false, &r);
 		if (r.error_message[0]) { fprintf(stderr, "mount disccopy: %s\n", r.error_message); return 1; }
+	}
+
+	/* the console paths to read back once the machine is up, one a line */
+	if (nhddProbes) {
+		static char list[32 * 520];
+		int at = 0;
+		for (int k = 0; k < nhddProbes; k++)
+			at += snprintf(list + at, sizeof list - at, "%s\n", hddProbes[k]);
+		memreader hr = { (const uint8_t *)list, strlen(list), 0 };
+		wbx_mount_file(h, "hddprobe", mem_reader, (uintptr_t)&hr, false, &r);
+		if (r.error_message[0]) { fprintf(stderr, "mount hddprobe: %s\n", r.error_message); return 1; }
 	}
 
 	/* the settings channel, exactly as the frontend mounts it */
@@ -450,6 +470,16 @@ int main(int argc, char **argv)
 		long long copied = (long long)DiscCopyProbe();
 		printf("disc copy %s: %lld bytes, %llu held, %llu kept, %llu decrypted\n", discCopy, copied,
 			(unsigned long long)MemfsStat(2), (unsigned long long)MemfsStat(3), (unsigned long long)MemfsStat(4));
+		fflush(stdout);
+	}
+
+	if (nhddProbes) {
+		i64fn_i HddFileProbe = (i64fn_i)proc(h, "HddFileProbe");
+		u64fn HddFileProbeHash = (u64fn)proc(h, "HddFileProbeHash");
+		for (int k = 0; k < nhddProbes; k++) {
+			long long size = (long long)HddFileProbe(k);
+			printf("hdd file %s: %lld bytes, fnv %016llx\n", hddProbes[k], size, (unsigned long long)HddFileProbeHash());
+		}
 		fflush(stdout);
 	}
 

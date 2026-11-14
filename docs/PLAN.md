@@ -1546,6 +1546,8 @@ a red frontend gate now blocks the release.
 | pkg:boot | SKIP | the PUP + a digital-only game .pkg |
 | pkg:content | SKIP | the PUP + a .pkg that is DLC or an update |
 | pkg:licence | SKIP | the PUP + a REQUIRE_LICENSE .pkg and its .rap |
+| licence:exdata | RUNS | nothing (made-up licence files, made at test time) |
+| licence:project | SKIP | chimera-run + a built package (set CHIMERA_ROOT) |
 | game:frontend | RUNS | nothing |
 | keybinds | RUNS | nothing |
 | precompile:frontend | SKIP | the PUP |
@@ -3473,3 +3475,66 @@ Test: `vk:fault-flush`, with a decrypted disc in `tests/roms-local/vk-flush/`
 reporter's movie does (without it the game waits at its "install game data"
 notice). On lavapipe the picture at frame 1200 has 36513 lit pixels (the
 Havok logo) with the driver's change and 0 without it.
+
+## 2026-11-14: the Licences slot takes .edat files too (user-decided, chimera#583)
+
+A user gave the Licences slot an `.edat` file and it was refused: the slot
+took only `.rap`. Upstream RPCS3's File > Install Packages/Raps/Edats copies
+both kinds into the console's exdata folder
+(`main_window::InstallFileInExData`). The owner decided on 2026-11-14: "The Licences slot
+takes .edat as well and puts it in exdata, as RPCS3 does."
+
+What changed:
+
+- `file_slots.json`: the slot (id `rap`, title Licences) takes `.rap` and
+  `.edat`. Its name rule (`namePattern`) is the same for both: the content id
+  the file is named after, then `.rap` or `.edat`. Upstream asks the same of an
+  .edat's name: it looks an unlock .edat up by content id
+  (`rpcs3::utils::get_c00_unlock_edat_path`, `exdata/<content id>.edat`), as
+  it looks a .rap up (`get_rap_file_path`).
+- The driver puts every file of the slot into
+  `/dev_hdd0/home/00000001/exdata/` under its own name, as before for a .rap.
+  Upstream writes the extension in lower case (`<name without extension>.` +
+  `rap` or `edat`), and now so does the core: a hand-written project's
+  `FOO.EDAT` lands as `FOO.edat`, the name rpcs3 asks for. The New Project
+  window only takes lower-case names, so nothing it makes changes.
+- The sentence for a package that says REQUIRE_LICENSE and has no licence
+  now counts only `.rap` files: an .edat is not the licence its executable is
+  decrypted with.
+- Upstream also refuses a licence file smaller than 16 bytes. The core does
+  not check sizes, for .rap or .edat, and still does not; that is unchanged.
+- The help texts of the slot say so, in all 26 languages.
+
+How it is tested, with no real licence anywhere: the gate makes three
+licence files from random bytes at test time (an `.edat`, an `.EDAT` and a
+`.rap`, named like content ids) and never prints their bytes.
+
+- `licence:exdata` (CI runs it: no firmware and no game) boots lv2test.elf
+  with the three in the slot, in both runners, and reads each back out of
+  exdata through the machine's own file system with a new diagnostic,
+  `--hdd-probe <console path>` (`chimera_rpcs3_hdd_file_probe`, export
+  `HddFileProbe`), which prints the size and a 64-bit FNV-1a hash, never the
+  bytes. The `.EDAT` must be there as `.edat` and not as `.EDAT`, and a name
+  never handed over must be missing, so the probe is seen to say no.
+- `licence:project` (needs chimera-run, so it skips in CI) makes a real
+  project of lv2test.elf with the three in the Licences slot and runs it
+  through chimera-run for 30 frames; a project with a `.txt` there must be
+  refused; and the slot's name rule must take content-id names ending in
+  `.rap` or `.edat` and refuse renamed ones.
+
+Measured on jaffanator01 (Ubuntu 24.04 container): the gate without
+firmware passed 10, failed 0, skipped 28, the two new tests among the passes.
+`licence:project` ran on OpenGL through llvmpipe; lv2test.elf draws nothing,
+so the card does not matter to it.
+
+Negative control, by hand: with `edat` taken out of the slot's formats and
+the driver skipping `.edat` files, both new tests failed: `licence:project`
+with "file '...EDATLICENCETEST1.edat' is not a format slot 'rap' accepts",
+and `licence:exdata` with the .edat read back as -1 bytes (missing).
+
+A real .rap still works as before: echochrome (NPUA80134, a REQUIRE_LICENSE
+package) with its .rap and firmware 4.82 ran 120 frames in both runners, and
+without the .rap it was refused with `error.needs_rap` (exit 1).
+
+Not tried: a real game that needs an .edat licence (none is on the test
+machines).

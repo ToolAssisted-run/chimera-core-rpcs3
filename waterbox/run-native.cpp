@@ -89,6 +89,10 @@ int main(int argc, char** argv)
   // --window-probe N: lock N pages of guest memory and read each through a
   // window, the way the RSX reads what it locked (chimera#213); diagnostic
   long windowProbe = 0;
+  // --hdd-probe PATH (any number): read a file on the console's disk back
+  // through the machine's own file system once it is up, and print its size
+  // and a hash of its bytes, never the bytes; diagnostic
+  std::vector<const char*> hddProbes;
   int preIndex = -1, preCount = 0, preFirmware = 1;
   struct { long first, count; int index; } press[32];
   int presses = 0;
@@ -123,6 +127,8 @@ int main(int argc, char** argv)
       discCopyFlags |= 2;
     else if (!strcmp(argv[i], "--window-probe") && i + 1 < argc)
       windowProbe = atol(argv[++i]);
+    else if (!strcmp(argv[i], "--hdd-probe") && i + 1 < argc)
+      hddProbes.push_back(argv[++i]);
     else if (!strcmp(argv[i], "--pkg") && i + 1 < argc)
       pkgs.push_back(argv[++i]);
     else if (!strcmp(argv[i], "--rap") && i + 1 < argc)
@@ -203,7 +209,7 @@ int main(int argc, char** argv)
   }
   if (!game)
   {
-    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--pkg-copies] [--rap licence.rap]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--ram-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] [--gl-rebuild-at N[,N...]] [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]] [--window-probe PAGES] <game.elf|iso>\n");
+    fprintf(stderr, "usage: run-native [--work D] [--firmware PS3UPDAT.PUP] [--dkey game.dkey] [--pkg file.pkg]... [--pkg-copies] [--rap licence.rap|.edat]... [--renderer null|opengl-hw] [--frames N] [--report N] [--tty-out F] [--ram-out F] [--video-out F] [--cache DIR] [--precompile INDEX/COUNT[/game]] [--press first:count:index] [--ports 1000000] [--gl-rebuild-at N[,N...]] [--disc-copy PATH/ON/DISC [--disc-copy-raw] [--disc-verify]] [--window-probe PAGES] [--hdd-probe /dev_hdd0/PATH]... <game.elf|iso>\n");
     return 2;
   }
   // CHIMERA_ALARM=<seconds>: a SIGALRM after that long, so a hang under gdb
@@ -267,6 +273,13 @@ int main(int argc, char** argv)
     printf("disc copy %s: %lld bytes, %llu held, %llu kept, %llu decrypted\n", discCopy, copied,
            (unsigned long long)chimera_rpcs3_memfs_stat(2), (unsigned long long)chimera_rpcs3_memfs_stat(3),
            (unsigned long long)chimera_rpcs3_memfs_stat(4));
+    fflush(stdout);
+  }
+  for (const char* probe : hddProbes)
+  {
+    uint64_t hash = 0;
+    const long long size = chimera_rpcs3_hdd_file_probe(probe, &hash);
+    printf("hdd file %s: %lld bytes, fnv %016llx\n", probe, size, (unsigned long long)hash);
     fflush(stdout);
   }
   if (windowProbe)

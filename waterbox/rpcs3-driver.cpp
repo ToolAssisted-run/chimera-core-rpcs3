@@ -1393,30 +1393,64 @@ namespace
   // "Failed to decrypt content" a sentence somebody can act on
   bool g_game_pkg_unlicensed = false;
 
-  // The .rap files the project carries (the rap slot). A PSN title that was
-  // paid for is NPDRM: its executable and its data are encrypted, and the key
-  // is a per-account licence the console keeps in the user's exdata. The
-  // licence arrives as a 16-byte .rap named after the content it unlocks
-  // (UP9000-NPUA80134_00-ECHOCHROME000000.rap), and rpcs3 looks for exactly
-  // that path - rpcs3::utils::get_rap_file_path, which unself asks when it
-  // decrypts an NPDRM executable and unedat asks for EDAT data - so the file
-  // goes in under its own name and the name is the whole of the plumbing.
-  // rpcs3 turns it into a RIF key in memory (rap_to_rif); nothing is written.
+  // The licence files the project carries (the rap slot, titled Licences):
+  // .rap and .edat. A PSN title that was paid for is NPDRM: its executable and
+  // its data are encrypted, and the key is a per-account licence the console
+  // keeps in the user's exdata. The licence arrives as a 16-byte .rap named
+  // after the content it unlocks (UP9000-NPUA80134_00-ECHOCHROME000000.rap),
+  // and rpcs3 looks for exactly that path - rpcs3::utils::get_rap_file_path,
+  // which unself asks when it decrypts an NPDRM executable and unedat asks for
+  // EDAT data - so the file goes in under its own name and the name is the
+  // whole of the plumbing. rpcs3 turns it into a RIF key in memory
+  // (rap_to_rif); nothing is written.
   //
-  // A package whose header carries REQUIRE_LICENSE needs one, and without it
-  // the boot ends at "Failed to decrypt content" with nothing saying why -
+  // An .edat licence (an unlock file, also named after its content id) goes to
+  // the same folder (user-decided, 2026-11-14, chimera#583), because that is
+  // where upstream's File > Install Packages/Raps/Edats puts both kinds
+  // (main_window::InstallFileInExData) and where rpcs3 looks an unlock .edat up
+  // (rpcs3::utils::get_c00_unlock_edat_path). Upstream keeps the name and
+  // writes the extension in lower case, and so does this: a hand-written
+  // project's FOO.EDAT lands as FOO.edat, which is the name rpcs3 asks for.
+  //
+  // A package whose header carries REQUIRE_LICENSE needs a .rap, and without
+  // one the boot ends at "Failed to decrypt content" with nothing saying why -
   // which is what this slot exists to prevent.
-  std::vector<std::string> g_raps;
+  std::vector<std::string> g_licences;
 
-  bool install_raps()
+  // the name a licence file has in exdata: its own, with the extension in
+  // lower case, as upstream's InstallFileInExData writes it
+  std::string exdata_name(const std::string& path)
   {
-    if (g_raps.empty())
+    const size_t slash = path.find_last_of('/');
+    std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+    const size_t dot = name.find_last_of('.');
+    if (dot != std::string::npos)
+      for (size_t i = dot + 1; i < name.size(); i++)
+        name[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(name[i])));
+    return name;
+  }
+
+  // whether the project brought a .rap (an .edat alone is not the licence a
+  // REQUIRE_LICENSE package's executable is decrypted with)
+  bool have_rap()
+  {
+    for (const std::string& path : g_licences)
+    {
+      const std::string name = exdata_name(path);
+      if (name.size() > 4 && name.compare(name.size() - 4, 4, ".rap") == 0)
+        return true;
+    }
+    return false;
+  }
+
+  bool install_licences()
+  {
+    if (g_licences.empty())
       return true;
     chimera::memfs_mkdirs(k_user_home + "exdata");
-    for (const std::string& path : g_raps)
+    for (const std::string& path : g_licences)
     {
-      const char* slash = strrchr(path.c_str(), '/');
-      const std::string name = slash ? slash + 1 : path;
+      const std::string name = exdata_name(path);
       if (!chimera::memfs_graft(k_user_home + "exdata/" + name, path))
       {
         g_error = std::string("error.licence_not_opened" TEXT_ARG) + path;
@@ -1466,7 +1500,7 @@ namespace
       g_error = "error.pkg_update";
       return false;
     }
-    g_game_pkg_unlicensed = requires_license && g_raps.empty();
+    g_game_pkg_unlicensed = requires_license && !have_rap();
     if (g_game_pkg_unlicensed)
       chimera_log.warning("the game package says REQUIRE_LICENSE and the project carries no .rap");
     std::deque<std::string> bootable;
@@ -1518,7 +1552,7 @@ void chimera_rpcs3_add_package(const char* pkg_path)
 void chimera_rpcs3_add_rap(const char* rap_path)
 {
   if (rap_path && *rap_path)
-    g_raps.emplace_back(rap_path);
+    g_licences.emplace_back(rap_path);
 }
 
 int chimera_rpcs3_savedata_count(void)
@@ -1859,7 +1893,7 @@ int chimera_rpcs3_init(const char* work_dir, const char* game_path, const char* 
   }
   // the licences the project carries, into the user's exdata, before anything
   // asks for one
-  if (!install_raps())
+  if (!install_licences())
     return 0;
   // A package in the game slot IS the game: it installs onto the console's
   // hard disk FIRST, so the project's other packages - its patch, its DLC -
@@ -2792,6 +2826,39 @@ extern "C" int64_t chimera_rpcs3_disc_copy_probe(const char* disc_rel, int flags
       return -8;
     at += static_cast<int64_t>(got);
   }
+  return total;
+}
+
+// A file on the console's own disk, read back the way the machine reads it:
+// the console path through rpcs3's VFS and fs::file, which is the memory
+// filesystem underneath. Returns its size, or -1 when the console has no such
+// file, and leaves a 64-bit FNV-1a hash of its bytes in *hash, so a test can
+// tell the file is the one it handed over without anything printing the
+// bytes (a licence is a secret). Diagnostic: nothing in a normal run calls it.
+extern "C" int64_t chimera_rpcs3_hdd_file_probe(const char* console_path, uint64_t* hash)
+{
+  *hash = 0;
+  if (!g_booted || !console_path)
+    return -2;
+  const std::string path = vfs::get(console_path);
+  if (path.empty() || !fs::is_file(path))
+    return -1;
+  fs::file in(path);
+  if (!in)
+    return -1;
+  uint64_t h = 0xcbf29ce484222325ull;
+  int64_t total = 0;
+  std::vector<uint8_t> buf(64 * 1024);
+  for (;;)
+  {
+    const uint64_t got = in.read(buf.data(), buf.size());
+    if (got == 0)
+      break;
+    for (uint64_t i = 0; i < got; i++)
+      h = (h ^ buf[i]) * 0x100000001b3ull;
+    total += static_cast<int64_t>(got);
+  }
+  *hash = h;
   return total;
 }
 
