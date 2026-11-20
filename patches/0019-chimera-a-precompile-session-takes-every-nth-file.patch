@@ -1,22 +1,39 @@
 diff --git a/rpcs3/Emu/Cell/PPUThread.cpp b/rpcs3/Emu/Cell/PPUThread.cpp
-index 844f3e3bf..27da48cec 100644
+index 844f3e3..63c20de 100644
 --- a/rpcs3/Emu/Cell/PPUThread.cpp
 +++ b/rpcs3/Emu/Cell/PPUThread.cpp
-@@ -4337,6 +4337,30 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+@@ -4135,6 +4135,15 @@ extern void ppu_finalize(const ppu_module<lv2_obj>& info, bool force_mem_release
+ #endif
+ }
+ 
++#ifdef CHIMERA_CORE
++// Chimera: a file of the sweep finished (n is 0 for one handed on to the
++// executable worker, which counts it when it is done)
++extern void chimera_precompile_add(u32 total, u32 done);
++#define CHIMERA_FILE_DONE(n) chimera_precompile_add(0, (n)),
++#else
++#define CHIMERA_FILE_DONE(n)
++#endif
++
+ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_module<lv2_obj>*>* loaded_modules, bool is_fast_compilation)
+ {
+ 	if (g_cfg.core.ppu_decoder != ppu_decoder_type::llvm)
+@@ -4337,6 +4346,31 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
  		}
  	}
  
 +#ifdef CHIMERA_CORE
 +	// Chimera: a precompile session may be one of several running side by
 +	// side, each taking every Nth file of the same deterministic queue. The
-+	// count of modules is taken HERE, before the split, so that every session
-+	// reports the same total and the shares add up to it.
++	// count is taken HERE, before the split, so that every session reports
++	// the same total and the shares add up to it. What is counted is work to
++	// do: a file of the sweep, or a part of a module outside the sweep
++	// (chimera_precompile_add), so that a bar moves while one module is
++	// compiling, which for a big game's executable is minutes.
 +	extern u32 g_chimera_precompile_index, g_chimera_precompile_count;
 +	{
-+		extern u32 g_chimera_precompile_total;
-+		extern void chimera_precompile_changed();
-+		g_chimera_precompile_total += ::size32(file_queue);
-+		chimera_precompile_changed();
++		extern void chimera_precompile_add(u32 total, u32 done);
++		chimera_precompile_add(::size32(file_queue), 0);
 +	}
 +	if (g_chimera_precompile_count > 1)
 +	{
@@ -33,7 +50,7 @@ index 844f3e3bf..27da48cec 100644
  	g_progr_ftotal += ::size32(file_queue);
  
  	u64 total_files_size = 0;
-@@ -4411,6 +4435,12 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+@@ -4411,6 +4445,12 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
  		}
  	}
  
@@ -46,80 +63,120 @@ index 844f3e3bf..27da48cec 100644
  	named_thread_group workers("SPRX Worker ", std::min<u32>(software_thread_limit, cpu_thread_limit), [&]
  	{
  		jit_write_guard jit_guard;
-@@ -4422,6 +4452,14 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+@@ -4420,7 +4460,7 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+ 		u32 inc_fdone = 1;
+ 		u32 restore_mem = 0;
  
- 		for (usz func_i = fnext++; func_i < file_queue.size(); func_i = fnext++, g_progr_fdone += std::exchange(inc_fdone, 1))
+-		for (usz func_i = fnext++; func_i < file_queue.size(); func_i = fnext++, g_progr_fdone += std::exchange(inc_fdone, 1))
++		for (usz func_i = fnext++; func_i < file_queue.size(); func_i = fnext++, CHIMERA_FILE_DONE(inc_fdone) g_progr_fdone += std::exchange(inc_fdone, 1))
  		{
-+#ifdef CHIMERA_CORE
-+			{
-+				extern u32 g_chimera_precompile_done;
-+				extern void chimera_precompile_changed();
-+				if (func_i) g_chimera_precompile_done++;
-+				chimera_precompile_changed();
-+			}
-+#endif
  			if (Emu.IsStopped())
  			{
- 				continue;
-@@ -4632,6 +4670,12 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+@@ -4647,7 +4687,7 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
  
- 	// Join every thread
- 	workers.join();
+ 		auto main_module = std::move(g_fxo->get<main_ppu_module<lv2_obj>>());
+ 
+-		for (; slice; slice.pop_front(), g_progr_fdone++)
++		for (; slice; slice.pop_front(), CHIMERA_FILE_DONE(1) g_progr_fdone++)
+ 		{
+ 			if (Emu.IsStopped())
+ 			{
+@@ -4761,7 +4801,24 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
+ 	});
+ 
+ 	exec_worker();
++
 +#ifdef CHIMERA_CORE
++	// The executables the sweep found are this session's alone, like its other
++	// files: all their parts are its own, so the flag stays set until here
 +	{
 +		extern u32 g_chimera_precompile_in_sweep;
 +		g_chimera_precompile_in_sweep = 0;
 +	}
 +#endif
- 
- 	named_thread exec_worker("PPU Exec Worker", [&]
- 	{
-@@ -4763,6 +4807,14 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
- 	exec_worker();
- }
- 
++}
++
 +#ifdef CHIMERA_CORE
 +// Chimera: the sweep, for a precompile session (no template types at the seam)
 +void chimera_ppu_precompile(std::vector<std::string>& dir_queue)
 +{
 +	ppu_precompile(dir_queue, nullptr, false);
-+}
+ }
 +#endif
-+
+ 
  extern void ppu_initialize()
  {
- 	if (!g_fxo->is_init<main_ppu_module<lv2_obj>>())
-@@ -4913,6 +4965,14 @@ extern void ppu_initialize()
+@@ -5063,6 +5120,12 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
  
- bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_size)
- {
+ 	bool compiled_new = false;
+ 
 +#ifdef CHIMERA_CORE
-+	// Chimera: one more module a precompile session's progress counts
-+	{
-+		extern u32 g_chimera_precompile_total;
-+		if (!check_only)
-+			g_chimera_precompile_total++;
-+	}
++	// Chimera: the parts of this module, and the ones this session owns that
++	// another session had already compiled (a precompile session's progress)
++	u32 chimera_parts = 0, chimera_cached_own = 0;
 +#endif
- 	ppu_log.notice("Entering ppu_initialize(const ppu_module&..)");
++
+ 	bool has_mfvscr = false;
  
- 	struct log_guard
-@@ -5674,6 +5734,14 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
- 		atomic_t<u64> work_done = 0;
+ 	const bool is_being_used_in_emulation = vm::base(info.segs[0].addr) == info.segs[0].ptr;
+@@ -5624,6 +5687,19 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
  
- 		// Update progress dialog
+ 		module_counter++;
+ 
 +#ifdef CHIMERA_CORE
++		// A module is initialised more than once in a session (the main
++		// module is also in the list of loaded modules): its parts count once
++		bool chimera_first = false;
 +		{
-+			extern u32 g_chimera_precompile_parts_total;
-+			extern void chimera_precompile_changed();
-+			g_chimera_precompile_parts_total += ::size32(workload);
-+			chimera_precompile_changed();
++			extern bool chimera_precompile_part(const std::string& name, bool finished);
++			extern u32 g_chimera_precompile_in_sweep;
++			chimera_first = !g_chimera_precompile_in_sweep && chimera_precompile_part(obj_name, false);
++			if (chimera_first)
++				chimera_parts++;
 +		}
 +#endif
- 		g_progr_ptotal += ::size32(workload);
++
+ 		if (!check_only)
+ 		{
+ 			link_workload.emplace_back(obj_name, false);
+@@ -5632,6 +5708,15 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
+ 		// Check object file
+ 		if (jit_compiler::check(cache_path + obj_name))
+ 		{
++#ifdef CHIMERA_CORE
++			{
++				extern u32 g_chimera_precompile_index, g_chimera_precompile_count;
++				extern bool chimera_precompile_part(const std::string& name, bool finished);
++				if (chimera_first && (g_chimera_precompile_count <= 1 || std::hash<std::string>{}(obj_name) % g_chimera_precompile_count == g_chimera_precompile_index)
++					&& chimera_precompile_part(obj_name, true))
++					chimera_cached_own++;
++			}
++#endif
+ 			if (!is_being_used_in_emulation && !check_only)
+ 			{
+ 				ppu_log.success("LLVM: Module exists: %s", obj_name);
+@@ -5661,6 +5746,20 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
+ 		return false;
+ 	}
  
- 		*progress_dialog = get_localized_string(localized_string_id::PROGRESS_DIALOG_COMPILING_PPU_MODULES);
-@@ -5745,6 +5813,26 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
++#ifdef CHIMERA_CORE
++	// Chimera: outside the sweep every session sees this module and all of its
++	// parts, so every part is the game's work, counted by each session whether
++	// or not another has already compiled it (that would make the total depend
++	// on who was first); a part this session owns that was already there is
++	// done at once, and the others it compiles itself, below
++	{
++		extern u32 g_chimera_precompile_count, g_chimera_precompile_in_sweep;
++		extern void chimera_precompile_add(u32 total, u32 done);
++		if (g_chimera_precompile_count > 0 && !g_chimera_precompile_in_sweep)
++			chimera_precompile_add(chimera_parts, chimera_cached_own);
++	}
++#endif
++
+ 	if (g_progr_ftotal_bits && file_size)
+ 	{
+ 		g_progr_fknown_bits += file_size;
+@@ -5745,6 +5844,23 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
  					// Keep allocating workload
  					const auto& [obj_name, part] = std::as_const(workload)[i];
  
@@ -127,10 +184,7 @@ index 844f3e3bf..27da48cec 100644
 +					// Chimera: a precompile session is one of several; the part's
 +					// name decides whose it is, whatever the others already stored
 +					{
-+						extern u32 g_chimera_precompile_index, g_chimera_precompile_count, g_chimera_precompile_parts_done, g_chimera_precompile_in_sweep;
-+						extern void chimera_precompile_changed();
-+						g_chimera_precompile_parts_done++;
-+						chimera_precompile_changed();
++						extern u32 g_chimera_precompile_index, g_chimera_precompile_count, g_chimera_precompile_in_sweep;
 +						// Only where every session sees the same module: the sweep
 +						// already gave each of them different FILES, so a module
 +						// found there is this session's alone and all of its parts
@@ -146,7 +200,25 @@ index 844f3e3bf..27da48cec 100644
  					ppu_log.warning("LLVM: Compiling module %s%s", cache_path, obj_name);
  
  					{
-@@ -5807,6 +5895,18 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
+@@ -5754,6 +5870,17 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
+ 					}
+ 
+ 					ppu_log.success("LLVM: Compiled module %s", obj_name);
++
++#ifdef CHIMERA_CORE
++					// Chimera: one part of this session's own share is done
++					{
++						extern u32 g_chimera_precompile_in_sweep;
++						extern void chimera_precompile_add(u32 total, u32 done);
++						extern bool chimera_precompile_part(const std::string& name, bool finished);
++						if (!g_chimera_precompile_in_sweep && chimera_precompile_part(obj_name, true))
++							chimera_precompile_add(0, 1);
++					}
++#endif
+ 				}
+ 
+ 				core_lock.unlock();
+@@ -5807,6 +5934,17 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
  		
  		thread_ctrl::set_name(old_name);
  		g_watchdog_hold_ctr--;
@@ -154,8 +226,7 @@ index 844f3e3bf..27da48cec 100644
 +#ifdef CHIMERA_CORE
 +		// Chimera: a precompile session compiles and stores; it never loads
 +		{
-+			extern u32 g_chimera_precompile_count, g_chimera_precompile_done;
-+			g_chimera_precompile_done++;
++			extern u32 g_chimera_precompile_count;
 +			if (g_chimera_precompile_count > 0)
 +			{
 +				return compiled_new;

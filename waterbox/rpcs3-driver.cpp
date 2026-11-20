@@ -34,7 +34,7 @@
 #include "Emu/VFS.h"
 #include "Utilities/Thread.h"
 extern atomic_t<recording_mode> g_recording_mode;
-u32 g_chimera_precompile_index = 0, g_chimera_precompile_count = 0, g_chimera_precompile_done = 0, g_chimera_precompile_total = 0, g_chimera_precompile_parts_done = 0, g_chimera_precompile_parts_total = 0;
+u32 g_chimera_precompile_index = 0, g_chimera_precompile_count = 0, g_chimera_precompile_done = 0, g_chimera_precompile_total = 0;
 // the sweep gives each session different files; inside one, its parts are all its own
 u32 g_chimera_precompile_in_sweep = 0;
 void chimera_ppu_precompile(std::vector<std::string>& dir_queue);
@@ -75,6 +75,8 @@ namespace rsx { extern std::function<bool(u32 addr, bool is_writing)> g_access_v
 #include <algorithm>
 #include <deque>
 #include <string>
+#include <mutex>
+#include <unordered_set>
 
 #include <cctype>
 #include <cstring>
@@ -3058,7 +3060,17 @@ extern "C" int chimera_rpcs3_precompile_done(void)
   return s_precompile_done ? 1 : 0;
 }
 
-// files of the sweep done and in total, for a progress line
+// What a session reports is work to do, counted the same way in every session:
+// a file of the sweep, and a part of a module found outside the sweep (a big
+// game's executable is hundreds of parts and minutes of work, which a bar of
+// modules would show as nothing). The total is the game's - every session
+// counts all of it - and what is done is this session's own share, so the
+// shares of all the sessions add up to the total (Chimera issue 618: the
+// count used to take a shared module once per session as done and once as
+// total, and a session's files twice).
+// The total grows as the session finds more (the sweep's files are counted
+// when the sweep starts, after the executable's parts), and a frontend takes
+// the biggest it was told.
 // Said from INSIDE the machine, as it happens: a compiling thread holds the
 // scheduler for a whole module, so a frontend polling between frames sees the
 // numbers jump at the end. Printed on change instead, this arrives live.
@@ -3066,28 +3078,47 @@ void chimera_precompile_changed()
 {
   if (s_precompile_count <= 0)
     return;
-  // modules, not parts: the total is the game's, counted before the queue was
-  // split, and every session's done adds up to it
-  static u32 s_last_done = ~0u, s_last_total = ~0u;
-  if (g_chimera_precompile_done == s_last_done && g_chimera_precompile_total == s_last_total)
+  static std::atomic<u64> s_last{~0ull};
+  const u32 done = __atomic_load_n(&g_chimera_precompile_done, __ATOMIC_RELAXED);
+  const u32 total = __atomic_load_n(&g_chimera_precompile_total, __ATOMIC_RELAXED);
+  const u64 now = (static_cast<u64>(done) << 32) | total;
+  if (s_last.exchange(now) == now)
     return;
-  s_last_done = g_chimera_precompile_done;
-  s_last_total = g_chimera_precompile_total;
   // Through the cache bridge, which is the host's own code: a compiling thread
   // holds the scheduler for a whole module, so nobody can ask meanwhile, and
   // what this machine writes to its own streams is its own business.
   if (g_cache_bridge)
-    g_cache_bridge(CACHE_OP_PROGRESS, s_last_done, s_last_total, 0, 0, 0);
+    g_cache_bridge(CACHE_OP_PROGRESS, done, total, 0, 0, 0);
   else
-    fprintf(stderr, "Precompiled %u/%u modules\n", s_last_done, s_last_total);
+    fprintf(stderr, "Precompiled %u/%u modules\n", done, total);
+}
+
+// work found (total) and work finished (done); called by several threads
+void chimera_precompile_add(u32 total, u32 done)
+{
+  if (total)
+    __atomic_fetch_add(&g_chimera_precompile_total, total, __ATOMIC_RELAXED);
+  if (done)
+    __atomic_fetch_add(&g_chimera_precompile_done, done, __ATOMIC_RELAXED);
+  chimera_precompile_changed();
+}
+
+// A part of a module, by its object's name, counted once however many times
+// the session initialises its module (the main module is also in the list of
+// loaded modules): finished false asks "is this the first time I see it?",
+// true asks "is this the first time it is counted as done?"
+bool chimera_precompile_part(const std::string& name, bool finished)
+{
+  static std::mutex s_mutex;
+  static std::unordered_set<std::string> s_seen, s_finished;
+  std::lock_guard lock(s_mutex);
+  return (finished ? s_finished : s_seen).insert(name).second;
 }
 
 extern "C" void chimera_rpcs3_precompile_progress(uint32_t* done, uint32_t* total)
 {
-  // this session's finished modules, and the game's module count - the same
-  // total in every session, so the dones add up to it
-  *done = g_chimera_precompile_done;
-  *total = g_chimera_precompile_total;
+  *done = __atomic_load_n(&g_chimera_precompile_done, __ATOMIC_RELAXED);
+  *total = __atomic_load_n(&g_chimera_precompile_total, __ATOMIC_RELAXED);
 }
 
 // ---- Raw SPU MMIO, without a fault ----------------------------------------

@@ -422,6 +422,22 @@ optimisation. No user interface, no networking, no real audio or input devices.
   even headless; a worker leaves through the run loop (_exitRequestPending),
   not Environment.Exit, or a control's finaliser turns the exit code to 255.
   The design is docs/compile-cache.md in the chimera repository.
+  Progress counts work, not modules (2026-11-20, Chimera issue 618): the window
+  showed "116 of 95", a bar that sat at nothing for the 22 minutes or more that
+  Sonic Unleashed's executable took, and sessions whose totals differed. Now the
+  total is the game's and the same in every session (each file of the sweep,
+  each part of a module outside the sweep, once, whether or not another
+  session already compiled it) and done is this session's own share (a part it
+  owns by name counts when compiled, or at once when it was already there), so
+  the shares add up to the total. Counted with atomic additions
+  (`chimera_precompile_add`, `chimera_precompile_part`). Measured with four
+  sessions: Bejeweled 3 ended 26+22+23+22 against a total of 92 (before:
+  39+40+40+40 against 98), Sonic Unleashed 99+94+102+83 against 377 (before:
+  38+39+39+40 against 98); the executable is 301 parts and the bar moves from
+  the third minute (before: 0 of 1 for 22 minutes or more). The same objects
+  are stored (114 and 399 files, same bytes). The executables the sweep finds
+  (the executable worker) now keep their parts for the session that found them;
+  the flag that said so was cleared before that worker ran.
 - **Windows end to end, on real hardware (2026-09-11)**: GTA San Andreas boots
   and draws through the GPU bridge on a GTX 1060 - 1280x720, the Rockstar North
   logo by frame 900. Determinism and rewind were measured with the rest of the
