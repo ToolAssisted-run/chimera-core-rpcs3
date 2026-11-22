@@ -1589,6 +1589,27 @@ else
 	fi
 fi
 
+# A disc packed as a .zip asked for no system software, so a project of it had
+# none and the game stopped on the first frame (Sonic Unleashed, Chimera issue
+# 634). Needs no firmware and no game: the package's declaration is read.
+# With Chimera's engine library at hand, it is asked too: it is what the window runs.
+fwlib=""
+for c in "${CHIMERA_ROOT:-}" "$root/../chimera" "$HOME/chimera"; do
+	for l in "$c/build/meson-linux/libchimera.so" "$c/build/dll/libchimera.so"; do
+		if [ -n "$c" ] && [ -f "$l" ]; then
+			fwlib="$l"
+			break 2
+		fi
+	done
+done
+rc=0
+said="$(python3 "$here/tests/check-firmware-required.py" "$here/waterbox.config" $fwlib 2>&1)" || rc=$?
+if [ "$rc" = 0 ]; then
+	pass "firmware:disc-required - $said"
+else
+	failed "firmware:disc-required - $said"
+fi
+
 vk_legs="vk:bridge vk:picture vk:rerecord"
 crunroot=""
 for c in "${CHIMERA_ROOT:-}" "$root/../chimera" "$HOME/chimera"; do

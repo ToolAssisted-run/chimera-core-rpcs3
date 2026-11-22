@@ -3554,3 +3554,64 @@ without the .rap it was refused with `error.needs_rap` (exit 1).
 
 Not tried: a real game that needs an .edat licence (none is on the test
 machines).
+
+## 2026-11-22: a disc packed as a .zip asks for the system software (chimera#634)
+
+A user packed Sonic Unleashed with Chimera's Reproducible Media Maker as a
+.zip and made a project of it. The game stopped on its first frame with "the
+core crashed: it read or ran address 00000377fffffff0": a guest address
+0xfffffff0, which is a null pointer minus 16, read by the game's own code.
+The same game as a Media Maker .iso ran.
+
+**Cause.** A retail game links against the PS3's system software, and without
+it a game fails in its own way (here a null pointer). The package said the
+system software (PS3UPDAT.PUP) is needed for a game of kind `.iso` or `.pkg`,
+and the core refused to start a `.iso` without it. A disc folder packed into a
+`.zip` was in neither list, so the project was made with no system software,
+and the game started on a machine without it. The project in the report listed
+no firmware. The archive reader was not the cause.
+
+**What was checked first, and found fine.** The reader and the Media Maker's
+zip writer, with Chimera's own zips of a disc folder (Arcana Heart 3, 3.1 GB,
+15 files): (a) the folder alone, 3.32 GB; (b) the folder plus a 4.5 GB empty
+file named to sort first, so every real file sits past the 4 GiB mark and has
+a zip64 header, 7.82 GB; (c) the same with the big file last. Every member of
+all three, read back through the core's own reader (`archive.cpp`, built
+natively), equals the file in the folder, at 50 or more offsets each.
+
+**What was decided** (owner, 2026-11-22): a `.zip` and a `.7z` ask for the
+system software as a `.iso` does. `requiredWhen` in `waterbox.config` has
+them, so the window and the new-project wizard ask for PS3UPDAT.PUP before the
+game starts. The core itself still starts a `.zip` or a `.7z` without it, since
+homebrew may come packed that way; only a `.iso` is refused by the core
+(`wbx-entry.cpp`), as before. A `.7z` is now also a game file the package
+accepts (`extensions`), which the archive reader already handled. A `.pkg`
+stays as it was.
+
+**Test.** `waterbox/tests/check-firmware-required.py`, run as the gate leg
+`firmware:disc-required` (it needs no firmware and no game, so CI runs it).
+It requires `.iso`, `.zip` and `.7z` in `requiredWhen`, and every kind there
+among the package's extensions; given Chimera's engine library it also asks
+the engine which firmware a project of a `.zip`, a `.7z`, an `.iso` and an
+`.elf` needs. Run on the `waterbox.config` from before the change it fails
+("`.zip` is not in requiredWhen ...").
+
+**Measured** (Linux, no GPU, chimera-run, the package built before this
+change, Arcana Heart 3 packed by the Media Maker, an idle pad):
+
+| zip | system software | frames | result |
+|---|---|---|---|
+| (a) folder alone | none | 200 | main thread stopped by a fatal error ("vm::writer_lock is being used without cpu_flag::wait set", in sys_spu_image_close) |
+| (b) 4.5 GB file first | none | 40 | the same fatal error |
+| (a) | PS3UPDAT.PUP | 40, twice | no fatal error; the two saved machines have the same SHA-1 |
+| (b) | PS3UPDAT.PUP | 40, twice | no fatal error; the two saved machines have the same SHA-1 |
+| the game's own .iso | PS3UPDAT.PUP | 40 | no fatal error |
+
+So the zip64 layout is not what breaks a run; leaving out the system software
+is. Without it this game fails in a different place than Sonic Unleashed, which
+reads the null pointer; both are a retail game on a machine with none of the
+system libraries. The saved machines of (a) and (b) differ from each other, as
+they must: the archive's size and layout are part of the machine.
+
+Not tried: Sonic Unleashed itself (no copy of the disc is on the test
+machines), and anything on Windows.
