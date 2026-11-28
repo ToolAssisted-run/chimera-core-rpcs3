@@ -42,68 +42,71 @@ local function finish(status, detail)
 	client.exit()
 end
 
-local jobPath = os.getenv("MINIHAWK_JOB")
-if jobPath == nil then
-	error("MINIHAWK_JOB env var not set")
-end
-local job = {}
-for line in io.lines(jobPath) do
-	local k, v = line:match("^([^=]+)=(.*)$")
-	if k then job[k] = v end
-end
-meta.metaPath = job.meta
+local function main()
+	local jobPath = os.getenv("MINIHAWK_JOB")
+	if jobPath == nil then
+		error("MINIHAWK_JOB env var not set")
+	end
+	local job = {}
+	for line in io.lines(jobPath) do
+		local k, v = line:match("^([^=]+)=(.*)$")
+		if k then job[k] = v end
+	end
+	meta.metaPath = job.meta
 
-local sysid = emu.getsystemid()
-if sysid ~= "PS3" then
-	finish("ERROR", "wrong system id: " .. tostring(sysid))
-end
-if emu.getcorename() ~= "RPCS3" then
-	finish("ERROR", "wrong core: " .. tostring(emu.getcorename()))
-end
+	if emu.getcorename() ~= "RPCS3" then
+		finish("ERROR", "wrong core: " .. tostring(emu.getcorename()))
+	end
 
-pcall(function() client.speedmode(6400) end)
-pcall(function() client.invisibleemulation(true) end)
+	pcall(function() client.speedmode(6400) end)
+	pcall(function() client.invisibleemulation(true) end)
 
-local frames = tonumber(job.frames) or 120
--- TAStudio opens paused, and a paused TAStudio does not step for a script's
--- frameadvance. A seek is what the user does, so it is what this does: ask
--- for the frame, then yield until the machine is there (or gives up: the
--- runner outside kills a run whose clock stops).
-if tastudio.engaged() then
-	tastudio.setplayback(frames)
-	local spins = 0
-	while emu.framecount() < frames do
-		emu.frameadvance()
-		spins = spins + 1
-		if spins % 100 == 0 then
-			console.log(string.format("seek: at frame %d of %d, lag %d", emu.framecount(), frames, emu.lagcount()))
+	local frames = tonumber(job.frames) or 120
+	-- TAStudio opens paused, and a paused TAStudio does not step for a script's
+	-- frameadvance. A seek is what the user does, so it is what this does: ask
+	-- for the frame, then yield until the machine is there (or gives up: the
+	-- runner outside kills a run whose clock stops).
+	if tastudio.engaged() then
+		tastudio.setplayback(frames)
+		local spins = 0
+		while emu.framecount() < frames do
+			emu.frameadvance()
+			spins = spins + 1
+			if spins % 100 == 0 then
+				console.log(string.format("seek: at frame %d of %d, lag %d", emu.framecount(), frames, emu.lagcount()))
+			end
+		end
+	else
+		for _ = 1, frames do
+			emu.frameadvance()
 		end
 	end
-else
-	for _ = 1, frames do
-		emu.frameadvance()
+
+	meta.frames = emu.framecount()
+	meta.lag = emu.lagcount()
+	pcall(function()
+		memory.usememorydomain(DOMAIN)
+		meta.ramsize = memory.getcurrentmemorydomainsize()
+		meta.ramhash = memory.hash_region(0, meta.ramsize, DOMAIN)
+	end)
+
+	if job.shot ~= nil and job.shot ~= "" then
+		client.screenshot(job.shot)
 	end
+
+	local slice = tonumber(job.bytes) or (1024 * 1024)
+	if slice > meta.ramsize then slice = meta.ramsize end
+	local ram = memory.read_bytes_as_array(0, slice, DOMAIN)
+	local chunks = {}
+	for i = 1, #ram do
+		chunks[i] = string.char(ram[i])
+	end
+	writeAll(job.out, table.concat(chunks))
+
+	finish("OK", "")
 end
 
-meta.frames = emu.framecount()
-meta.lag = emu.lagcount()
-pcall(function()
-	memory.usememorydomain(DOMAIN)
-	meta.ramsize = memory.getcurrentmemorydomainsize()
-	meta.ramhash = memory.hash_region(0, meta.ramsize, DOMAIN)
-end)
-
-if job.shot ~= nil and job.shot ~= "" then
-	client.screenshot(job.shot)
+local ok, err = xpcall(main, debug.traceback)
+if not ok then
+	finish("ERROR", (tostring(err):gsub("%s+", " ")))
 end
-
-local slice = tonumber(job.bytes) or (1024 * 1024)
-if slice > meta.ramsize then slice = meta.ramsize end
-local ram = memory.read_bytes_as_array(0, slice, DOMAIN)
-local chunks = {}
-for i = 1, #ram do
-	chunks[i] = string.char(ram[i])
-end
-writeAll(job.out, table.concat(chunks))
-
-finish("OK", "")

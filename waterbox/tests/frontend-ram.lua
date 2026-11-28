@@ -42,52 +42,55 @@ local function finish(status, detail)
 	client.exit()
 end
 
-local jobPath = os.getenv("MINIHAWK_JOB")
-if jobPath == nil then
-	error("MINIHAWK_JOB env var not set")
-end
-local job = {}
-for line in io.lines(jobPath) do
-	local k, v = line:match("^([^=]+)=(.*)$")
-	if k then job[k] = v end
-end
-meta.metaPath = job.meta
+local function main()
+	local jobPath = os.getenv("MINIHAWK_JOB")
+	if jobPath == nil then
+		error("MINIHAWK_JOB env var not set")
+	end
+	local job = {}
+	for line in io.lines(jobPath) do
+		local k, v = line:match("^([^=]+)=(.*)$")
+		if k then job[k] = v end
+	end
+	meta.metaPath = job.meta
 
-local sysid = emu.getsystemid()
-if sysid ~= "PS3" then
-	finish("ERROR", "wrong system id: " .. tostring(sysid))
+	if emu.getcorename() ~= "RPCS3" then
+		finish("ERROR", "wrong core: " .. tostring(emu.getcorename()))
+	end
+
+	pcall(function() client.speedmode(6400) end)
+	pcall(function() client.invisibleemulation(true) end)
+
+	local frames = tonumber(job.frames) or 120
+	for _ = 1, frames do
+		emu.frameadvance()
+	end
+
+	meta.frames = emu.framecount()
+	meta.lag = emu.lagcount()
+	pcall(function()
+		memory.usememorydomain(DOMAIN)
+		meta.ramsize = memory.getcurrentmemorydomainsize()
+		meta.ramhash = memory.hash_region(0, meta.ramsize, DOMAIN)
+	end)
+
+	if job.shot ~= nil and job.shot ~= "" then
+		client.screenshot(job.shot)
+	end
+
+	local slice = tonumber(job.bytes) or (1024 * 1024)
+	if slice > meta.ramsize then slice = meta.ramsize end
+	local ram = memory.read_bytes_as_array(0, slice, DOMAIN)
+	local chunks = {}
+	for i = 1, #ram do
+		chunks[i] = string.char(ram[i])
+	end
+	writeAll(job.out, table.concat(chunks))
+
+	finish("OK", "")
 end
-if emu.getcorename() ~= "RPCS3" then
-	finish("ERROR", "wrong core: " .. tostring(emu.getcorename()))
+
+local ok, err = xpcall(main, debug.traceback)
+if not ok then
+	finish("ERROR", (tostring(err):gsub("%s+", " ")))
 end
-
-pcall(function() client.speedmode(6400) end)
-pcall(function() client.invisibleemulation(true) end)
-
-local frames = tonumber(job.frames) or 120
-for _ = 1, frames do
-	emu.frameadvance()
-end
-
-meta.frames = emu.framecount()
-meta.lag = emu.lagcount()
-pcall(function()
-	memory.usememorydomain(DOMAIN)
-	meta.ramsize = memory.getcurrentmemorydomainsize()
-	meta.ramhash = memory.hash_region(0, meta.ramsize, DOMAIN)
-end)
-
-if job.shot ~= nil and job.shot ~= "" then
-	client.screenshot(job.shot)
-end
-
-local slice = tonumber(job.bytes) or (1024 * 1024)
-if slice > meta.ramsize then slice = meta.ramsize end
-local ram = memory.read_bytes_as_array(0, slice, DOMAIN)
-local chunks = {}
-for i = 1, #ram do
-	chunks[i] = string.char(ram[i])
-end
-writeAll(job.out, table.concat(chunks))
-
-finish("OK", "")
